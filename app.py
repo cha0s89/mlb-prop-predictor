@@ -182,6 +182,8 @@ with tab_edge:
         st.markdown(f"**{len(pp_lines)} MLB props** on PrizePicks today")
         all_edges = []
         if has_sharp:
+            total_sharp_lines = 0
+            events_with_props = 0
             with st.spinner("Fetching sharp lines & devigging..."):
                 events = fetch_mlb_events(api_key)
                 for event in (events or [])[:15]:
@@ -190,7 +192,11 @@ with tab_edge:
                     result = fetch_event_props(eid, api_key=api_key)
                     if result and "data" in result:
                         sharp = extract_sharp_lines(result["data"])
+                        if sharp:
+                            events_with_props += 1
+                            total_sharp_lines += len(sharp)
                         all_edges.extend(find_ev_edges(pp_lines, sharp, min_ev_pct=0.25))
+            st.caption(f"Scanned {len(events or [])} events · {events_with_props} had props · {total_sharp_lines} sharp lines · {len(all_edges)} edges")
 
         if all_edges:
             all_edges.sort(key=lambda x: x["edge_pct"], reverse=True)
