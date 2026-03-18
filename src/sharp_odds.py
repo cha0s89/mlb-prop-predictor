@@ -306,6 +306,39 @@ def extract_sharp_lines(event_data: dict) -> list:
     return results
 
 
+def _normalize_name(name: str) -> str:
+    """Normalize a player name for matching: lowercase, strip suffixes and accents."""
+    import unicodedata
+    # Remove accents (ñ -> n, é -> e, etc.)
+    name = unicodedata.normalize("NFD", name)
+    name = "".join(c for c in name if unicodedata.category(c) != "Mn")
+    name = name.lower().strip()
+    # Strip common suffixes
+    for suffix in [" jr.", " jr", " sr.", " sr", " iii", " ii", " iv"]:
+        if name.endswith(suffix):
+            name = name[: -len(suffix)].strip()
+    return name
+
+
+def _names_match(sharp_name: str, pp_name: str) -> bool:
+    """Check if two player names refer to the same person."""
+    s = _normalize_name(sharp_name)
+    p = _normalize_name(pp_name)
+    if s == p:
+        return True
+    # Last name match + first initial match
+    s_parts = s.split()
+    p_parts = p.split()
+    if len(s_parts) >= 2 and len(p_parts) >= 2:
+        if s_parts[-1] == p_parts[-1] and s_parts[0][0] == p_parts[0][0]:
+            return True
+    # One name contained in the other (handles "Shohei Ohtani" vs "S. Ohtani")
+    if len(s_parts) >= 1 and len(p_parts) >= 1:
+        if s_parts[-1] == p_parts[-1]:
+            return True
+    return False
+
+
 def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
                   min_ev_pct: float = 0.25) -> list:
     """
@@ -333,13 +366,15 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
         sharp_line_val = sharp["line"]
 
         # Map Odds API market key back to PrizePicks stat names
-        odds_to_pp = {v: k for k, v in PP_TO_ODDS_API.items()}
         pp_stat_names = [k for k, v in PP_TO_ODDS_API.items() if v == market]
 
+        # Match players using robust name comparison
+        name_mask = pp_lines["player_name"].apply(lambda pn: _names_match(player, pn))
+
         matching_pp = pp_lines[
-            (pp_lines["player_name"].str.contains(player.split()[-1], case=False, na=False)) &
+            name_mask &
             (pp_lines["stat_type"].isin(pp_stat_names)) &
-            (abs(pp_lines["line"] - sharp_line_val) < 1.0)  # Allow small line differences
+            (abs(pp_lines["line"] - sharp_line_val) <= 2.0)  # Allow line differences up to 2
         ]
 
         if matching_pp.empty:
