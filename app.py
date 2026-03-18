@@ -253,7 +253,7 @@ with tab_edge:
             else: st.info("No edges match filters.")
         elif has_sharp: st.info("No edges found. Lines may be properly priced or props not posted yet.")
 
-        if not has_sharp:
+        if not all_edges:
             st.markdown('<div class="section-hdr">Projection Analysis (No Sharp Odds)</div>', unsafe_allow_html=True)
             stats_failed = False
             with st.spinner("Loading player stats..."):
