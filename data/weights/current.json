@@ -1,7 +1,7 @@
 {
-  "version": "v001",
-  "description": "Baseline weights initialized",
-  "created_at": "2026-03-18T05:08:31.790921+00:00",
+  "version": "v002",
+  "description": "Backtest-tuned: fix LESS bias, boost fantasy/TB/K offsets",
+  "created_at": "2026-03-18T06:00:00.000000+00:00",
   "confidence_thresholds": {
     "A": 0.62,
     "B": 0.57,
@@ -9,19 +9,19 @@
     "D": 0.0
   },
   "direction_bias": {
-    "more_multiplier": 1.0,
-    "less_multiplier": 1.0
+    "more_multiplier": 1.12,
+    "less_multiplier": 0.92
   },
   "prop_type_offsets": {
-    "pitcher_strikeouts": 0.0,
+    "pitcher_strikeouts": 0.2,
     "batter_strikeouts": 0.0,
     "hits": 0.0,
-    "total_bases": 0.0,
+    "total_bases": 0.3,
     "home_runs": 0.0,
     "rbis": 0.0,
     "runs": 0.0,
     "stolen_bases": 0.0,
-    "hitter_fantasy_score": 0.0,
+    "hitter_fantasy_score": 0.8,
     "hits_runs_rbis": 0.0,
     "pitching_outs": 0.0,
     "earned_runs": 0.0,
@@ -61,9 +61,10 @@
     "doubles": 2.5
   },
   "metadata": {
-    "parent_version": null,
-    "adjustment_count": 0,
+    "parent_version": "v001",
+    "adjustment_count": 1,
     "total_picks_analyzed": 0,
-    "accuracy_at_creation": null
+    "accuracy_at_creation": null,
+    "notes": "MORE 36.3% vs LESS 80.1% bias detected. Boosted more_multiplier to 1.12, reduced less_multiplier to 0.92. Fantasy score offset +0.8, total_bases +0.3, pitcher_strikeouts +0.2."
   }
 }
