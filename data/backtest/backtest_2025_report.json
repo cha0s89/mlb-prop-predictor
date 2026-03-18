@@ -1,0 +1,388 @@
+{
+  "generated_at": "2026-03-18T01:42:24.055116",
+  "total_predictions": 195596,
+  "overall": {
+    "wins": 132580,
+    "losses": 63016,
+    "pushes": 0,
+    "total_decided": 195596,
+    "accuracy": 0.6778,
+    "win_pct": 67.78
+  },
+  "by_prop_type": {
+    "hitter_fantasy_score": {
+      "wins": 30229,
+      "total": 47714,
+      "accuracy": 0.6335
+    },
+    "hits": {
+      "wins": 38190,
+      "total": 47714,
+      "accuracy": 0.8004
+    },
+    "total_bases": {
+      "wins": 19349,
+      "total": 47714,
+      "accuracy": 0.4055
+    },
+    "home_runs": {
+      "wins": 42535,
+      "total": 47714,
+      "accuracy": 0.8915
+    },
+    "pitcher_strikeouts": {
+      "wins": 2277,
+      "total": 4740,
+      "accuracy": 0.4804
+    }
+  },
+  "by_rating": {
+    "A": {
+      "wins": 67578,
+      "total": 81496,
+      "accuracy": 0.8292
+    },
+    "B": {
+      "wins": 34472,
+      "total": 51647,
+      "accuracy": 0.6675
+    },
+    "C": {
+      "wins": 13365,
+      "total": 26496,
+      "accuracy": 0.5044
+    },
+    "D": {
+      "wins": 17165,
+      "total": 35957,
+      "accuracy": 0.4774
+    }
+  },
+  "by_direction": {
+    "MORE": {
+      "wins": 19915,
+      "total": 54935,
+      "accuracy": 0.3625
+    },
+    "LESS": {
+      "wins": 112665,
+      "total": 140661,
+      "accuracy": 0.801
+    }
+  },
+  "by_month": {
+    "April": {
+      "wins": 21788,
+      "total": 31926,
+      "accuracy": 0.6825
+    },
+    "May": {
+      "wins": 22981,
+      "total": 33831,
+      "accuracy": 0.6793
+    },
+    "June": {
+      "wins": 22026,
+      "total": 32615,
+      "accuracy": 0.6753
+    },
+    "July": {
+      "wins": 20654,
+      "total": 30553,
+      "accuracy": 0.676
+    },
+    "August": {
+      "wins": 23439,
+      "total": 34880,
+      "accuracy": 0.672
+    },
+    "September": {
+      "wins": 21692,
+      "total": 31791,
+      "accuracy": 0.6823
+    }
+  },
+  "calibration": [
+    {
+      "confidence_range": "0.50-0.54",
+      "predicted_avg": 0.52,
+      "actual_accuracy": 0.4774,
+      "count": 35957
+    },
+    {
+      "confidence_range": "0.54-0.57",
+      "predicted_avg": 0.555,
+      "actual_accuracy": 0.5044,
+      "count": 26496
+    },
+    {
+      "confidence_range": "0.57-0.62",
+      "predicted_avg": 0.595,
+      "actual_accuracy": 0.6675,
+      "count": 51647
+    },
+    {
+      "confidence_range": "0.62-0.70",
+      "predicted_avg": 0.66,
+      "actual_accuracy": 0.8157,
+      "count": 50535
+    },
+    {
+      "confidence_range": "0.70-1.01",
+      "predicted_avg": 0.855,
+      "actual_accuracy": 0.8514,
+      "count": 30961
+    }
+  ],
+  "edge_vs_accuracy": [
+    {
+      "edge_range": "0.00-0.03",
+      "accuracy": 0.4839,
+      "count": 26550
+    },
+    {
+      "edge_range": "0.03-0.06",
+      "accuracy": 0.4799,
+      "count": 26798
+    },
+    {
+      "edge_range": "0.06-0.10",
+      "accuracy": 0.6012,
+      "count": 38509
+    },
+    {
+      "edge_range": "0.10-0.15",
+      "accuracy": 0.7607,
+      "count": 49303
+    },
+    {
+      "edge_range": "0.15-1.00",
+      "accuracy": 0.849,
+      "count": 54436
+    }
+  ],
+  "top_wins": [
+    {
+      "player": "Nick Kurtz",
+      "date": "2025-07-25",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 9.16,
+      "actual": 76.0,
+      "pick": "MORE",
+      "rating": "A",
+      "edge": 0.1677
+    },
+    {
+      "player": "Kyle Schwarber",
+      "date": "2025-08-28",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 9.0,
+      "actual": 66.0,
+      "pick": "MORE",
+      "rating": "A",
+      "edge": 0.1537
+    },
+    {
+      "player": "Eugenio Su\u00e1rez",
+      "date": "2025-04-26",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 8.22,
+      "actual": 58.0,
+      "pick": "MORE",
+      "rating": "B",
+      "edge": 0.0787
+    },
+    {
+      "player": "Kyle Stowers",
+      "date": "2025-07-13",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 8.75,
+      "actual": 56.0,
+      "pick": "MORE",
+      "rating": "A",
+      "edge": 0.1308
+    },
+    {
+      "player": "Brandon Nimmo",
+      "date": "2025-04-28",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.6,
+      "actual": 54.0,
+      "pick": "MORE",
+      "rating": "D",
+      "edge": 0.0114
+    },
+    {
+      "player": "Shea Langeliers",
+      "date": "2025-08-05",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.96,
+      "actual": 52.0,
+      "pick": "MORE",
+      "rating": "C",
+      "edge": 0.0513
+    },
+    {
+      "player": "Jakob Marsee",
+      "date": "2025-08-13",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 8.24,
+      "actual": 51.0,
+      "pick": "MORE",
+      "rating": "B",
+      "edge": 0.0807
+    },
+    {
+      "player": "Iv\u00e1n Herrera",
+      "date": "2025-04-02",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.62,
+      "actual": 50.0,
+      "pick": "MORE",
+      "rating": "D",
+      "edge": 0.0137
+    },
+    {
+      "player": "Jasson Dom\u00ednguez",
+      "date": "2025-05-09",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 8.5,
+      "actual": 50.0,
+      "pick": "MORE",
+      "rating": "B",
+      "edge": 0.1069
+    },
+    {
+      "player": "Mickey Moniak",
+      "date": "2025-09-14",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 8.22,
+      "actual": 50.0,
+      "pick": "MORE",
+      "rating": "B",
+      "edge": 0.0787
+    }
+  ],
+  "top_misses": [
+    {
+      "player": "Wilmer Flores",
+      "date": "2025-05-16",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.06,
+      "actual": 52.0,
+      "pick": "LESS",
+      "rating": "C",
+      "edge": 0.0521
+    },
+    {
+      "player": "Dominic Canzone",
+      "date": "2025-09-16",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.16,
+      "actual": 52.0,
+      "pick": "LESS",
+      "rating": "C",
+      "edge": 0.04
+    },
+    {
+      "player": "Jake Meyers",
+      "date": "2025-05-03",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.21,
+      "actual": 51.0,
+      "pick": "LESS",
+      "rating": "D",
+      "edge": 0.034
+    },
+    {
+      "player": "Kody Clemens",
+      "date": "2025-09-12",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.28,
+      "actual": 51.0,
+      "pick": "LESS",
+      "rating": "D",
+      "edge": 0.0257
+    },
+    {
+      "player": "Rafael Devers",
+      "date": "2025-08-27",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.36,
+      "actual": 48.0,
+      "pick": "LESS",
+      "rating": "D",
+      "edge": 0.0163
+    },
+    {
+      "player": "Jose Altuve",
+      "date": "2025-07-04",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 6.97,
+      "actual": 47.0,
+      "pick": "LESS",
+      "rating": "C",
+      "edge": 0.0631
+    },
+    {
+      "player": "Jordan Beck",
+      "date": "2025-05-17",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.15,
+      "actual": 44.0,
+      "pick": "LESS",
+      "rating": "C",
+      "edge": 0.0412
+    },
+    {
+      "player": "Spencer Steer",
+      "date": "2025-06-27",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 6.82,
+      "actual": 44.0,
+      "pick": "LESS",
+      "rating": "B",
+      "edge": 0.0815
+    },
+    {
+      "player": "Josh Bell",
+      "date": "2025-09-08",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 6.19,
+      "actual": 44.0,
+      "pick": "LESS",
+      "rating": "A",
+      "edge": 0.1614
+    },
+    {
+      "player": "Alex Bregman",
+      "date": "2025-04-15",
+      "prop": "hitter_fantasy_score",
+      "line": 7.5,
+      "projection": 7.22,
+      "actual": 43.0,
+      "pick": "LESS",
+      "rating": "D",
+      "edge": 0.0328
+    }
+  ]
+}

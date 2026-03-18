@@ -779,6 +779,159 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
     return {"projection": round(mu, 2), "mu": mu, "regressed_bb_rate": round(reg_bb, 1)}
 
 
+def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
+                                  park=None, wx=None, lineup_pos=None):
+    """
+    HITTER FANTASY SCORE — DraftKings scoring system.
+
+    DK Scoring Weights:
+      Single = 3, Double = 5, Triple = 8, Home Run = 10,
+      RBI = 2, Run = 2, Walk/HBP = 2, Stolen Base = 5
+
+    League average: ~7.7 fantasy pts/game (4.2 PA x ~1.83 pts/PA).
+    Line is usually 7.5. Players range from ~4.5 (weak) to ~12+ (elite).
+
+    Approach: Calculate per-PA rates for each scoring event from season stats,
+    regress via Bayesian stabilization, blend with Statcast expected stats,
+    apply contextual multipliers, multiply by expected PA.
+    """
+    pa = b.get("pa", 0)
+    avg = b.get("avg", LG["avg"])
+    obp = b.get("obp", LG["obp"])
+    slg = b.get("slg", LG["slg"])
+    iso = b.get("iso", LG["iso"])
+    bb_rate = b.get("bb_rate", LG["bb_rate"])
+    k_rate = b.get("k_rate", LG["k_rate"])
+    hr = b.get("hr", 0)
+    sb = b.get("sb", 0)
+    rbi = b.get("rbi", 0)
+    r = b.get("r", 0)
+    doubles = b.get("2b", 0)
+    triples = b.get("3b", 0)
+    sprint = b.get("sprint_speed", LG["sprint_speed"])
+
+    # Statcast expected stats
+    xba = b.get("xba", 0)
+    xslg = b.get("xslg", 0)
+    barrel = b.get("recent_barrel_rate", b.get("barrel_rate", LG["barrel_rate"]))
+    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
+
+    # ── Per-PA rates for each scoring event ──
+    games_est = pa / 4.2 if pa > 0 else 1
+
+    # Hit types from season stats
+    hits = avg * (pa * (1 - bb_rate / 100)) if pa > 0 else 0
+    hr_count = hr
+    dbl_count = doubles
+    trp_count = triples
+    singles_count = max(hits - hr_count - dbl_count - trp_count, 0) if pa > 0 else 0
+
+    # Per-PA rates
+    hr_per_pa = hr_count / pa if pa > 0 else LG["hr_per_pa"]
+    dbl_per_pa = dbl_count / pa if pa > 0 else 0.045  # ~4.5% league avg
+    trp_per_pa = trp_count / pa if pa > 0 else 0.004  # ~0.4% league avg
+    single_per_pa = singles_count / pa if pa > 0 else 0.135  # ~13.5% league avg
+    bb_per_pa = bb_rate / 100 if bb_rate > 0 else LG["bb_rate"] / 100
+    sb_per_game = sb / games_est if games_est > 0 else LG["sb_per_game"]
+    rbi_per_game = rbi / games_est if games_est > 0 else LG["rbi_per_game"]
+    r_per_game = r / games_est if games_est > 0 else LG["runs_per_game"]
+
+    # ── Bayesian stabilization ──
+    reg_hr = _regress(hr_per_pa, pa, 300, LG["hr_per_pa"])
+    reg_dbl = _regress(dbl_per_pa, pa, 200, 0.045)
+    reg_trp = _regress(trp_per_pa, pa, 400, 0.004)
+    reg_single = _regress(single_per_pa, pa, STAB["avg"], 0.135)
+    reg_bb = _regress(bb_per_pa, pa, STAB["bb_rate"], LG["bb_rate"] / 100)
+    reg_sb = _regress(sb_per_game, pa, 200, LG["sb_per_game"])
+    reg_rbi = _regress(rbi_per_game, pa, 200, LG["rbi_per_game"])
+    reg_r = _regress(r_per_game, pa, 200, LG["runs_per_game"])
+
+    # ── Statcast blend (30% weight on expected stats) ──
+    if xba > 0 and xslg > 0:
+        x_iso = xslg - xba
+        x_hr_per_pa = x_iso * 0.22  # ISO to HR approximation
+        x_single_per_pa = xba - x_hr_per_pa - reg_dbl - reg_trp
+        x_single_per_pa = max(x_single_per_pa, 0.05)
+
+        reg_hr = reg_hr * 0.70 + x_hr_per_pa * 0.30
+        reg_single = reg_single * 0.70 + x_single_per_pa * 0.30
+
+    # Barrel rate boost for power events
+    if barrel > 0:
+        barrel_adj = barrel / LG["barrel_rate"]
+        reg_hr *= (1 + (barrel_adj - 1) * 0.25)
+        reg_dbl *= (1 + (barrel_adj - 1) * 0.10)
+
+    # ── Contextual multipliers ──
+    context_mult = 1.0
+
+    # Opposing pitcher quality
+    if opp_p:
+        opp_fip = opp_p.get("fip", LG["fip"])
+        opp_whip = opp_p.get("whip", LG["whip"])
+        # Bad pitchers (high FIP) = more fantasy points
+        opp_adj = (opp_fip / LG["fip"] * 0.6 + opp_whip / LG["whip"] * 0.4)
+        context_mult *= (1 + (opp_adj - 1) * 0.35)
+
+    # BvP matchup
+    bvp_mult = 1.0
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+        bvp_slg = bvp.get("slg", LG["slg"])
+        bvp_avg = bvp.get("avg", LG["avg"])
+        bvp_quality = (bvp_slg / LG["slg"] * 0.6 + bvp_avg / LG["avg"] * 0.4)
+        bvp_weight = min(bvp["pa"] / 50, 0.25)
+        bvp_mult = 1 + (bvp_quality - 1) * bvp_weight
+
+    # Platoon advantage
+    platoon_mult = 1.0
+    if platoon and platoon.get("adjustment"):
+        platoon_mult = platoon["adjustment"]
+
+    # Park factor (blend general + HR)
+    park_mult = 1.0
+    if park:
+        pk = _park(park, PARK) * 0.55 + _park(park, PARK_HR) * 0.45
+        park_mult = 1 + (pk - 1) * 0.35
+
+    # Weather
+    wx_mult = 1.0
+    if wx:
+        wx_mult = (wx.get("weather_offense_mult", 1.0) * 0.5 +
+                   wx.get("weather_hr_mult", 1.0) * 0.5)
+
+    total_mult = context_mult * bvp_mult * platoon_mult * park_mult * wx_mult
+
+    # ── Calculate expected PA ──
+    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+
+    # ── Fantasy points per PA ──
+    # DK scoring: 1B=3, 2B=5, 3B=8, HR=10, RBI=2, R=2, BB/HBP=2, SB=5
+    fantasy_per_pa = (
+        reg_single * 3 +     # Singles
+        reg_dbl * 5 +         # Doubles
+        reg_trp * 8 +         # Triples
+        reg_hr * 10 +         # Home Runs
+        reg_bb * 2            # Walks/HBP
+    ) * total_mult
+
+    # Per-game events (RBI, Runs, SB) — not per PA
+    fantasy_per_game = (
+        reg_rbi * 2 +         # RBIs
+        reg_r * 2 +           # Runs
+        reg_sb * 5            # Stolen Bases
+    ) * total_mult
+
+    # Total projection = per-PA component * expected PA + per-game component
+    mu = max(fantasy_per_pa * exp_pa + fantasy_per_game, 2.0)
+
+    return {
+        "projection": round(mu, 2), "mu": mu,
+        "fantasy_per_pa": round(fantasy_per_pa, 3),
+        "expected_pa": round(exp_pa, 1),
+        "context_mult": round(total_mult, 3),
+    }
+
+
 def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
                             park=None, wx=None, ump=None, lineup_pos=None):
     """HITS + RUNS + RBIs combo — sum of individual projections."""
@@ -822,6 +975,7 @@ def calculate_over_under_probability(projection, line, prop_type):
         "rbis": 1.6, "runs": 1.4, "stolen_bases": 2.5,
         "hits_runs_rbis": 1.5, "pitching_outs": 1.3,
         "earned_runs": 2.2, "walks_allowed": 1.8, "walks": 1.8,
+        "hitter_fantasy_score": 1.6,
         "hits_allowed": 1.5, "singles": 1.3, "doubles": 2.5,
     }
     var_ratio = variance_ratios.get(prop_type, 1.5)
@@ -897,6 +1051,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         "batter_strikeouts": lambda: project_batter_strikeouts(
             b, opp, bvp, platoon, park_team, ump, lineup_pos),
         "walks": lambda: project_batter_walks(b, opp, ump, lineup_pos),
+        "hitter_fantasy_score": lambda: project_hitter_fantasy_score(
+            b, opp, bvp, platoon, park_team, weather, lineup_pos),
         "hits_runs_rbis": lambda: project_hits_runs_rbis(
             b, opp, bvp, platoon, park_team, weather, ump, lineup_pos),
         "singles": lambda: project_batter_hits(  # Singles ≈ Hits - XBH

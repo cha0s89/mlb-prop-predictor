@@ -9,7 +9,7 @@ from datetime import datetime
 
 
 PP_PROJECTIONS_URL = "https://partner-api.prizepicks.com/projections"
-PP_LEAGUE_MLB_ID = 2  # MLB league ID on PrizePicks
+MLB_LEAGUE_IDS = {"9", "43"}  # 9 = regular season, 43 = Spring Training
 
 # Map PrizePicks stat types to our internal names
 STAT_TYPE_MAP = {
@@ -30,11 +30,14 @@ STAT_TYPE_MAP = {
     "Doubles": "doubles",
     "Walks": "walks",
     "Batter Strikeouts": "batter_strikeouts",
+    "Hitter Fantasy Score": "hitter_fantasy_score",
+    "Fantasy Score": "hitter_fantasy_score",
 }
 
 PITCHER_PROPS = {"pitcher_strikeouts", "hits_allowed", "earned_runs", "walks_allowed", "pitching_outs"}
 BATTER_PROPS = {"hits", "total_bases", "home_runs", "rbis", "runs", "stolen_bases",
-                "hits_runs_rbis", "singles", "doubles", "walks", "batter_strikeouts"}
+                "hits_runs_rbis", "singles", "doubles", "walks", "batter_strikeouts",
+                "hitter_fantasy_score"}
 
 
 def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
@@ -81,10 +84,18 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
     rows = []
     for proj in projections:
         attrs = proj.get("attributes", {})
-        league = attrs.get("league", "")
 
-        # Filter to MLB only
-        if league != "MLB":
+        # Filter to MLB only — league ID is in relationships, NOT attributes
+        league_id = str(
+            proj.get("relationships", {})
+                .get("league", {})
+                .get("data", {})
+                .get("id", "")
+        )
+        game_id = attrs.get("game_id", "")
+
+        is_mlb = league_id in MLB_LEAGUE_IDS or str(game_id).startswith("MLB_")
+        if not is_mlb:
             continue
 
         stat_type_raw = attrs.get("stat_type", "")
@@ -100,6 +111,8 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
         if line_score is None:
             continue
 
+        league_label = "MLB" if league_id == "9" else ("Spring Training" if league_id == "43" else "MLB")
+
         rows.append({
             "player_name": player_info.get("name", "Unknown"),
             "player_id": player_id,
@@ -111,7 +124,7 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
             "is_pitcher_prop": is_pitcher,
             "start_time": attrs.get("start_time", ""),
             "description": attrs.get("description", ""),
-            "league": league,
+            "league": league_label,
         })
 
     df = pd.DataFrame(rows)

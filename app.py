@@ -27,6 +27,14 @@ from src.database import (
     get_accuracy_stats, get_graded_predictions, get_ungraded_predictions,
     grade_prediction,
 )
+from src.stats import fetch_batting_leaders, fetch_pitching_leaders
+from src.slips import (
+    init_slips_table, create_slip, get_slips, get_slip_picks,
+    get_slip_pnl, grade_slip_pick, finalize_slip, PAYOUTS, BREAKEVEN,
+)
+from src.autograder import auto_grade_date, auto_grade_yesterday
+from src.autolearn import run_adjustment_cycle, load_current_weights, get_weight_history
+from src.spring import get_player_injury_status, get_spring_form_multiplier
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -59,11 +67,100 @@ def pct(v): return f"{v*100:.1f}%" if isinstance(v, (int, float)) else str(v)
 def badge(r): return f'<span class="badge badge-{r.lower()}">{r}</span>'
 def pick_span(p): return f'<span class="{"more" if p=="MORE" else "less"}">{p}</span>'
 
+
+@st.cache_data(ttl=3600)
+def load_batting_stats():
+    """Load FanGraphs batting leaders. During Spring Training or early season, pull prior year."""
+    from datetime import datetime
+    month = datetime.now().month
+    year = datetime.now().year
+    # During offseason/Spring Training/early season (before enough 2026 data), use prior year
+    df = fetch_batting_leaders(year, min_pa=50)
+    if df.empty or len(df) < 50:
+        df = fetch_batting_leaders(year - 1, min_pa=50)
+    if df.empty or len(df) < 50:
+        df = fetch_batting_leaders(year - 2, min_pa=50)
+    return df
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize player name for matching: lowercase, strip accents, remove Jr/Sr/III."""
+    import unicodedata
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    name = name.lower().strip()
+    for suffix in [" jr.", " jr", " sr.", " sr", " iii", " ii", " iv"]:
+        name = name.replace(suffix, "")
+    return name.strip()
+
+
+def match_player_stats(player_name: str, batting_df: pd.DataFrame) -> pd.Series:
+    """Match PrizePicks player name to FanGraphs batting row."""
+    if batting_df.empty or "Name" not in batting_df.columns:
+        return None
+    norm_target = _normalize_name(player_name)
+    # Try exact match (normalized)
+    for idx, row in batting_df.iterrows():
+        if _normalize_name(str(row.get("Name", ""))) == norm_target:
+            return row
+    # Try last name + first initial
+    parts = norm_target.split()
+    if len(parts) >= 2:
+        last = parts[-1]
+        first_init = parts[0][0] if parts[0] else ""
+        for idx, row in batting_df.iterrows():
+            rn = _normalize_name(str(row.get("Name", "")))
+            rparts = rn.split()
+            if len(rparts) >= 2:
+                if rparts[-1] == last and rparts[0] and rparts[0][0] == first_init:
+                    return row
+    # Try unique last name match
+    if parts:
+        last = parts[-1]
+        matches = []
+        for idx, row in batting_df.iterrows():
+            rn = _normalize_name(str(row.get("Name", "")))
+            if rn.split()[-1] == last if rn.split() else False:
+                matches.append(row)
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+def build_batter_profile(stats_row: pd.Series) -> dict:
+    """Convert a FanGraphs DataFrame row into the batter profile dict the predictor expects."""
+    def safe_pct(val):
+        """Handle K% and BB% — FanGraphs sometimes returns as strings with % signs."""
+        if isinstance(val, str):
+            return float(val.replace("%", "").strip())
+        return float(val) if val else 0.0
+
+    return {
+        "pa": int(stats_row.get("PA", 0)),
+        "avg": float(stats_row.get("AVG", 0)),
+        "obp": float(stats_row.get("OBP", 0)),
+        "slg": float(stats_row.get("SLG", 0)),
+        "iso": float(stats_row.get("ISO", 0)),
+        "woba": float(stats_row.get("wOBA", 0)),
+        "bb_rate": safe_pct(stats_row.get("BB%", 0)),
+        "k_rate": safe_pct(stats_row.get("K%", 0)),
+        "hr": int(stats_row.get("HR", 0)),
+        "sb": int(stats_row.get("SB", 0)),
+        "rbi": int(stats_row.get("RBI", 0)),
+        "r": int(stats_row.get("R", 0)),
+        "2b": int(stats_row.get("2B", 0)),
+        "3b": int(stats_row.get("3B", 0)),
+        "babip": float(stats_row.get("BABIP", 0)),
+        "sprint_speed": 27.0,  # Default; Statcast-sourced if available
+        "xba": 0, "xslg": 0,  # Statcast expected — filled if available
+        "barrel_rate": 0, "recent_barrel_rate": 0, "recent_hard_hit_pct": 0,
+    }
+
 init_db()
+init_slips_table()
 
 st.markdown("""<div class="hero"><h1>⚾ MLB Prop <span class="accent">Edge</span></h1><p class="sub">Sharp book devigging × PrizePicks line comparison × Statcast confirmation</p></div>""", unsafe_allow_html=True)
 
-tab_edge, tab_picks, tab_dash, tab_grade, tab_setup = st.tabs(["🎯 FIND EDGES", "📋 ALL LINES", "📊 DASHBOARD", "✅ GRADE", "⚙️ SETUP"])
+tab_edge, tab_slips, tab_picks, tab_dash, tab_grade, tab_setup = st.tabs(["🎯 FIND EDGES", "🎫 MY SLIPS", "📋 ALL LINES", "📊 DASHBOARD", "✅ GRADE", "⚙️ SETUP"])
 
 with tab_edge:
     api_key = get_api_key()
@@ -146,6 +243,10 @@ with tab_edge:
 
         if not has_sharp:
             st.markdown('<div class="section-hdr">Projection Analysis (No Sharp Odds)</div>', unsafe_allow_html=True)
+            with st.spinner("Loading player stats..."):
+                batting_df = load_batting_stats()
+            if not batting_df.empty:
+                st.caption(f"Loaded {len(batting_df)} batters from FanGraphs")
             preds = []
             for _, row in pp_lines.iterrows():
                 team = row.get("team","")
@@ -155,7 +256,21 @@ with tab_edge:
                     if r in STADIUMS:
                         try: wx = fetch_game_weather(r)
                         except: pass
-                p = generate_prediction(player_name=row["player_name"], stat_type=row["stat_type"], stat_internal=row["stat_internal"], line=row["line"], park_team=resolve_team(team) if team else None, weather=wx)
+                # Build batter profile from FanGraphs stats
+                batter_profile = None
+                if not batting_df.empty:
+                    matched = match_player_stats(row["player_name"], batting_df)
+                    if matched is not None:
+                        batter_profile = build_batter_profile(matched)
+                p = generate_prediction(
+                    player_name=row["player_name"],
+                    stat_type=row["stat_type"],
+                    stat_internal=row["stat_internal"],
+                    line=row["line"],
+                    batter_profile=batter_profile,
+                    park_team=resolve_team(team) if team else None,
+                    weather=wx,
+                )
                 p["team"] = team
                 preds.append(p)
             pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
@@ -164,6 +279,54 @@ with tab_edge:
             d["Conf"] = d["Conf"].apply(lambda x: f"{x*100:.1f}%")
             d["Edge"] = d["Edge"].apply(lambda x: f"{x*100:.1f}%")
             st.dataframe(d, hide_index=True, use_container_width=True)
+
+with tab_slips:
+    st.markdown('<div class="section-hdr">PrizePicks Slip Tracker</div>', unsafe_allow_html=True)
+    # P&L Summary
+    pnl = get_slip_pnl(30)
+    if pnl["slips_total"] > 0:
+        c1,c2,c3,c4 = st.columns(4)
+        cls = "g" if pnl["net_profit"] >= 0 else "r"
+        with c1: st.markdown(f'<div class="card"><div class="lbl">NET P&L</div><div class="val {cls}">${pnl["net_profit"]:+.2f}</div></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="card"><div class="lbl">ROI</div><div class="val {cls}">{pnl["roi"]:+.1f}%</div></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="card"><div class="lbl">WAGERED</div><div class="val">${pnl["total_wagered"]:.0f}</div></div>', unsafe_allow_html=True)
+        with c4: st.markdown(f'<div class="card"><div class="lbl">RECORD</div><div class="val">{pnl["slips_won"]}W-{pnl["slips_lost"]}L</div></div>', unsafe_allow_html=True)
+    # Create new slip
+    with st.expander("Create New Slip"):
+        sl_date = st.date_input("Game date", value=date.today(), key="slip_date")
+        sl_type = st.selectbox("Entry type", ["5_flex", "6_flex", "4_flex", "3_power", "2_power"])
+        sl_amount = st.number_input("Entry amount ($)", min_value=1.0, value=5.0, step=1.0)
+        num = int(sl_type[0])
+        st.caption(f"Break-even: {BREAKEVEN.get(sl_type, 0.55)*100:.1f}%")
+        slip_picks_input = []
+        for i in range(num):
+            cols = st.columns([3, 2, 1, 1])
+            with cols[0]: pn = st.text_input(f"Player {i+1}", key=f"sp_{i}")
+            with cols[1]: stype = st.text_input("Prop", key=f"st_{i}")
+            with cols[2]: ln = st.number_input("Line", min_value=0.0, step=0.5, key=f"sl_{i}")
+            with cols[3]: pk = st.selectbox("Pick", ["MORE", "LESS"], key=f"spk_{i}")
+            if pn and stype:
+                slip_picks_input.append({"player_name": pn, "stat_type": stype, "line": ln, "pick": pk})
+        if st.button("Save Slip", type="primary") and len(slip_picks_input) == num:
+            sid = create_slip(sl_date.isoformat(), sl_type, sl_amount, slip_picks_input)
+            st.success(f"Slip #{sid} saved!")
+            st.rerun()
+    # Show recent slips
+    slips_df = get_slips(20)
+    if not slips_df.empty:
+        st.markdown('<div class="section-hdr">Recent Slips</div>', unsafe_allow_html=True)
+        for _, slip in slips_df.iterrows():
+            status_icon = {"win": "🟢", "loss": "🔴", "partial": "🟡", "push": "⚪", "pending": "⏳"}.get(slip["status"], "⏳")
+            with st.expander(f"{status_icon} Slip #{slip['id']} — {slip['entry_type']} · ${slip['entry_amount']:.0f} · {slip['game_date']} · {slip['status'].upper()}"):
+                sp = get_slip_picks(slip["id"])
+                if not sp.empty:
+                    for _, p in sp.iterrows():
+                        res_icon = {"W": "✅", "L": "❌", "push": "➖"}.get(p.get("result"), "⏳")
+                        st.markdown(f"{res_icon} **{p['player_name']}** — {p['stat_type']} · Line: `{p['line']}` · **{p['pick']}**" + (f" · Actual: `{p['actual_result']}`" if p.get("actual_result") else ""))
+                if slip["status"] != "pending":
+                    st.markdown(f"**Payout:** {slip['payout_mult']}x = **${slip['payout_amount']:.2f}** · Net: **${slip['net_profit']:+.2f}**")
+    else:
+        st.info("No slips yet. Create one above or from the Find Edges tab.")
 
 with tab_picks:
     st.markdown('<div class="section-hdr">All PrizePicks MLB Lines</div>', unsafe_allow_html=True)
@@ -203,8 +366,71 @@ with tab_dash:
             rows=[{"Pick":d,"W-L":f"{stats.get('by_direction',{}).get(d,{}).get('wins',0)}-{stats.get('by_direction',{}).get(d,{}).get('total',0)-stats.get('by_direction',{}).get(d,{}).get('wins',0)}","Acc":pct(stats.get('by_direction',{}).get(d,{}).get('accuracy',0))} for d in ["MORE","LESS"]]
             st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
+    # Model Tuning Section
+    st.markdown('<div class="section-hdr">Model Tuning</div>', unsafe_allow_html=True)
+    try:
+        weights = load_current_weights()
+        st.caption(f"Current model version: **{weights.get('version', 'v001')}** · Last updated: {weights.get('last_updated', 'baseline')}")
+    except Exception:
+        st.caption("Model weights: baseline (default)")
+
+    tune_col1, tune_col2 = st.columns(2)
+    with tune_col1:
+        if st.button("Run Model Tuning", type="secondary"):
+            with st.spinner("Analyzing graded picks and adjusting weights..."):
+                try:
+                    result = run_adjustment_cycle(min_sample=25)
+                    if result.get("adjusted"):
+                        st.success(f"Weights adjusted! New version: {result.get('version_new', '?')}")
+                        if result.get("changes"):
+                            for ch in result["changes"][:5]:
+                                st.markdown(f"- {ch.get('description', ch)}")
+                    else:
+                        st.info(result.get("reason", "No adjustments needed (insufficient data or already optimal)"))
+                except Exception as e:
+                    st.error(f"Tuning failed: {e}")
+    with tune_col2:
+        try:
+            history = get_weight_history()
+            if history:
+                st.markdown(f"**{len(history)} adjustments** in history")
+                for h in history[-3:]:
+                    st.caption(f"{h.get('timestamp', '?')}: {h.get('description', 'adjustment')}")
+        except Exception:
+            st.caption("No adjustment history yet")
+
 with tab_grade:
     st.markdown('<div class="section-hdr">Grade Past Picks</div>', unsafe_allow_html=True)
+
+    # Auto-grade button
+    ag_col1, ag_col2 = st.columns([1, 3])
+    with ag_col1:
+        if st.button("Auto-Grade Yesterday", type="primary"):
+            with st.spinner("Pulling box scores and grading..."):
+                try:
+                    result = auto_grade_yesterday()
+                    if result["graded"] > 0:
+                        wins = sum(1 for r in result["results"] if r.get("result") == "W")
+                        losses = sum(1 for r in result["results"] if r.get("result") == "L")
+                        st.success(f"Auto-graded {result['graded']} picks: {wins}W-{losses}L")
+                    else:
+                        st.info("No picks to auto-grade (games may not be final yet)")
+                    if result.get("errors"):
+                        st.warning(f"{len(result['errors'])} errors: {result['errors'][:3]}")
+                except Exception as e:
+                    st.error(f"Auto-grade failed: {e}")
+    with ag_col2:
+        ag_date = st.date_input("Or auto-grade specific date", value=date.today()-timedelta(days=1), key="ag_date")
+        if st.button("Auto-Grade This Date"):
+            with st.spinner("Grading..."):
+                try:
+                    result = auto_grade_date(ag_date.isoformat())
+                    st.success(f"Graded {result['graded']} picks")
+                except Exception as e:
+                    st.error(f"Failed: {e}")
+
+    st.markdown("---")
+    st.markdown("**Manual Grading**")
     gd = st.date_input("Date", value=date.today()-timedelta(days=1))
     ug = get_ungraded_predictions(gd.isoformat())
     if ug.empty: st.info(f"Nothing to grade for {gd}.")
