@@ -70,11 +70,17 @@ def pick_span(p): return f'<span class="{"more" if p=="MORE" else "less"}">{p}</
 
 @st.cache_data(ttl=3600)
 def load_batting_stats():
-    """Load FanGraphs batting leaders. During Spring Training or early season, pull prior year."""
+    """Load batting leaders from cached CSV first, fall back to pybaseball."""
+    import os
+    cache_path = os.path.join(os.path.dirname(__file__), "data", "batting_stats_cache.csv")
+    if os.path.exists(cache_path):
+        df = pd.read_csv(cache_path)
+        if len(df) >= 50:
+            return df
+
+    # Fallback: try pybaseball (won't work on Streamlit Cloud)
     from datetime import datetime
-    month = datetime.now().month
     year = datetime.now().year
-    # During offseason/Spring Training/early season (before enough 2026 data), use prior year
     df = fetch_batting_leaders(year, min_pa=50)
     if df.empty or len(df) < 50:
         df = fetch_batting_leaders(year - 1, min_pa=50)
