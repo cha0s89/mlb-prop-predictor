@@ -243,9 +243,16 @@ with tab_edge:
 
         if not has_sharp:
             st.markdown('<div class="section-hdr">Projection Analysis (No Sharp Odds)</div>', unsafe_allow_html=True)
+            stats_failed = False
             with st.spinner("Loading player stats..."):
-                batting_df = load_batting_stats()
-            if not batting_df.empty:
+                try:
+                    batting_df = load_batting_stats()
+                except Exception as e:
+                    batting_df = pd.DataFrame()
+                    stats_failed = True
+            if stats_failed or batting_df.empty:
+                st.warning("⚠️ Could not load player stats — using league averages for projections.")
+            else:
                 st.caption(f"Loaded {len(batting_df)} batters from FanGraphs")
             preds = []
             for _, row in pp_lines.iterrows():
