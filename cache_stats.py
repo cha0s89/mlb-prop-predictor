@@ -27,9 +27,10 @@ def _fetch_fangraphs(year: int) -> pd.DataFrame | None:
         cache.enable()
         df = batting_stats(year, qual=MIN_PA)
         if df is not None and len(df) >= 50:
-            # Normalise column subset to our standard schema
+            # Normalise column subset to our standard schema (include Statcast expected stats)
             keep = [c for c in ["Name","Team","G","PA","AB","H","2B","3B","HR","R","RBI","SB",
-                                 "BB%","K%","AVG","OBP","SLG","wOBA","ISO","BABIP"] if c in df.columns]
+                                 "BB%","K%","AVG","OBP","SLG","wOBA","ISO","BABIP",
+                                 "xBA","xSLG","xwOBA","Barrel%","HardHit%"] if c in df.columns]
             return df[keep]
     except Exception as e:
         print(f"  FanGraphs failed for {year}: {e}")
@@ -188,18 +189,53 @@ def _fetch_pitching_mlb_api(year: int) -> pd.DataFrame | None:
     return None
 
 
+def _fetch_statcast_expected(year: int) -> pd.DataFrame | None:
+    """Fetch Statcast expected stats (xBA, xSLG, xwOBA, Barrel%) via pybaseball."""
+    try:
+        from pybaseball import statcast_batter_expected_stats, cache
+        cache.enable()
+        df = statcast_batter_expected_stats(year, min_pa=MIN_PA)
+        if df is not None and not df.empty:
+            # Map to columns we need
+            cols = {}
+            for orig, target in [("last_name, first_name", "Name"), ("pa", "PA"),
+                                  ("est_ba", "xBA"), ("est_slg", "xSLG"),
+                                  ("est_woba", "xwOBA"), ("brl_percent", "Barrel%")]:
+                if orig in df.columns:
+                    cols[orig] = target
+            if cols:
+                df = df.rename(columns=cols)
+            keep = [c for c in ["Name", "xBA", "xSLG", "xwOBA", "Barrel%"] if c in df.columns]
+            if keep:
+                return df[keep]
+    except Exception as e:
+        print(f"  Statcast expected stats failed for {year}: {e}")
+    return None
+
+
 def _cache_batting(year: int) -> bool:
-    """Cache batting stats. Returns True on success."""
+    """Cache batting stats with Statcast expected stats merged in. Returns True on success."""
     for y in [year, year - 1, year - 2]:
         print(f"Fetching {y} batting leaders (min {MIN_PA} PA)...")
         df = _fetch_fangraphs(y)
         if df is not None and len(df) >= 50:
+            # Try to merge Statcast expected stats if not already in FanGraphs data
+            if "xBA" not in df.columns:
+                print(f"  Fetching Statcast expected stats for {y}...")
+                sc = _fetch_statcast_expected(y)
+                if sc is not None and "Name" in sc.columns:
+                    df = df.merge(sc, on="Name", how="left", suffixes=("", "_sc"))
             df.to_csv(BATTING_OUT_PATH, index=False)
             print(f"Saved {len(df)} rows to {BATTING_OUT_PATH} (FanGraphs {y})")
             return True
         print(f"  Trying MLB Stats API for {y}...")
         df = _fetch_mlb_api(y)
         if df is not None and len(df) >= 50:
+            # Try to merge Statcast expected stats
+            print(f"  Fetching Statcast expected stats for {y}...")
+            sc = _fetch_statcast_expected(y)
+            if sc is not None and "Name" in sc.columns:
+                df = df.merge(sc, on="Name", how="left", suffixes=("", "_sc"))
             df.to_csv(BATTING_OUT_PATH, index=False)
             print(f"Saved {len(df)} rows to {BATTING_OUT_PATH} (MLB API {y})")
             return True

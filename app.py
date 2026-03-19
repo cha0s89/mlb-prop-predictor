@@ -39,6 +39,7 @@ from src.spring import (
     fetch_spring_training_stats, fetch_injuries,
 )
 from src.trends import get_batter_trend
+from src.explain import build_explanation, format_explanation_text
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -64,6 +65,23 @@ st.markdown("""
     .info-strip .hl { color: #E8ECF1; font-weight: 600; font-family: 'JetBrains Mono'; }
     .section-hdr { font-weight: 600; font-size: 1.05rem; color: rgba(232,236,241,0.8); margin: 1.2rem 0 0.6rem 0; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
     [data-testid="stMetricValue"] { font-family: 'JetBrains Mono'; font-weight: 700; }
+    .best-play { background: linear-gradient(145deg, #121929, #0f1520); border: 1px solid rgba(0,200,83,0.18); border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 0.6rem; }
+    .best-play .bp-name { font-weight: 700; font-size: 1rem; color: #E8ECF1; }
+    .best-play .bp-prop { font-size: 0.8rem; color: rgba(232,236,241,0.5); }
+    .best-play .bp-pick { font-family: 'JetBrains Mono'; font-weight: 700; font-size: 1.1rem; }
+    .best-play .bp-pick.more { color: #00C853; } .best-play .bp-pick.less { color: #FF5252; }
+    .best-play .bp-conf { font-family: 'JetBrains Mono'; font-size: 0.8rem; color: rgba(232,236,241,0.6); }
+    .factor-bar { display: flex; align-items: center; gap: 0.4rem; margin: 0.25rem 0; font-size: 0.82rem; }
+    .factor-bar .f-name { color: rgba(232,236,241,0.6); min-width: 120px; }
+    .factor-bar .f-impact { font-family: 'JetBrains Mono'; font-weight: 600; }
+    .factor-bar .f-impact.pos { color: #00C853; } .factor-bar .f-impact.neg { color: #FF5252; } .factor-bar .f-impact.neu { color: rgba(232,236,241,0.4); }
+    @media (max-width: 768px) {
+        .stApp [data-testid="stDataFrame"] { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+        .stApp [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+        .hero h1 { font-size: 1.4rem; } .hero .sub { font-size: 0.75rem; }
+        .card .val { font-size: 1.2rem; } .card .lbl { font-size: 0.6rem; }
+        .stApp button[kind="secondary"], .stApp [data-testid="stTab"] { min-height: 44px; font-size: 0.9rem; padding: 0.5rem 0.8rem; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -161,8 +179,12 @@ def build_batter_profile(stats_row: pd.Series) -> dict:
         "3b": int(stats_row.get("3B", 0)),
         "babip": float(stats_row.get("BABIP", 0)),
         "sprint_speed": 27.0,  # Default; Statcast-sourced if available
-        "xba": 0, "xslg": 0,  # Statcast expected — filled if available
-        "barrel_rate": 0, "recent_barrel_rate": 0, "recent_hard_hit_pct": 0,
+        "xba": float(stats_row.get("xBA", 0) or 0),
+        "xslg": float(stats_row.get("xSLG", 0) or 0),
+        "xwoba": float(stats_row.get("xwOBA", 0) or 0),
+        "barrel_rate": float(stats_row.get("Barrel%", 0) or 0),
+        "recent_barrel_rate": float(stats_row.get("Barrel%", 0) or 0),
+        "recent_hard_hit_pct": float(stats_row.get("HardHit%", 0) or 0),
     }
 
 
@@ -230,6 +252,59 @@ def build_pitcher_profile(stats_row) -> dict:
         "bb_pct": safe_pct(stats_row.get("BB%", 0)),
         "hr9": float(stats_row.get("HR/9", 0)),
     }
+
+
+def save_daily_log(preds_list: list, log_date: str = None):
+    """Save a snapshot of today's projections to data/daily_logs/<date>.json."""
+    import json, os
+    log_date = log_date or date.today().isoformat()
+    log_dir = os.path.join(os.path.dirname(__file__), "data", "daily_logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f"{log_date}.json")
+    snapshot = []
+    for p in preds_list:
+        snapshot.append({
+            "player_name": p.get("player_name"),
+            "stat_type": p.get("stat_type"),
+            "stat_internal": p.get("stat_internal"),
+            "line": p.get("line"),
+            "projection": p.get("projection"),
+            "pick": p.get("pick"),
+            "confidence": p.get("confidence"),
+            "edge": p.get("edge"),
+            "rating": p.get("rating"),
+            "spring_mult": p.get("spring_mult"),
+            "trend_mult": p.get("trend_mult"),
+            "buy_low": p.get("buy_low"),
+            "team": p.get("team"),
+        })
+    with open(log_path, "w") as f:
+        json.dump({"date": log_date, "model_version": "v2", "predictions": snapshot}, f, indent=2)
+    return log_path
+
+
+def get_bankroll_history() -> list[dict]:
+    """Build a running bankroll balance from slip history."""
+    conn_fn = __import__("src.database", fromlist=["get_connection"]).get_connection
+    conn = conn_fn()
+    slips = pd.read_sql_query(
+        "SELECT * FROM slips WHERE status != 'pending' ORDER BY game_date ASC, id ASC", conn
+    )
+    conn.close()
+    if slips.empty:
+        return []
+    history = []
+    # Get starting bankroll from session state or default
+    balance = st.session_state.get("starting_bankroll", 100.0)
+    history.append({"date": slips.iloc[0]["game_date"], "balance": balance, "label": "Start"})
+    for _, s in slips.iterrows():
+        balance += s["net_profit"]
+        history.append({
+            "date": s["game_date"],
+            "balance": round(balance, 2),
+            "label": f"Slip #{s['id']}: {'+' if s['net_profit']>=0 else ''}{s['net_profit']:.2f}",
+        })
+    return history
 
 
 init_db()
@@ -479,6 +554,24 @@ with tab_edge:
             if preds:
                 pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
 
+                # ── Today's Best Plays ──
+                top_a = pdf[pdf["rating"] == "A"].head(5)
+                if not top_a.empty:
+                    st.markdown('<div class="section-hdr">Today\'s Best Plays</div>', unsafe_allow_html=True)
+                    bp_cols = st.columns(min(len(top_a), 5))
+                    for idx, (_, tp) in enumerate(top_a.iterrows()):
+                        if idx >= 5:
+                            break
+                        pick_cls = "more" if tp["pick"] == "MORE" else "less"
+                        bl_tag = ' <span style="color:#FFB300;font-size:0.7rem">🎯 BUY LOW</span>' if tp.get("buy_low") else ""
+                        with bp_cols[idx]:
+                            st.markdown(f'''<div class="best-play">
+                                <div class="bp-name">{tp["player_name"]}{bl_tag}</div>
+                                <div class="bp-prop">{tp["stat_type"]} · Line {tp["line"]}</div>
+                                <div class="bp-pick {pick_cls}">{tp["pick"]} → {tp["projection"]}</div>
+                                <div class="bp-conf">{tp["confidence"]*100:.1f}% conf · {tp["edge"]*100:.1f}% edge</div>
+                            </div>''', unsafe_allow_html=True)
+
                 # ── Filters ──
                 f1, f2 = st.columns(2)
                 prop_types_available = sorted(pdf["stat_type"].unique().tolist())
@@ -492,40 +585,87 @@ with tab_edge:
                 if proj_prop_filter != "All":
                     filtered = filtered[filtered["stat_type"] == proj_prop_filter]
 
-                d = filtered[["player_name","team","stat_type","line","projection","pick","confidence","edge","rating","injury_status","spring_badge","trend_badge","buy_low"]].head(40).copy()
-                d.columns = ["Player","Team","Prop","Line","Proj","Pick","Conf","Edge","Grade","Health","Spring","Trend","BuyLow"]
-                d["Conf"] = d["Conf"].apply(lambda x: f"{x*100:.1f}%")
-                d["Edge"] = d["Edge"].apply(lambda x: f"{x*100:.1f}%")
-                d["Health"] = d["Health"].map({"IL": "🔴 IL", "day-to-day": "🟡 DTD", "active": "🟢"})
-                d["Spring"] = d["Spring"].map({"hot": "🔥 Hot", "cold": "❄️ Cold", "neutral": "➖ Normal"})
-                d["Trend"] = d["Trend"].map({"hot": "🔥 Hot", "cold": "❄️ Cold", "neutral": "➖ Normal"})
-                d["BuyLow"] = d["BuyLow"].apply(lambda x: "🎯 BUY LOW" if x else "")
-                st.dataframe(d, hide_index=True, use_container_width=True)
-
-                # ── Checkboxes for slip builder ──
-                st.markdown('<div class="section-hdr">Build Slip from Projections</div>', unsafe_allow_html=True)
+                # ── Unified projection table with checkboxes ──
                 slip_candidates = filtered.head(40).reset_index(drop=True)
                 selected_picks = []
-                cols_per_row = 2
-                rows = (min(len(slip_candidates), 20) + cols_per_row - 1) // cols_per_row
-                for r_idx in range(rows):
-                    cols = st.columns(cols_per_row)
-                    for c_idx in range(cols_per_row):
-                        pick_idx = r_idx * cols_per_row + c_idx
-                        if pick_idx >= len(slip_candidates) or pick_idx >= 20:
-                            break
-                        pick_row = slip_candidates.iloc[pick_idx]
-                        label = f"{pick_row['player_name']} — {pick_row['stat_type']} {pick_row['pick']} {pick_row['line']} ({pick_row['rating']})"
-                        with cols[c_idx]:
-                            if st.checkbox(label, key=f"proj_pick_{pick_idx}"):
-                                selected_picks.append({
-                                    "player_name": pick_row["player_name"],
-                                    "stat_type": pick_row["stat_type"],
-                                    "line": pick_row["line"],
-                                    "pick": pick_row["pick"],
-                                })
 
+                for pick_idx, (_, pick_row) in enumerate(slip_candidates.iterrows()):
+                    if pick_idx >= 40:
+                        break
+                    health_icon = {"IL": "🔴 IL", "day-to-day": "🟡 DTD", "active": "🟢"}.get(pick_row.get("injury_status", "active"), "🟢")
+                    spring_icon = {"hot": "🔥", "cold": "❄️", "neutral": "➖"}.get(pick_row.get("spring_badge", "neutral"), "➖")
+                    trend_icon = {"hot": "🔥", "cold": "❄️", "neutral": "➖"}.get(pick_row.get("trend_badge", "neutral"), "➖")
+                    buy_tag = " 🎯" if pick_row.get("buy_low") else ""
+                    pick_cls = "more" if pick_row["pick"] == "MORE" else "less"
+
+                    chk_col, info_col = st.columns([0.05, 0.95])
+                    with chk_col:
+                        checked = st.checkbox("", key=f"proj_pick_{pick_idx}", label_visibility="collapsed")
+                    with info_col:
+                        conf_pct = f"{pick_row['confidence']*100:.1f}%"
+                        edge_pct = f"{pick_row['edge']*100:.1f}%"
+                        with st.expander(
+                            f"{badge(pick_row['rating'])} **{pick_row['player_name']}** · {pick_row.get('team','')} · "
+                            f"{pick_row['stat_type']} {pick_row['line']} → "
+                            f"<span class='{pick_cls}'>{pick_row['pick']}</span> {pick_row['projection']} · "
+                            f"{trend_icon} · Conf {conf_pct} · Edge {edge_pct} · "
+                            f"{health_icon} {spring_icon}{buy_tag}",
+                        ):
+                            # Factor breakdown
+                            fc1, fc2 = st.columns(2)
+                            with fc1:
+                                st.markdown("**Projection Breakdown**")
+                                factors = []
+                                # Park factor
+                                park_team = resolve_team(pick_row.get("team", "")) if pick_row.get("team") else None
+                                if park_team and park_team in PARK_FACTORS:
+                                    pf = PARK_FACTORS[park_team]
+                                    pf_pct = (pf - 1.0) * 100
+                                    factors.append(("Park factor", pf_pct))
+                                # Weather
+                                if pick_row.get("team"):
+                                    rt = resolve_team(pick_row["team"])
+                                    wxd = weather_cache.get(rt)
+                                    if wxd and wxd.get("weather_offense_mult"):
+                                        wx_pct = (wxd["weather_offense_mult"] - 1.0) * 100
+                                        factors.append(("Weather", wx_pct))
+                                # Spring form
+                                sm = pick_row.get("spring_mult", 1.0)
+                                if sm != 1.0:
+                                    factors.append(("Spring form", (sm - 1.0) * 100))
+                                # Trend
+                                tm = pick_row.get("trend_mult", 1.0)
+                                if tm != 1.0:
+                                    factors.append(("Recent trend", (tm - 1.0) * 100))
+                                # Buy-low
+                                if pick_row.get("buy_low"):
+                                    factors.append(("Elite buy-low boost", 4.0))
+
+                                if factors:
+                                    for fname, fpct in factors:
+                                        cls = "pos" if fpct > 0.1 else ("neg" if fpct < -0.1 else "neu")
+                                        st.markdown(f'<div class="factor-bar"><span class="f-name">{fname}</span><span class="f-impact {cls}">{fpct:+.1f}%</span></div>', unsafe_allow_html=True)
+                                else:
+                                    st.caption("Base projection (no major adjustments)")
+                            with fc2:
+                                st.markdown("**Key Stats**")
+                                st.caption(f"Projection: {pick_row['projection']} vs Line: {pick_row['line']}")
+                                st.caption(f"Confidence: {conf_pct} · Edge: {edge_pct}")
+                                st.caption(f"Health: {health_icon} · Spring: {spring_icon} · Trend: {trend_icon}")
+                                if pick_row.get("buy_low"):
+                                    st.success("🎯 BUY LOW — Elite player in cold streak, regression expected")
+
+                    if checked:
+                        selected_picks.append({
+                            "player_name": pick_row["player_name"],
+                            "stat_type": pick_row["stat_type"],
+                            "line": pick_row["line"],
+                            "pick": pick_row["pick"],
+                        })
+
+                # ── Slip builder ──
                 if selected_picks:
+                    st.markdown('<div class="section-hdr">Build Slip</div>', unsafe_allow_html=True)
                     st.success(f"{len(selected_picks)} pick(s) selected")
                     sc1, sc2 = st.columns(2)
                     with sc1:
@@ -533,12 +673,16 @@ with tab_edge:
                         proj_slip_type = st.selectbox("Slip type", slip_type_opts, key="proj_slip_type")
                     with sc2:
                         proj_slip_amount = st.number_input("Entry ($)", min_value=1.0, value=5.0, step=1.0, key="proj_slip_amt")
-                    if st.button("💾 Save Slip from Projections", type="primary", key="proj_save_slip"):
+                    if st.button("Lock In Picks", type="primary", key="proj_save_slip"):
                         num_needed = int(proj_slip_type[0])
                         if len(selected_picks) == num_needed:
-                            from datetime import date as _date
-                            sid = create_slip(_date.today().isoformat(), proj_slip_type, proj_slip_amount, selected_picks)
-                            st.success(f"Slip #{sid} saved with {num_needed} picks!")
+                            sid = create_slip(date.today().isoformat(), proj_slip_type, proj_slip_amount, selected_picks)
+                            # Save daily log snapshot
+                            try:
+                                save_daily_log(preds)
+                            except Exception:
+                                pass
+                            st.success(f"Slip #{sid} saved! Daily projection log saved.")
                             st.rerun()
                         else:
                             st.warning(f"Select exactly {num_needed} picks for a {proj_slip_type}.")
@@ -554,6 +698,36 @@ with tab_slips:
         with c2: st.markdown(f'<div class="card"><div class="lbl">ROI</div><div class="val {cls}">{pnl["roi"]:+.1f}%</div></div>', unsafe_allow_html=True)
         with c3: st.markdown(f'<div class="card"><div class="lbl">WAGERED</div><div class="val">${pnl["total_wagered"]:.0f}</div></div>', unsafe_allow_html=True)
         with c4: st.markdown(f'<div class="card"><div class="lbl">RECORD</div><div class="val">{pnl["slips_won"]}W-{pnl["slips_lost"]}L</div></div>', unsafe_allow_html=True)
+
+        # Bankroll chart
+        br_history = get_bankroll_history()
+        if len(br_history) >= 2:
+            st.markdown('<div class="section-hdr">Bankroll Tracker</div>', unsafe_allow_html=True)
+            balances = [h["balance"] for h in br_history]
+            high_water = max(balances)
+            max_dd = min(b - max(balances[:i+1]) for i, b in enumerate(balances))
+            brc1, brc2, brc3 = st.columns(3)
+            starting = st.session_state.get("starting_bankroll", 100.0)
+            with brc1: st.metric("Current Bankroll", f"${balances[-1]:.2f}", f"{balances[-1]-starting:+.2f}")
+            with brc2: st.metric("High Water Mark", f"${high_water:.2f}")
+            with brc3: st.metric("Max Drawdown", f"${max_dd:.2f}")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=[h["date"] for h in br_history],
+                y=balances,
+                mode="lines+markers",
+                line=dict(color="#00C853" if balances[-1] >= starting else "#FF5252", width=2),
+                marker=dict(size=5),
+                hovertext=[h["label"] for h in br_history],
+                hoverinfo="text+y",
+            ))
+            fig.update_layout(
+                template="plotly_dark",
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=0, r=0, t=20, b=0), height=250,
+                yaxis_title="Balance ($)", xaxis_title="",
+            )
+            st.plotly_chart(fig, use_container_width=True)
     # Create new slip
     with st.expander("Create New Slip"):
         sl_date = st.date_input("Game date", value=date.today(), key="slip_date")
@@ -748,6 +922,13 @@ The projection engine is still here for confirmation, but the core edge comes fr
 | 3-pick Power | ~59.8% | ❌ Never |
 | 2-pick Power | ~57.7% | ❌ Avoid |
 """)
+    st.markdown('<div class="section-hdr">Bankroll</div>', unsafe_allow_html=True)
+    br_val = st.number_input("Starting bankroll ($)", min_value=1.0, value=st.session_state.get("starting_bankroll", 100.0), step=10.0, key="br_input")
+    if br_val != st.session_state.get("starting_bankroll", 100.0):
+        st.session_state["starting_bankroll"] = br_val
+        st.success(f"Starting bankroll set to ${br_val:.2f}")
+
+    st.markdown("---")
     if st.button("Check API Credits"):
         k=get_api_key()
         if k:
