@@ -88,6 +88,9 @@ st.markdown("""
 def pct(v): return f"{v*100:.1f}%" if isinstance(v, (int, float)) else str(v)
 def badge(r): return f'<span class="badge badge-{r.lower()}">{r}</span>'
 def pick_span(p): return f'<span class="{"more" if p=="MORE" else "less"}">{p}</span>'
+def grade_label(r):
+    icons = {"A": "🟢", "B": "🔵", "C": "🟡", "D": "🔴"}
+    return f"{icons.get(r, '⚪')} {r}"
 
 
 @st.cache_data(ttl=3600)
@@ -384,7 +387,7 @@ with tab_edge:
 
                 st.markdown('<div class="section-hdr">Pick Details</div>', unsafe_allow_html=True)
                 for edge in filt[:8]:
-                    with st.expander(f"{badge(edge['rating'])} **{edge['player_name']}** — {edge['stat_type']} | Line: {edge['pp_line']} | Edge: +{edge['edge_pct']:.1f}%"):
+                    with st.expander(f"{grade_label(edge['rating'])} **{edge['player_name']}** — {edge['stat_type']} | Line: {edge['pp_line']} | Edge: +{edge['edge_pct']:.1f}%"):
                         c1,c2,c3,c4 = st.columns(4)
                         with c1: st.metric("Pick", edge["pick"])
                         with c2: st.metric("Fair Prob", f"{edge['fair_prob']*100:.1f}%")
@@ -605,9 +608,9 @@ with tab_edge:
                         conf_pct = f"{pick_row['confidence']*100:.1f}%"
                         edge_pct = f"{pick_row['edge']*100:.1f}%"
                         with st.expander(
-                            f"{badge(pick_row['rating'])} **{pick_row['player_name']}** · {pick_row.get('team','')} · "
+                            f"{grade_label(pick_row['rating'])} **{pick_row['player_name']}** · {pick_row.get('team','')} · "
                             f"{pick_row['stat_type']} {pick_row['line']} → "
-                            f"<span class='{pick_cls}'>{pick_row['pick']}</span> {pick_row['projection']} · "
+                            f"**{pick_row['pick']}** {pick_row['projection']} · "
                             f"{trend_icon} · Conf {conf_pct} · Edge {edge_pct} · "
                             f"{health_icon} {spring_icon}{buy_tag}",
                         ):
