@@ -31,6 +31,7 @@ import json
 import os
 import numpy as np
 from scipy import stats as sp_stats
+from scipy.stats import poisson, nbinom, norm, gamma
 from typing import Optional
 
 
@@ -974,62 +975,114 @@ def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
 
 def calculate_over_under_probability(projection, line, prop_type):
     """
-    P(over) and P(under) using prop-specific variance models.
+    P(over) and P(under) using prop-appropriate distributions.
 
-    Variance ratios calibrated to actual MLB distributions:
-      Pitcher Ks: variance ≈ 2.0× mean (overdispersed, beta-binomial)
-      Batter Ks: variance ≈ 1.4× mean
-      Hits: variance ≈ 1.3× mean
-      Total Bases: variance ≈ 1.8× mean (right-skewed)
-      Home Runs: variance ≈ 3.5× mean (very rare, high variance)
-      RBIs: variance ≈ 1.6× mean (context-dependent)
-      Runs: variance ≈ 1.4× mean
-      Stolen Bases: variance ≈ 2.5× mean (rare binary)
-      H+R+RBI: variance ≈ 1.5× mean (sum smooths variance)
-      Pitcher Outs: variance ≈ 1.3× mean (most predictable)
-      Pitcher ER: variance ≈ 2.2× mean (volatile)
-      Walks: variance ≈ 1.8× mean
+    Distribution selection:
+      Poisson: most count props (hits, Ks, walks, runs, etc.)
+      Negative binomial: overdispersed rare events (HR, SB)
+      Gamma: continuous-ish scores (fantasy score)
+      Normal: high-mean continuous props (pitching outs, H+R+RBI)
     """
     mu = max(projection, 0.01)
 
-    variance_ratios = {
-        "pitcher_strikeouts": 2.0, "batter_strikeouts": 1.4,
-        "hits": 1.3, "total_bases": 1.8, "home_runs": 3.5,
-        "rbis": 1.6, "runs": 1.4, "stolen_bases": 2.5,
-        "hits_runs_rbis": 1.5, "pitching_outs": 1.3,
-        "earned_runs": 2.2, "walks_allowed": 1.8, "walks": 1.8,
-        "hitter_fantasy_score": 1.6,
-        "hits_allowed": 1.5, "singles": 1.3, "doubles": 2.5,
+    negbin_props = {
+        "home_runs": 3.5,
+        "stolen_bases": 2.5,
     }
-    var_ratio = variance_ratios.get(prop_type, 1.5)
-    sigma = max(np.sqrt(mu * var_ratio), 0.25)
+    poisson_props = {
+        "hits", "total_bases", "rbis", "runs", "walks",
+        "pitcher_strikeouts", "earned_runs", "walks_allowed",
+        "hits_allowed", "batter_strikeouts", "singles", "doubles",
+    }
+    gamma_props = {
+        "hitter_fantasy_score": 1.6,
+    }
+    normal_props = {
+        "pitching_outs": 1.3,
+        "hits_runs_rbis": 1.5,
+    }
 
-    # Continuity correction for count data
-    if line == int(line):
-        p_over = 1 - sp_stats.norm.cdf(line + 0.5, loc=mu, scale=sigma)
-        p_under = sp_stats.norm.cdf(line - 0.5, loc=mu, scale=sigma)
+    if prop_type in negbin_props:
+        r = negbin_props[prop_type]
+        var = mu * r
+        if var > mu and mu > 0:
+            n_param = (mu ** 2) / (var - mu)
+            p_param = mu / var
+            if line == int(line):
+                int_line = int(line)
+                p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
+                p_under = nbinom.cdf(int_line - 1, n_param, p_param)
+            else:
+                int_line = int(line)
+                p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
+                p_under = nbinom.cdf(int_line, n_param, p_param)
+        else:
+            if line == int(line):
+                p_over = 1 - poisson.cdf(int(line), mu)
+                p_under = poisson.cdf(int(line) - 1, mu)
+            else:
+                p_over = 1 - poisson.cdf(int(line), mu)
+                p_under = poisson.cdf(int(line), mu)
+
+    elif prop_type in poisson_props:
+        if line == int(line):
+            int_line = int(line)
+            p_over = 1 - poisson.cdf(int_line, mu)
+            p_under = poisson.cdf(int_line - 1, mu)
+        else:
+            int_line = int(line)
+            p_over = 1 - poisson.cdf(int_line, mu)
+            p_under = poisson.cdf(int_line, mu)
+
+    elif prop_type in gamma_props:
+        var_ratio = gamma_props[prop_type]
+        var = mu * var_ratio
+        shape = (mu ** 2) / var
+        scale = var / mu
+        if line == int(line):
+            p_over = 1 - gamma.cdf(line + 0.5, shape, scale=scale)
+            p_under = gamma.cdf(line - 0.5, shape, scale=scale)
+        else:
+            p_over = 1 - gamma.cdf(line, shape, scale=scale)
+            p_under = gamma.cdf(line, shape, scale=scale)
+
     else:
-        p_over = 1 - sp_stats.norm.cdf(line, loc=mu, scale=sigma)
-        p_under = sp_stats.norm.cdf(line, loc=mu, scale=sigma)
+        var_ratio = normal_props.get(prop_type, 1.5)
+        sigma = max(np.sqrt(mu * var_ratio), 0.25)
+        if line == int(line):
+            p_over = 1 - norm.cdf(line + 0.5, loc=mu, scale=sigma)
+            p_under = norm.cdf(line - 0.5, loc=mu, scale=sigma)
+        else:
+            p_over = 1 - norm.cdf(line, loc=mu, scale=sigma)
+            p_under = norm.cdf(line, loc=mu, scale=sigma)
 
     total = p_over + p_under
     if total > 0:
         p_over /= total
         p_under /= total
+    else:
+        p_over = 0.5
+        p_under = 0.5
 
     edge = abs(p_over - 0.5)
     pick = "MORE" if p_over > 0.5 else "LESS"
     confidence = max(p_over, p_under)
 
-    if confidence >= 0.62: rating = "A"
-    elif confidence >= 0.57: rating = "B"
-    elif confidence >= 0.54: rating = "C"
-    else: rating = "D"
+    if confidence >= 0.70:
+        rating = "A"
+    elif confidence >= 0.62:
+        rating = "B"
+    elif confidence >= 0.57:
+        rating = "C"
+    else:
+        rating = "D"
 
-    return {"p_over": round(p_over, 4), "p_under": round(p_under, 4),
-            "pick": pick, "confidence": round(confidence, 4),
-            "edge": round(edge, 4), "rating": rating,
-            "projection": round(mu, 2), "line": line, "sigma": round(sigma, 2)}
+    return {
+        "p_over": round(p_over, 4), "p_under": round(p_under, 4),
+        "pick": pick, "confidence": round(confidence, 4),
+        "edge": round(edge, 4), "rating": rating,
+        "projection": round(mu, 2), "line": line,
+    }
 
 
 # ═══════════════════════════════════════════════════════

@@ -581,7 +581,7 @@ with tab_edge:
                 with f1:
                     proj_prop_filter = st.selectbox("Prop Type", ["All"] + prop_types_available, key="proj_prop_f")
                 with f2:
-                    proj_grade_filter = st.selectbox("Min Grade", ["A only", "A + B", "A + B + C", "All"], index=3, key="proj_grade_f")
+                    proj_grade_filter = st.selectbox("Min Grade", ["A only", "A + B", "A + B + C", "All"], index=1, key="proj_grade_f")
 
                 grade_map = {"A only": ["A"], "A + B": ["A", "B"], "A + B + C": ["A", "B", "C"], "All": ["A", "B", "C", "D"]}
                 filtered = pdf[pdf["rating"].isin(grade_map[proj_grade_filter])].copy()

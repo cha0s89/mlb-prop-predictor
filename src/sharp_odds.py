@@ -116,9 +116,8 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
         return {}
 
     if markets is None:
-        # Default to the most important prop types
-        markets = ["pitcher_strikeouts", "batter_hits", "batter_total_bases",
-                    "batter_home_runs", "batter_rbis"]
+        # Fetch all supported prop markets
+        markets = list(PROP_MARKETS.values())
 
     try:
         resp = requests.get(
@@ -331,10 +330,6 @@ def _names_match(sharp_name: str, pp_name: str) -> bool:
     p_parts = p.split()
     if len(s_parts) >= 2 and len(p_parts) >= 2:
         if s_parts[-1] == p_parts[-1] and s_parts[0][0] == p_parts[0][0]:
-            return True
-    # One name contained in the other (handles "Shohei Ohtani" vs "S. Ohtani")
-    if len(s_parts) >= 1 and len(p_parts) >= 1:
-        if s_parts[-1] == p_parts[-1]:
             return True
     return False
 
