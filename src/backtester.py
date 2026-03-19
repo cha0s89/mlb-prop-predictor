@@ -339,39 +339,228 @@ def _normalize_name(name: str) -> str:
     return name
 
 
-# Cache for season batting stats keyed by year — avoids re-pulling for every day.
-_batting_cache: dict[int, pd.DataFrame] = {}
-_pitching_cache: dict[int, pd.DataFrame] = {}
+# Cache for season batting/pitching stats.
+# For completed (prior) years: keyed by (year, None) — full-season is fine.
+# For the current backtest year: keyed by (year, cutoff_date_str) so that
+# each backtest date only sees stats from BEFORE that date.
+_batting_cache: dict[tuple[int, str | None], pd.DataFrame] = {}
+_pitching_cache: dict[tuple[int, str | None], pd.DataFrame] = {}
 
 
-def _get_season_batting(year: int) -> pd.DataFrame:
+def _mlb_api_season_stats(
+    group: str,
+    season: int,
+    end_date: str,
+) -> pd.DataFrame:
     """
-    Fetch FanGraphs batting leaderboard for *year* (cached per session).
-    Falls back to an empty DataFrame on failure.
+    Fetch season stats from the MLB Stats API filtered to games on or before
+    *end_date*.  *group* is 'hitting' or 'pitching'.
+
+    Returns a DataFrame with a 'Name' column (for player matching) plus the
+    stat columns the MLB API returns, mapped to FanGraphs-compatible names
+    where possible.
+
+    Falls back to an empty DataFrame on any error.
     """
-    if year in _batting_cache:
-        return _batting_cache[year]
+    season_start = f"{season}-03-20"  # Spring training cutoff; regular season ~late March
+
+    params = {
+        "stats": "season",
+        "group": group,
+        "season": season,
+        "startDate": season_start,
+        "endDate": end_date,
+        "sportIds": 1,
+        "limit": 5000,
+        "fields": (
+            "stats,splits,stat,player,fullName"
+        ),
+    }
+    data = _mlb_get("stats", params)
+
+    rows: list[dict] = []
+    for stat_block in data.get("stats", []):
+        for split in stat_block.get("splits", []):
+            player_name = split.get("player", {}).get("fullName", "")
+            s = split.get("stat", {})
+            if not player_name or not s:
+                continue
+
+            if group == "hitting":
+                pa = int(s.get("plateAppearances", 0))
+                ab = int(s.get("atBats", 0))
+                hits = int(s.get("hits", 0))
+                doubles = int(s.get("doubles", 0))
+                triples = int(s.get("triples", 0))
+                hr = int(s.get("homeRuns", 0))
+                rbi = int(s.get("rbi", 0))
+                r = int(s.get("runs", 0))
+                sb = int(s.get("stolenBases", 0))
+                bb = int(s.get("baseOnBalls", 0))
+                k = int(s.get("strikeOuts", 0))
+                hbp = int(s.get("hitByPitch", 0))
+
+                avg = hits / ab if ab > 0 else 0.0
+                obp = (hits + bb + hbp) / pa if pa > 0 else 0.0
+                singles = hits - doubles - triples - hr
+                tb = singles + 2 * doubles + 3 * triples + 4 * hr
+                slg = tb / ab if ab > 0 else 0.0
+                iso = slg - avg
+
+                # Approximate wOBA using linear weights
+                woba_num = (
+                    0.69 * bb + 0.72 * hbp + 0.89 * singles
+                    + 1.27 * doubles + 1.62 * triples + 2.10 * hr
+                )
+                woba = woba_num / pa if pa > 0 else 0.0
+
+                # BABIP
+                sf = int(s.get("sacFlies", 0))
+                babip_denom = ab - k - hr + sf
+                babip = (hits - hr) / babip_denom if babip_denom > 0 else 0.0
+
+                k_rate = (k / pa * 100) if pa > 0 else 0.0
+                bb_rate = (bb / pa * 100) if pa > 0 else 0.0
+
+                rows.append({
+                    "Name": player_name,
+                    "PA": pa, "AVG": round(avg, 3), "OBP": round(obp, 3),
+                    "SLG": round(slg, 3), "ISO": round(iso, 3),
+                    "wOBA": round(woba, 3), "BABIP": round(babip, 3),
+                    "HR": hr, "SB": sb, "RBI": rbi, "R": r,
+                    "2B": doubles, "3B": triples,
+                    "K%": round(k_rate, 1), "BB%": round(bb_rate, 1),
+                })
+            else:
+                # Pitching
+                ip_str = s.get("inningsPitched", "0")
+                try:
+                    ip = float(ip_str)
+                except (ValueError, TypeError):
+                    ip = 0.0
+                if ip <= 0:
+                    continue
+
+                er = int(s.get("earnedRuns", 0))
+                k = int(s.get("strikeOuts", 0))
+                bb = int(s.get("baseOnBalls", 0))
+                hits_a = int(s.get("hits", 0))
+                hr_a = int(s.get("homeRuns", 0))
+                gs = int(s.get("gamesStarted", 0))
+                bf = int(s.get("battersFaced", 0))
+
+                era = (er * 9) / ip if ip > 0 else 0.0
+                whip = (bb + hits_a) / ip if ip > 0 else 0.0
+                k9 = (k * 9) / ip if ip > 0 else 0.0
+                bb9 = (bb * 9) / ip if ip > 0 else 0.0
+                hr9 = (hr_a * 9) / ip if ip > 0 else 0.0
+                k_pct = (k / bf * 100) if bf > 0 else 0.0
+                bb_pct = (bb / bf * 100) if bf > 0 else 0.0
+
+                # Approximate FIP: (13*HR + 3*BB - 2*K) / IP + 3.10
+                fip = ((13 * hr_a + 3 * bb - 2 * k) / ip + 3.10) if ip > 0 else 0.0
+
+                rows.append({
+                    "Name": player_name,
+                    "IP": ip, "ERA": round(era, 2), "FIP": round(fip, 2),
+                    "xFIP": round(fip, 2),  # Approximation (no league HR/FB data)
+                    "WHIP": round(whip, 2),
+                    "K/9": round(k9, 1), "BB/9": round(bb9, 1),
+                    "HR/9": round(hr9, 1),
+                    "K%": round(k_pct, 1), "BB%": round(bb_pct, 1),
+                    "GS": gs,
+                })
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def _get_season_batting(year: int, cutoff_date: str | None = None) -> pd.DataFrame:
+    """
+    Fetch batting leaderboard for *year* up to (but NOT including) *cutoff_date*.
+
+    Walk-forward safety:
+      - If *cutoff_date* is provided and falls within *year*, stats are pulled
+        from the MLB Stats API with an endDate of the day before *cutoff_date*.
+      - If *cutoff_date* is None (completed/prior year), full-season FanGraphs
+        data is used (no leakage risk since the season is over).
+
+    Results are cached by (year, cutoff_date) to avoid redundant API calls
+    while still respecting the walk-forward boundary.
+    """
+    cache_key = (year, cutoff_date)
+    if cache_key in _batting_cache:
+        return _batting_cache[cache_key]
+
+    df = pd.DataFrame()
+
+    if cutoff_date is not None:
+        # Walk-forward: only use stats from BEFORE the backtest date
+        cutoff_dt = datetime.strptime(cutoff_date, "%Y-%m-%d")
+        end_dt = cutoff_dt - timedelta(days=1)
+        end_str = end_dt.strftime("%Y-%m-%d")
+
+        # Don't query if end_date is before season start
+        if end_dt >= datetime(year, 3, 20):
+            df = _mlb_api_season_stats("hitting", year, end_str)
+            if not df.empty:
+                _batting_cache[cache_key] = df
+                return df
+
+        # If MLB API returned nothing (season hasn't started yet or API error),
+        # return empty — do NOT fall back to full-season FanGraphs for the
+        # current year as that would re-introduce data leakage.
+        if df.empty:
+            _batting_cache[cache_key] = df
+            return df
+
+    # Completed (prior) year — full-season FanGraphs data is safe
     try:
         from src.stats import fetch_batting_leaders
         df = fetch_batting_leaders(season=year, min_pa=1)
     except Exception as exc:
         print(f"  [WARN] Could not fetch batting stats for {year}: {exc}")
         df = pd.DataFrame()
-    _batting_cache[year] = df
+
+    _batting_cache[cache_key] = df
     return df
 
 
-def _get_season_pitching(year: int) -> pd.DataFrame:
-    """Fetch FanGraphs pitching leaderboard for *year* (cached)."""
-    if year in _pitching_cache:
-        return _pitching_cache[year]
+def _get_season_pitching(year: int, cutoff_date: str | None = None) -> pd.DataFrame:
+    """
+    Fetch pitching leaderboard for *year* up to (but NOT including) *cutoff_date*.
+
+    Same walk-forward logic as _get_season_batting — see its docstring.
+    """
+    cache_key = (year, cutoff_date)
+    if cache_key in _pitching_cache:
+        return _pitching_cache[cache_key]
+
+    df = pd.DataFrame()
+
+    if cutoff_date is not None:
+        cutoff_dt = datetime.strptime(cutoff_date, "%Y-%m-%d")
+        end_dt = cutoff_dt - timedelta(days=1)
+        end_str = end_dt.strftime("%Y-%m-%d")
+
+        if end_dt >= datetime(year, 3, 20):
+            df = _mlb_api_season_stats("pitching", year, end_str)
+            if not df.empty:
+                _pitching_cache[cache_key] = df
+                return df
+
+        if df.empty:
+            _pitching_cache[cache_key] = df
+            return df
+
+    # Completed (prior) year
     try:
         from src.stats import fetch_pitching_leaders
         df = fetch_pitching_leaders(season=year, min_ip=1)
     except Exception as exc:
         print(f"  [WARN] Could not fetch pitching stats for {year}: {exc}")
         df = pd.DataFrame()
-    _pitching_cache[year] = df
+
+    _pitching_cache[cache_key] = df
     return df
 
 
@@ -424,19 +613,18 @@ def build_walkforward_profile(player_name: str, game_date: str,
     *game_date*.
 
     Walk-forward logic:
+      - Current-year stats are fetched from the MLB Stats API with an
+        endDate of (game_date - 1 day), ensuring NO future data leaks
+        into the profile.  This is the key guard against inflated backtest
+        accuracy.
       - If game_date is in the first month of the season (April), rely
         heavily on the PRIOR year stats (the current-year sample is too
         small to be meaningful).
       - As the season progresses, the current-year stats accumulate PA
         and the Bayesian regression in the predictor naturally up-weights
         them.
-      - FanGraphs leaderboards are full-season aggregates, so we pull the
-        same-year leaderboard. For strict walk-forward purity on a per-day
-        basis we would need daily-resolution stats; since FanGraphs only
-        provides season-to-date, we accept minor look-ahead within the
-        current month. This is a known limitation — the backtest will still
-        be broadly valid because the Bayesian stabilization heavily
-        regresses small samples anyway.
+      - Prior-year stats use full-season FanGraphs data (no leakage risk
+        since that season is already complete).
 
     Returns None if the player cannot be matched.
     """
@@ -445,13 +633,13 @@ def build_walkforward_profile(player_name: str, game_date: str,
     month = dt.month
 
     if is_pitcher:
-        # Current year stats
-        df_current = _get_season_pitching(year)
+        # Current year stats — filtered to BEFORE game_date (walk-forward)
+        df_current = _get_season_pitching(year, cutoff_date=game_date)
         row = _match_player_row(player_name, df_current)
 
-        # If early season or no match, try prior year
+        # If early season or no match, try prior year (full season, no leakage)
         if row is None or (month <= 5 and (row is None or float(row.get("IP", 0)) < 10)):
-            df_prior = _get_season_pitching(year - 1)
+            df_prior = _get_season_pitching(year - 1, cutoff_date=None)
             row_prior = _match_player_row(player_name, df_prior)
             if row_prior is not None:
                 row = row_prior
@@ -472,12 +660,13 @@ def build_walkforward_profile(player_name: str, game_date: str,
         return profile
 
     # ── Batter path ──
-    df_current = _get_season_batting(year)
+    # Current year stats — filtered to BEFORE game_date (walk-forward)
+    df_current = _get_season_batting(year, cutoff_date=game_date)
     row = _match_player_row(player_name, df_current)
 
-    # Early season or no current-year match: fall back to prior year
+    # Early season or no current-year match: fall back to prior year (full season, no leakage)
     if row is None or (month <= 5 and float(row.get("PA", 0)) < 50):
-        df_prior = _get_season_batting(year - 1)
+        df_prior = _get_season_batting(year - 1, cutoff_date=None)
         row_prior = _match_player_row(player_name, df_prior)
         if row_prior is not None:
             # If we have BOTH years, blend (weight current by fraction of 500 PA)
