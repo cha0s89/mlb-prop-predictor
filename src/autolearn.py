@@ -604,6 +604,200 @@ def analyze_variance_calibration(graded: pd.DataFrame) -> dict:
     return result
 
 
+def analyze_per_prop_direction(graded: pd.DataFrame) -> dict:
+    """
+    Per-prop-type direction analysis. Checks if specific prop types
+    have a MORE/LESS accuracy imbalance that could be corrected with
+    a per-prop projection offset (pushing projection up = more MORE picks,
+    pushing down = more LESS picks).
+
+    Unlike the global direction_bias (disabled for v003), this targets
+    specific props where the projection model itself may be systematically
+    biased in one direction.
+
+    Returns dict keyed by stat_internal, each with:
+      more_accuracy, less_accuracy, more_count, less_count,
+      imbalance, suggested_offset (or None)
+    """
+    result = {}
+    wl = graded[graded["result"].isin(["W", "L"])].copy()
+    if wl.empty:
+        return result
+
+    for stat_type in wl["stat_internal"].unique():
+        subset = wl[wl["stat_internal"] == stat_type]
+        more_sub = subset[subset["pick"] == "MORE"]
+        less_sub = subset[subset["pick"] == "LESS"]
+
+        more_count = len(more_sub)
+        less_count = len(less_sub)
+
+        # Need 20+ graded picks in BOTH directions
+        if more_count < 20 or less_count < 20:
+            continue
+
+        more_wins = len(more_sub[more_sub["result"] == "W"])
+        less_wins = len(less_sub[less_sub["result"] == "W"])
+        more_acc = more_wins / more_count
+        less_acc = less_wins / less_count
+        imbalance = more_acc - less_acc
+
+        suggested_offset = None
+        # One direction below 45% AND other above 55% → clear bias
+        if (more_acc < 0.45 and less_acc > 0.55) or (less_acc < 0.45 and more_acc > 0.55):
+            if more_acc < less_acc:
+                # MORE is bad → projection too high → negative offset
+                bad_acc = more_acc
+                offset = 0.3 * (bad_acc - 0.50)  # negative
+            else:
+                # LESS is bad → projection too low → positive offset
+                bad_acc = less_acc
+                offset = -0.3 * (bad_acc - 0.50)  # positive
+
+            offset = float(np.clip(offset, -0.5, 0.5))
+            suggested_offset = {
+                "offset": round(offset, 3),
+                "reason": (
+                    f"{stat_type}: MORE={more_acc:.1%} ({more_count}), "
+                    f"LESS={less_acc:.1%} ({less_count}). "
+                    f"Per-prop direction offset {offset:+.3f}."
+                ),
+            }
+
+        result[stat_type] = {
+            "more_accuracy": round(more_acc, 4),
+            "less_accuracy": round(less_acc, 4),
+            "more_count": more_count,
+            "less_count": less_count,
+            "imbalance": round(imbalance, 4),
+            "suggested_offset": suggested_offset,
+        }
+
+    return result
+
+
+# Prop types whose overdispersion/variance params are tunable
+TUNABLE_OVERDISPERSION = {"home_runs", "stolen_bases", "hitter_fantasy_score"}
+
+
+def analyze_overdispersion(graded: pd.DataFrame) -> dict:
+    """
+    Check if NegBin/Gamma distribution parameters produce well-calibrated
+    probabilities. Groups picks by prop_type and confidence bucket, then
+    compares predicted P(correct) vs actual accuracy.
+
+    If predicted confidence consistently exceeds actual accuracy, the
+    distribution is too tight (overdispersion parameter too low → increase it).
+    If predicted confidence is below actual, distribution is too wide (decrease it).
+
+    Only tunes: home_runs, stolen_bases (NegBin r param),
+                hitter_fantasy_score (Gamma var_ratio)
+    """
+    result = {}
+
+    wl = graded[graded["result"].isin(["W", "L"])].copy()
+    if wl.empty:
+        return result
+
+    wl = wl.copy()
+    wl["is_win"] = (wl["result"] == "W").astype(int)
+
+    for stat_type in TUNABLE_OVERDISPERSION:
+        subset = wl[wl["stat_internal"] == stat_type]
+        if len(subset) < 30:
+            continue
+
+        # Bin by confidence
+        bins = [0.50, 0.55, 0.62, 0.70, 1.0]
+        labels = ["50-55", "55-62", "62-70", "70+"]
+        subset = subset.copy()
+        subset["conf_bin"] = pd.cut(subset["confidence"], bins=bins, labels=labels)
+
+        bucket_errors = []
+        for label in labels:
+            bucket = subset[subset["conf_bin"] == label]
+            if len(bucket) < 10:
+                continue
+            mean_conf = float(bucket["confidence"].mean())
+            actual_wr = float(bucket["is_win"].mean())
+            bucket_errors.append(mean_conf - actual_wr)
+
+        if not bucket_errors:
+            continue
+
+        cal_error = float(np.mean(bucket_errors))
+
+        suggested_adjustment = None
+        if abs(cal_error) > 0.05:
+            # Overconfident (cal_error > 0): increase variance param
+            # Underconfident (cal_error < 0): decrease variance param
+            adj_pct = cal_error * 0.3
+            adj_pct = float(np.clip(adj_pct, -0.15, 0.15))  # Cap at ±15%
+            suggested_adjustment = {
+                "adjustment_pct": round(adj_pct, 4),
+                "reason": (
+                    f"{stat_type}: mean calibration error {cal_error:+.3f} "
+                    f"({'overconfident' if cal_error > 0 else 'underconfident'}). "
+                    f"{'Increasing' if adj_pct > 0 else 'Decreasing'} "
+                    f"variance param by {abs(adj_pct):.1%}."
+                ),
+            }
+
+        result[stat_type] = {
+            "calibration_error": round(cal_error, 4),
+            "sample_size": len(subset),
+            "overconfident": cal_error > 0.05,
+            "suggested_adjustment": suggested_adjustment,
+        }
+
+    return result
+
+
+def build_calibration_curve(graded: pd.DataFrame) -> dict:
+    """
+    Build a piecewise linear calibration curve that maps raw model
+    confidence to actual observed accuracy. Saved in weights file
+    as 'calibration_curve'.
+
+    After enough data (100+ graded picks), this enables the app to show
+    "Calibrated confidence: 62%" instead of raw model confidence which
+    may be overconfident or underconfident.
+
+    Returns dict with:
+      points: list of [raw_confidence, actual_accuracy] pairs
+      enough_data: bool
+      total_picks: int
+    """
+    result = {"points": [], "enough_data": False, "total_picks": 0}
+
+    wl = graded[graded["result"].isin(["W", "L"])].copy()
+    result["total_picks"] = len(wl)
+
+    if len(wl) < 100:
+        return result
+
+    wl = wl.copy()
+    wl["is_win"] = (wl["result"] == "W").astype(int)
+
+    bins = [0.50, 0.55, 0.60, 0.65, 0.75, 1.0]
+    labels = ["50-55", "55-60", "60-65", "65-75", "75+"]
+    wl["conf_bin"] = pd.cut(wl["confidence"], bins=bins, labels=labels)
+
+    points = []
+    for label in labels:
+        bucket = wl[wl["conf_bin"] == label]
+        if len(bucket) < 10:
+            continue
+        mean_conf = round(float(bucket["confidence"].mean()), 4)
+        actual_acc = round(float(bucket["is_win"].mean()), 4)
+        points.append([mean_conf, actual_acc])
+
+    result["points"] = points
+    result["enough_data"] = len(points) >= 3
+
+    return result
+
+
 # ═══════════════════════════════════════════════════════
 # ADJUSTMENT PROPOSAL AND APPLICATION
 # ═══════════════════════════════════════════════════════
@@ -722,7 +916,7 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
                         "reason": suggestion["reason"],
                     })
 
-    # 4. Variance ratio adjustments
+    # 4. Variance ratio adjustments (general)
     # DISABLED for v003: Poisson/NegBin props don't use variance ratios.
     if False:
         var_analysis = analysis.get("variance_calibration", {})
@@ -745,6 +939,71 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
                     "direction": direction,
                     "reason": info["reason"],
                 })
+
+    # 5. Per-prop direction offset corrections
+    # Stacks with section 2 offsets — if both fire for the same prop, they sum
+    ppd_analysis = analysis.get("per_prop_direction", {})
+    # Track which props already have offset proposals from section 2
+    existing_offset_props = {
+        p["key"] for p in proposals if p["category"] == "prop_type_offsets"
+    }
+    for stat_type, info in ppd_analysis.items():
+        if info.get("suggested_offset") is None:
+            continue
+        offset_info = info["suggested_offset"]
+        offset = offset_info["offset"]
+        direction = "increase" if offset > 0 else "decrease"
+        sig = f"prop_type_offsets:{stat_type}:ppd_{direction}"
+
+        if sig not in failed_keys:
+            old_val = current_weights.get("prop_type_offsets", {}).get(stat_type, 0.0)
+            # If section 2 already proposed an offset, stack on top of it
+            if stat_type in existing_offset_props:
+                for p in proposals:
+                    if p["category"] == "prop_type_offsets" and p["key"] == stat_type:
+                        stacked = p["new_value"] + offset
+                        mean_proj = abs(old_val) + 1.0  # rough scale
+                        max_total = mean_proj * MAX_ADJUSTMENT_PCT
+                        stacked = float(np.clip(stacked, -max_total, max_total))
+                        p["new_value"] = round(stacked, 3)
+                        p["reason"] += f" [+ppd: {offset_info['reason']}]"
+                        break
+            else:
+                new_val = round(old_val + offset, 3)
+                proposals.append({
+                    "category": "prop_type_offsets",
+                    "key": stat_type,
+                    "old_value": old_val,
+                    "new_value": new_val,
+                    "change_pct": round(abs(offset), 4),
+                    "direction": direction,
+                    "reason": f"[per-prop direction] {offset_info['reason']}",
+                })
+
+    # 6. Overdispersion tuning (NegBin r / Gamma var_ratio only)
+    od_analysis = analysis.get("overdispersion", {})
+    for stat_type, info in od_analysis.items():
+        if info.get("suggested_adjustment") is None:
+            continue
+        adj_info = info["suggested_adjustment"]
+        adj_pct = adj_info["adjustment_pct"]
+        direction = "increase" if adj_pct > 0 else "decrease"
+        sig = f"variance_ratios:{stat_type}:od_{direction}"
+
+        if sig not in failed_keys:
+            old_val = current_weights.get("variance_ratios", {}).get(stat_type, 1.5)
+            new_val = round(old_val * (1 + adj_pct), 3)
+            new_val = max(new_val, 0.5)
+
+            proposals.append({
+                "category": "variance_ratios",
+                "key": stat_type,
+                "old_value": old_val,
+                "new_value": new_val,
+                "change_pct": round(abs(adj_pct), 4),
+                "direction": direction,
+                "reason": f"[overdispersion] {adj_info['reason']}",
+            })
 
     return proposals
 
@@ -1035,6 +1294,8 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
         "prop_type_accuracy": analyze_prop_type_accuracy(graded),
         "grade_calibration": analyze_grade_calibration(graded),
         "variance_calibration": analyze_variance_calibration(graded),
+        "per_prop_direction": analyze_per_prop_direction(graded),
+        "overdispersion": analyze_overdispersion(graded),
     }
     result["analysis"] = analysis
     result["accuracy_by_grade"] = analysis["grade_calibration"].get("by_grade", {})
@@ -1075,6 +1336,9 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
     new_weights["metadata"]["total_picks_analyzed"] = total
     new_weights["metadata"]["accuracy_at_creation"] = round(accuracy_before, 4)
     new_weights["metadata"]["parent_version"] = current_version
+
+    # Build and store calibration curve
+    new_weights["calibration_curve"] = build_calibration_curve(graded)
 
     # Build description
     change_summary = ", ".join(

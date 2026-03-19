@@ -985,9 +985,13 @@ def calculate_over_under_probability(projection, line, prop_type):
     """
     mu = max(projection, 0.01)
 
+    # NegBin/Gamma params are tunable via weights file (autolearn can adjust)
+    weights = _load_weights()
+    vr = weights.get("variance_ratios", {})
+
     negbin_props = {
-        "home_runs": 3.5,
-        "stolen_bases": 2.5,
+        "home_runs": vr.get("home_runs", 3.5),
+        "stolen_bases": vr.get("stolen_bases", 2.5),
     }
     poisson_props = {
         "hits", "total_bases", "rbis", "runs", "walks",
@@ -995,7 +999,7 @@ def calculate_over_under_probability(projection, line, prop_type):
         "hits_allowed", "batter_strikeouts", "singles", "doubles",
     }
     gamma_props = {
-        "hitter_fantasy_score": 1.6,
+        "hitter_fantasy_score": vr.get("hitter_fantasy_score", 1.6),
     }
     normal_props = {
         "pitching_outs": 1.3,

@@ -874,6 +874,15 @@ with tab_grade:
                         wins = sum(1 for r in result["results"] if r.get("result") == "W")
                         losses = sum(1 for r in result["results"] if r.get("result") == "L")
                         st.success(f"Auto-graded {result['graded']} picks: {wins}W-{losses}L")
+                        # Auto-trigger model learning after grading
+                        try:
+                            learn_result = run_adjustment_cycle(min_sample=25)
+                            if learn_result.get("adjusted"):
+                                st.info(f"🧠 Model auto-tuned: {learn_result.get('reason', 'weights updated')}")
+                            elif learn_result.get("reason"):
+                                st.caption(f"🧠 Auto-tune: {learn_result.get('reason')}")
+                        except Exception as e:
+                            st.caption(f"Auto-tune skipped: {e}")
                     else:
                         st.info("No picks to auto-grade (games may not be final yet)")
                     if result.get("errors"):
