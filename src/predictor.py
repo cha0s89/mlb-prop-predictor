@@ -42,6 +42,11 @@ from typing import Optional
 _WEIGHTS_CACHE = {}
 
 
+def _clear_weights_cache() -> None:
+    """Clear the weights cache so next _load_weights() reads fresh from disk."""
+    _WEIGHTS_CACHE.clear()
+
+
 def _load_weights() -> dict:
     """Load learned weights from current.json. Cached after first call."""
     if _WEIGHTS_CACHE:
