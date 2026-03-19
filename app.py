@@ -81,11 +81,11 @@ def load_batting_stats():
     # Fallback: try pybaseball (won't work on Streamlit Cloud)
     from datetime import datetime
     year = datetime.now().year
-    df = fetch_batting_leaders(year, min_pa=50)
+    df = fetch_batting_leaders(year, min_pa=100)
     if df.empty or len(df) < 50:
-        df = fetch_batting_leaders(year - 1, min_pa=50)
+        df = fetch_batting_leaders(year - 1, min_pa=100)
     if df.empty or len(df) < 50:
-        df = fetch_batting_leaders(year - 2, min_pa=50)
+        df = fetch_batting_leaders(year - 2, min_pa=100)
     return df
 
 
@@ -267,7 +267,25 @@ with tab_edge:
             else:
                 st.caption(f"Loaded {len(batting_df)} batters from FanGraphs")
             preds = []
+            # Pre-fetch weather for all unique teams at once (one API call per stadium, not per player)
+            teams_in_slate = set()
+            for _, row in pp_lines.iterrows():
+                t = row.get("team", "")
+                if t:
+                    r = resolve_team(t)
+                    if r and r in STADIUMS:
+                        teams_in_slate.add(r)
             weather_cache = {}
+            if teams_in_slate:
+                wx_prog = st.progress(0, text="Fetching weather for stadiums...")
+                for j, team_abbr in enumerate(sorted(teams_in_slate)):
+                    wx_prog.progress((j + 1) / len(teams_in_slate), text=f"Weather: {STADIUMS[team_abbr]['name']} ({j+1}/{len(teams_in_slate)})")
+                    try:
+                        weather_cache[team_abbr] = fetch_game_weather(team_abbr)
+                    except Exception:
+                        weather_cache[team_abbr] = None
+                wx_prog.empty()
+
             prog = st.progress(0, text="Running projections...")
             total = len(pp_lines)
             for i, (_, row) in enumerate(pp_lines.iterrows()):
@@ -276,10 +294,7 @@ with tab_edge:
                 wx = None
                 if team:
                     r = resolve_team(team)
-                    if r and r in STADIUMS:
-                        if r not in weather_cache:
-                            try: weather_cache[r] = fetch_game_weather(r)
-                            except: weather_cache[r] = None
+                    if r in weather_cache:
                         wx = weather_cache[r]
                 # Build batter profile from FanGraphs stats
                 batter_profile = None
@@ -394,12 +409,6 @@ with tab_dash:
 
     # Model Tuning Section
     st.markdown('<div class="section-hdr">Model Tuning</div>', unsafe_allow_html=True)
-    try:
-        weights = load_current_weights()
-        st.caption(f"Current model version: **{weights.get('version', 'v001')}** · Last updated: {weights.get('last_updated', 'baseline')}")
-    except Exception:
-        st.caption("Model weights: baseline (default)")
-
     tune_col1, tune_col2 = st.columns(2)
     with tune_col1:
         if st.button("Run Model Tuning", type="secondary"):
