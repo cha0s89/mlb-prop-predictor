@@ -266,24 +266,21 @@ with tab_edge:
                 st.warning("⚠️ Could not load player stats — using league averages for projections.")
             else:
                 st.caption(f"Loaded {len(batting_df)} batters from FanGraphs")
-            # Debug: show loaded weights so we can verify on live app
-            import json as _json, os as _os
-            _wp = _os.path.join(_os.path.dirname(__file__), "data", "weights", "current.json")
-            try:
-                with open(_wp) as _f:
-                    _w = _json.load(_f)
-                st.caption(f"Debug weights: version={_w.get('version','?')}, fs_offset={_w.get('prop_type_offsets',{}).get('hitter_fantasy_score','?')}, more_mult={_w.get('direction_bias',{}).get('more_multiplier','?')}")
-            except Exception as _we:
-                st.caption(f"Debug weights: FAILED to load — {_we}")
             preds = []
-            for _, row in pp_lines.iterrows():
+            weather_cache = {}
+            prog = st.progress(0, text="Running projections...")
+            total = len(pp_lines)
+            for i, (_, row) in enumerate(pp_lines.iterrows()):
+                prog.progress((i + 1) / total, text=f"Projecting {i + 1}/{total}...")
                 team = row.get("team","")
                 wx = None
                 if team:
                     r = resolve_team(team)
-                    if r in STADIUMS:
-                        try: wx = fetch_game_weather(r)
-                        except: pass
+                    if r and r in STADIUMS:
+                        if r not in weather_cache:
+                            try: weather_cache[r] = fetch_game_weather(r)
+                            except: weather_cache[r] = None
+                        wx = weather_cache[r]
                 # Build batter profile from FanGraphs stats
                 batter_profile = None
                 if not batting_df.empty:
@@ -301,6 +298,7 @@ with tab_edge:
                 )
                 p["team"] = team
                 preds.append(p)
+            prog.empty()
             pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
             d = pdf[["player_name","team","stat_type","line","projection","pick","confidence","edge","rating"]].head(30).copy()
             d.columns = ["Player","Team","Prop","Line","Proj","Pick","Conf","Edge","Grade"]
