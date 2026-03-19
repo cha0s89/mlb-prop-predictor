@@ -34,7 +34,11 @@ from src.slips import (
 )
 from src.autograder import auto_grade_date, auto_grade_yesterday
 from src.autolearn import run_adjustment_cycle, load_current_weights, get_weight_history
-from src.spring import get_player_injury_status, get_spring_form_multiplier
+from src.spring import (
+    get_player_injury_status, get_spring_form_multiplier,
+    fetch_spring_training_stats, fetch_injuries,
+)
+from src.trends import get_batter_trend
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -81,11 +85,11 @@ def load_batting_stats():
     # Fallback: try pybaseball (won't work on Streamlit Cloud)
     from datetime import datetime
     year = datetime.now().year
-    df = fetch_batting_leaders(year, min_pa=50)
+    df = fetch_batting_leaders(year, min_pa=100)
     if df.empty or len(df) < 50:
-        df = fetch_batting_leaders(year - 1, min_pa=50)
+        df = fetch_batting_leaders(year - 1, min_pa=100)
     if df.empty or len(df) < 50:
-        df = fetch_batting_leaders(year - 2, min_pa=50)
+        df = fetch_batting_leaders(year - 2, min_pa=100)
     return df
 
 
@@ -160,6 +164,73 @@ def build_batter_profile(stats_row: pd.Series) -> dict:
         "xba": 0, "xslg": 0,  # Statcast expected — filled if available
         "barrel_rate": 0, "recent_barrel_rate": 0, "recent_hard_hit_pct": 0,
     }
+
+
+PITCHER_STAT_INTERNALS = {"pitcher_strikeouts", "hits_allowed", "earned_runs", "walks_allowed", "pitching_outs"}
+
+
+@st.cache_data(ttl=3600)
+def load_pitching_stats():
+    """Load pitching leaders from cached CSV first, fall back to pybaseball."""
+    import os
+    cache_path = os.path.join(os.path.dirname(__file__), "data", "pitching_stats_cache.csv")
+    if os.path.exists(cache_path):
+        df = pd.read_csv(cache_path)
+        if len(df) >= 20:
+            return df
+    from datetime import datetime as _dt
+    year = _dt.now().year
+    df = fetch_pitching_leaders(year, min_ip=10)
+    if df.empty or len(df) < 20:
+        df = fetch_pitching_leaders(year - 1, min_ip=10)
+    # Cache to CSV for next time
+    if not df.empty:
+        try:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            df.to_csv(cache_path, index=False)
+        except Exception:
+            pass
+    return df
+
+
+def match_pitcher_stats(player_name: str, pitching_df: pd.DataFrame):
+    """Match PrizePicks player name to FanGraphs pitching row."""
+    if pitching_df.empty or "Name" not in pitching_df.columns:
+        return None
+    norm_target = _normalize_name(player_name)
+    for _, row in pitching_df.iterrows():
+        if _normalize_name(str(row.get("Name", ""))) == norm_target:
+            return row
+    parts = norm_target.split()
+    if len(parts) >= 2:
+        last = parts[-1]
+        first_init = parts[0][0] if parts[0] else ""
+        for _, row in pitching_df.iterrows():
+            rn = _normalize_name(str(row.get("Name", "")))
+            rparts = rn.split()
+            if len(rparts) >= 2 and rparts[-1] == last and rparts[0] and rparts[0][0] == first_init:
+                return row
+    return None
+
+
+def build_pitcher_profile(stats_row) -> dict:
+    """Convert a FanGraphs pitching row into the pitcher profile dict the predictor expects."""
+    def safe_pct(val):
+        if isinstance(val, str):
+            return float(val.replace("%", "").strip())
+        return float(val) if val else 0.0
+    return {
+        "ip": float(stats_row.get("IP", 0)),
+        "era": float(stats_row.get("ERA", 0)),
+        "fip": float(stats_row.get("FIP", 0)),
+        "k9": float(stats_row.get("K/9", 0)),
+        "bb9": float(stats_row.get("BB/9", 0)),
+        "whip": float(stats_row.get("WHIP", 0)),
+        "k_pct": safe_pct(stats_row.get("K%", 0)),
+        "bb_pct": safe_pct(stats_row.get("BB%", 0)),
+        "hr9": float(stats_row.get("HR/9", 0)),
+    }
+
 
 init_db()
 init_slips_table()
@@ -251,60 +322,226 @@ with tab_edge:
                     log_batch_predictions(filt, date.today().isoformat())
                     st.success(f"Saved {len(filt)} predictions!")
             else: st.info("No edges match filters.")
-        elif has_sharp: st.info("No edges found. Lines may be properly priced or props not posted yet.")
+        elif has_sharp: st.info("Sharp book props not available for Spring Training — showing projection-based analysis below.")
 
         if not all_edges:
-            st.markdown('<div class="section-hdr">Projection Analysis (No Sharp Odds)</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-hdr">Projection Analysis</div>', unsafe_allow_html=True)
             stats_failed = False
+            pitching_df = pd.DataFrame()
             with st.spinner("Loading player stats..."):
                 try:
                     batting_df = load_batting_stats()
-                except Exception as e:
+                except Exception:
                     batting_df = pd.DataFrame()
                     stats_failed = True
+                try:
+                    pitching_df = load_pitching_stats()
+                except Exception:
+                    pitching_df = pd.DataFrame()
             if stats_failed or batting_df.empty:
                 st.warning("⚠️ Could not load player stats — using league averages for projections.")
             else:
-                st.caption(f"Loaded {len(batting_df)} batters from FanGraphs")
+                p_cap = f"Loaded {len(batting_df)} batters"
+                if not pitching_df.empty:
+                    p_cap += f" + {len(pitching_df)} pitchers"
+                p_cap += " from FanGraphs"
+                st.caption(p_cap)
             preds = []
+            # Pre-fetch weather for all unique teams at once (one API call per stadium, not per player)
+            teams_in_slate = set()
+            for _, row in pp_lines.iterrows():
+                t = row.get("team", "")
+                if t:
+                    r = resolve_team(t)
+                    if r and r in STADIUMS:
+                        teams_in_slate.add(r)
             weather_cache = {}
+            if teams_in_slate:
+                wx_prog = st.progress(0, text="Fetching weather for stadiums...")
+                for j, team_abbr in enumerate(sorted(teams_in_slate)):
+                    wx_prog.progress((j + 1) / len(teams_in_slate), text=f"Weather: {STADIUMS[team_abbr]['name']} ({j+1}/{len(teams_in_slate)})")
+                    try:
+                        weather_cache[team_abbr] = fetch_game_weather(team_abbr)
+                    except Exception:
+                        weather_cache[team_abbr] = None
+                wx_prog.empty()
+
+            # Pre-fetch Spring Training stats + injuries (one API call each)
+            st_stats = []
+            injury_list = []
+            with st.spinner("Loading Spring Training data & injuries..."):
+                try:
+                    st_stats = fetch_spring_training_stats()
+                except Exception:
+                    st_stats = []
+                try:
+                    injury_list = fetch_injuries(days_back=60)
+                except Exception:
+                    injury_list = []
+
             prog = st.progress(0, text="Running projections...")
             total = len(pp_lines)
             for i, (_, row) in enumerate(pp_lines.iterrows()):
                 prog.progress((i + 1) / total, text=f"Projecting {i + 1}/{total}...")
                 team = row.get("team","")
+                stat_int = row["stat_internal"]
                 wx = None
                 if team:
                     r = resolve_team(team)
-                    if r and r in STADIUMS:
-                        if r not in weather_cache:
-                            try: weather_cache[r] = fetch_game_weather(r)
-                            except: weather_cache[r] = None
+                    if r in weather_cache:
                         wx = weather_cache[r]
-                # Build batter profile from FanGraphs stats
+
+                # Build batter or pitcher profile from FanGraphs stats
                 batter_profile = None
-                if not batting_df.empty:
+                pitcher_profile = None
+                matched = None
+                is_pitcher_prop = stat_int in PITCHER_STAT_INTERNALS
+                if is_pitcher_prop and not pitching_df.empty:
+                    matched = match_pitcher_stats(row["player_name"], pitching_df)
+                    if matched is not None:
+                        pitcher_profile = build_pitcher_profile(matched)
+                elif not is_pitcher_prop and not batting_df.empty:
                     matched = match_player_stats(row["player_name"], batting_df)
                     if matched is not None:
                         batter_profile = build_batter_profile(matched)
+
                 p = generate_prediction(
                     player_name=row["player_name"],
                     stat_type=row["stat_type"],
-                    stat_internal=row["stat_internal"],
+                    stat_internal=stat_int,
                     line=row["line"],
                     batter_profile=batter_profile,
+                    pitcher_profile=pitcher_profile,
                     park_team=resolve_team(team) if team else None,
                     weather=wx,
                 )
+
+                # Spring form multiplier — compare ST performance to prior season
+                prior_slg = 0.400
+                prior_avg = 0.250
+                if matched is not None:
+                    if "SLG" in matched.index:
+                        prior_slg = float(matched["SLG"])
+                    if "AVG" in matched.index:
+                        prior_avg = float(matched["AVG"])
+                spring = get_spring_form_multiplier(
+                    player_name=row["player_name"],
+                    prior_season_slg=prior_slg,
+                    prior_season_avg=prior_avg,
+                    st_stats=st_stats,
+                )
+                spring_mult = spring["spring_mult"]
+                p["projection"] = round(p["projection"] * spring_mult, 2)
+                p["spring_mult"] = spring_mult
+                p["spring_badge"] = spring["badge"]
+
+                # Trend multiplier — recent form tiebreaker (±5-8% max)
+                trend = get_batter_trend(0)  # No player_id available, returns neutral
+                trend_mult = trend.get("trend_multiplier", 1.0)
+                # Clamp trend to ±8% max
+                trend_mult = max(0.92, min(1.08, trend_mult))
+                p["projection"] = round(p["projection"] * trend_mult, 2)
+                p["trend_mult"] = trend_mult
+                if trend_mult >= 1.03:
+                    p["trend_badge"] = "hot"
+                elif trend_mult <= 0.97:
+                    p["trend_badge"] = "cold"
+                else:
+                    p["trend_badge"] = "neutral"
+
+                # Cold elite buy-low signal: recent cold streak + elite season talent
+                p["buy_low"] = False
+                if not is_pitcher_prop and matched is not None:
+                    season_woba = float(matched.get("wOBA", 0)) if "wOBA" in matched.index else 0.0
+                    _obp = float(matched.get("OBP", 0)) if "OBP" in matched.index else 0.0
+                    _slg = float(matched.get("SLG", 0)) if "SLG" in matched.index else 0.0
+                    season_ops = float(matched.get("OPS", _obp + _slg)) if "OPS" in matched.index else (_obp + _slg)
+                    is_elite = season_woba > 0.350 or season_ops > 0.850
+                    is_cold = trend_mult < 0.97 or spring_mult < 0.97
+                    if is_elite and is_cold:
+                        p["buy_low"] = True
+                        # +4% boost — cold elite regression signal
+                        p["projection"] = round(p["projection"] * 1.04, 2)
+
+                # Injury status
+                injury = get_player_injury_status(
+                    player_name=row["player_name"],
+                    injuries=injury_list,
+                )
+                p["injury_status"] = injury["status"]
+                p["injury_color"] = injury["color"]
+
                 p["team"] = team
+                p["stat_internal"] = stat_int
                 preds.append(p)
             prog.empty()
-            pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
-            d = pdf[["player_name","team","stat_type","line","projection","pick","confidence","edge","rating"]].head(30).copy()
-            d.columns = ["Player","Team","Prop","Line","Proj","Pick","Conf","Edge","Grade"]
-            d["Conf"] = d["Conf"].apply(lambda x: f"{x*100:.1f}%")
-            d["Edge"] = d["Edge"].apply(lambda x: f"{x*100:.1f}%")
-            st.dataframe(d, hide_index=True, use_container_width=True)
+
+            if preds:
+                pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
+
+                # ── Filters ──
+                f1, f2 = st.columns(2)
+                prop_types_available = sorted(pdf["stat_type"].unique().tolist())
+                with f1:
+                    proj_prop_filter = st.selectbox("Prop Type", ["All"] + prop_types_available, key="proj_prop_f")
+                with f2:
+                    proj_grade_filter = st.selectbox("Min Grade", ["A only", "A + B", "A + B + C", "All"], index=3, key="proj_grade_f")
+
+                grade_map = {"A only": ["A"], "A + B": ["A", "B"], "A + B + C": ["A", "B", "C"], "All": ["A", "B", "C", "D"]}
+                filtered = pdf[pdf["rating"].isin(grade_map[proj_grade_filter])].copy()
+                if proj_prop_filter != "All":
+                    filtered = filtered[filtered["stat_type"] == proj_prop_filter]
+
+                d = filtered[["player_name","team","stat_type","line","projection","pick","confidence","edge","rating","injury_status","spring_badge","trend_badge","buy_low"]].head(40).copy()
+                d.columns = ["Player","Team","Prop","Line","Proj","Pick","Conf","Edge","Grade","Health","Spring","Trend","BuyLow"]
+                d["Conf"] = d["Conf"].apply(lambda x: f"{x*100:.1f}%")
+                d["Edge"] = d["Edge"].apply(lambda x: f"{x*100:.1f}%")
+                d["Health"] = d["Health"].map({"IL": "🔴 IL", "day-to-day": "🟡 DTD", "active": "🟢"})
+                d["Spring"] = d["Spring"].map({"hot": "🔥 Hot", "cold": "❄️ Cold", "neutral": "➖ Normal"})
+                d["Trend"] = d["Trend"].map({"hot": "🔥 Hot", "cold": "❄️ Cold", "neutral": "➖ Normal"})
+                d["BuyLow"] = d["BuyLow"].apply(lambda x: "🎯 BUY LOW" if x else "")
+                st.dataframe(d, hide_index=True, use_container_width=True)
+
+                # ── Checkboxes for slip builder ──
+                st.markdown('<div class="section-hdr">Build Slip from Projections</div>', unsafe_allow_html=True)
+                slip_candidates = filtered.head(40).reset_index(drop=True)
+                selected_picks = []
+                cols_per_row = 2
+                rows = (min(len(slip_candidates), 20) + cols_per_row - 1) // cols_per_row
+                for r_idx in range(rows):
+                    cols = st.columns(cols_per_row)
+                    for c_idx in range(cols_per_row):
+                        pick_idx = r_idx * cols_per_row + c_idx
+                        if pick_idx >= len(slip_candidates) or pick_idx >= 20:
+                            break
+                        pick_row = slip_candidates.iloc[pick_idx]
+                        label = f"{pick_row['player_name']} — {pick_row['stat_type']} {pick_row['pick']} {pick_row['line']} ({pick_row['rating']})"
+                        with cols[c_idx]:
+                            if st.checkbox(label, key=f"proj_pick_{pick_idx}"):
+                                selected_picks.append({
+                                    "player_name": pick_row["player_name"],
+                                    "stat_type": pick_row["stat_type"],
+                                    "line": pick_row["line"],
+                                    "pick": pick_row["pick"],
+                                })
+
+                if selected_picks:
+                    st.success(f"{len(selected_picks)} pick(s) selected")
+                    sc1, sc2 = st.columns(2)
+                    with sc1:
+                        slip_type_opts = [f"{n}-Pick {'Power Play' if n <= 3 else 'Flex'}" for n in range(2, 7)]
+                        proj_slip_type = st.selectbox("Slip type", slip_type_opts, key="proj_slip_type")
+                    with sc2:
+                        proj_slip_amount = st.number_input("Entry ($)", min_value=1.0, value=5.0, step=1.0, key="proj_slip_amt")
+                    if st.button("💾 Save Slip from Projections", type="primary", key="proj_save_slip"):
+                        num_needed = int(proj_slip_type[0])
+                        if len(selected_picks) == num_needed:
+                            from datetime import date as _date
+                            sid = create_slip(_date.today().isoformat(), proj_slip_type, proj_slip_amount, selected_picks)
+                            st.success(f"Slip #{sid} saved with {num_needed} picks!")
+                            st.rerun()
+                        else:
+                            st.warning(f"Select exactly {num_needed} picks for a {proj_slip_type}.")
 
 with tab_slips:
     st.markdown('<div class="section-hdr">PrizePicks Slip Tracker</div>', unsafe_allow_html=True)
@@ -394,12 +631,6 @@ with tab_dash:
 
     # Model Tuning Section
     st.markdown('<div class="section-hdr">Model Tuning</div>', unsafe_allow_html=True)
-    try:
-        weights = load_current_weights()
-        st.caption(f"Current model version: **{weights.get('version', 'v001')}** · Last updated: {weights.get('last_updated', 'baseline')}")
-    except Exception:
-        st.caption("Model weights: baseline (default)")
-
     tune_col1, tune_col2 = st.columns(2)
     with tune_col1:
         if st.button("Run Model Tuning", type="secondary"):
