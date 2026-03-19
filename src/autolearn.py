@@ -57,7 +57,7 @@ MAX_ADJUSTMENT_PCT = 0.10
 MIN_SAMPLE_DEFAULT = 25
 
 # Kill switch: rollback if accuracy falls below this after an adjustment
-KILL_SWITCH_THRESHOLD = 0.45
+KILL_SWITCH_THRESHOLD = 0.48
 
 # Minimum picks to evaluate kill switch after a new weight version
 KILL_SWITCH_EVAL_SIZE = 25
@@ -79,16 +79,16 @@ def get_baseline_weights() -> dict:
         prop_type_offsets, factor_weights, variance_ratios, version, metadata.
     """
     return {
-        "version": "v001",
+        "version": "v003",
         "description": "Baseline weights from predictor.py defaults",
         "created_at": datetime.now(timezone.utc).isoformat(),
 
         # Grade boundary cutoffs (confidence thresholds)
         # A pick gets grade X if confidence >= threshold
         "confidence_thresholds": {
-            "A": 0.62,
-            "B": 0.57,
-            "C": 0.54,
+            "A": 0.70,
+            "B": 0.62,
+            "C": 0.57,
             "D": 0.00,  # Everything below C
         },
 
@@ -634,31 +634,34 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
             failed_keys.add(sig)
 
     # 1. Direction bias correction
-    dir_analysis = analysis.get("direction_bias", {})
-    if dir_analysis.get("bias_detected") and dir_analysis.get("suggested_correction"):
-        corr = dir_analysis["suggested_correction"]
-        target = corr["target"]
-        direction = corr["direction"]
-        amount = corr["amount"]
-        sig = f"direction_bias:{target}:{direction}"
+    # DISABLED for v003: Poisson CDFs make LESS-heavy direction balance
+    # correct for discrete stats.
+    if False:
+        dir_analysis = analysis.get("direction_bias", {})
+        if dir_analysis.get("bias_detected") and dir_analysis.get("suggested_correction"):
+            corr = dir_analysis["suggested_correction"]
+            target = corr["target"]
+            direction = corr["direction"]
+            amount = corr["amount"]
+            sig = f"direction_bias:{target}:{direction}"
 
-        if sig not in failed_keys:
-            old_val = current_weights.get("direction_bias", {}).get(target, 1.0)
-            if direction == "increase":
-                new_val = old_val * (1 + amount)
-            else:
-                new_val = old_val * (1 - amount)
-            new_val = round(np.clip(new_val, 0.85, 1.15), 4)
+            if sig not in failed_keys:
+                old_val = current_weights.get("direction_bias", {}).get(target, 1.0)
+                if direction == "increase":
+                    new_val = old_val * (1 + amount)
+                else:
+                    new_val = old_val * (1 - amount)
+                new_val = round(np.clip(new_val, 0.85, 1.15), 4)
 
-            proposals.append({
-                "category": "direction_bias",
-                "key": target,
-                "old_value": old_val,
-                "new_value": new_val,
-                "change_pct": round((new_val - old_val) / old_val, 4) if old_val else 0,
-                "direction": direction,
-                "reason": corr["reason"],
-            })
+                proposals.append({
+                    "category": "direction_bias",
+                    "key": target,
+                    "old_value": old_val,
+                    "new_value": new_val,
+                    "change_pct": round((new_val - old_val) / old_val, 4) if old_val else 0,
+                    "direction": direction,
+                    "reason": corr["reason"],
+                })
 
     # 2. Prop type offset corrections
     prop_analysis = analysis.get("prop_type_accuracy", {})
@@ -692,7 +695,7 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
                 sig = "confidence_thresholds:A:increase"
                 if sig not in failed_keys:
                     old_val = current_weights.get("confidence_thresholds", {}).get("A", 0.62)
-                    new_val = round(min(old_val + 0.02, 0.70), 4)
+                    new_val = round(min(old_val + 0.02, 0.78), 4)
                     proposals.append({
                         "category": "confidence_thresholds",
                         "key": "A",
@@ -720,26 +723,28 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
                     })
 
     # 4. Variance ratio adjustments
-    var_analysis = analysis.get("variance_calibration", {})
-    for stat_type, info in var_analysis.get("per_prop_suggestions", {}).items():
-        var_adj = info["variance_adjustment_pct"]
-        direction = "increase" if var_adj > 0 else "decrease"
-        sig = f"variance_ratios:{stat_type}:{direction}"
+    # DISABLED for v003: Poisson/NegBin props don't use variance ratios.
+    if False:
+        var_analysis = analysis.get("variance_calibration", {})
+        for stat_type, info in var_analysis.get("per_prop_suggestions", {}).items():
+            var_adj = info["variance_adjustment_pct"]
+            direction = "increase" if var_adj > 0 else "decrease"
+            sig = f"variance_ratios:{stat_type}:{direction}"
 
-        if sig not in failed_keys:
-            old_val = current_weights.get("variance_ratios", {}).get(stat_type, 1.5)
-            new_val = round(old_val * (1 + var_adj), 3)
-            new_val = max(new_val, 0.5)  # Floor at 0.5
+            if sig not in failed_keys:
+                old_val = current_weights.get("variance_ratios", {}).get(stat_type, 1.5)
+                new_val = round(old_val * (1 + var_adj), 3)
+                new_val = max(new_val, 0.5)  # Floor at 0.5
 
-            proposals.append({
-                "category": "variance_ratios",
-                "key": stat_type,
-                "old_value": old_val,
-                "new_value": new_val,
-                "change_pct": round(abs(var_adj), 4),
-                "direction": direction,
-                "reason": info["reason"],
-            })
+                proposals.append({
+                    "category": "variance_ratios",
+                    "key": stat_type,
+                    "old_value": old_val,
+                    "new_value": new_val,
+                    "change_pct": round(abs(var_adj), 4),
+                    "direction": direction,
+                    "reason": info["reason"],
+                })
 
     return proposals
 

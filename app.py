@@ -40,6 +40,8 @@ from src.spring import (
 )
 from src.trends import get_batter_trend
 from src.explain import build_explanation, format_explanation_text
+from src.combined import score_picks, SIGNAL_CONFIRMED, SIGNAL_SHARP_ONLY, SIGNAL_PROJECTION_ONLY
+from src.slip_warnings import analyze_slip_correlation, format_warnings_streamlit
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -666,10 +668,35 @@ with tab_edge:
                             "pick": pick_row["pick"],
                         })
 
+                # ── Combined Analysis ──
+                _combined_grade_emoji = {"A+": "💎", "A": "🟢", "B": "🔵", "C": "🟡", "D": "🔴"}
+                _signal_badge = {
+                    SIGNAL_CONFIRMED: "✅ CONFIRMED",
+                    SIGNAL_SHARP_ONLY: "📊 SHARP",
+                    SIGNAL_PROJECTION_ONLY: "🔮 PROJECTION",
+                }
+                scored_combined = score_picks(all_edges, preds)
+                if scored_combined:
+                    st.markdown('<div class="section-hdr">Combined Analysis</div>', unsafe_allow_html=True)
+                    cdf = pd.DataFrame(scored_combined)
+                    cdisp = cdf[["combined_grade", "player_name", "team", "stat_type", "line", "pick", "combined_score", "signal"]].head(30).copy()
+                    cdisp.columns = ["Grade", "Player", "Team", "Prop", "Line", "Pick", "Score", "Signal"]
+                    cdisp["Grade"] = cdisp["Grade"].apply(lambda g: f"{_combined_grade_emoji.get(g, '⚪')} {g}")
+                    cdisp["Signal"] = cdisp["Signal"].apply(lambda s: _signal_badge.get(s, s))
+                    cdisp["Score"] = cdisp["Score"].apply(lambda x: f"{x:.4f}")
+                    st.dataframe(cdisp, hide_index=True, use_container_width=True)
+
                 # ── Slip builder ──
                 if selected_picks:
                     st.markdown('<div class="section-hdr">Build Slip</div>', unsafe_allow_html=True)
                     st.success(f"{len(selected_picks)} pick(s) selected")
+                    # Slip correlation warnings
+                    slip_warns = analyze_slip_correlation(selected_picks)
+                    if any(w["severity"] == "high" for w in slip_warns):
+                        st.warning("⚠️ This slip has correlation risks — review warnings below")
+                    for emoji, text in format_warnings_streamlit(slip_warns):
+                        st.markdown(f"{emoji} {text}")
+
                     sc1, sc2 = st.columns(2)
                     with sc1:
                         slip_type_opts = [f"{n}-Pick {'Power Play' if n <= 3 else 'Flex'}" for n in range(2, 7)]
