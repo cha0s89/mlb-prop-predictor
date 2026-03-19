@@ -559,22 +559,55 @@ with tab_edge:
             if preds:
                 pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
 
+                # ── Quick Summary ──
+                scored_all = score_picks(all_edges, preds)
+                ab_combined = [s for s in scored_all if s["combined_grade"] in ("A+", "A", "B")]
+                confirmed_count = sum(1 for s in ab_combined if s["signal"] == SIGNAL_CONFIRMED)
+                with st.expander("📋 Quick Summary"):
+                    st.markdown(f"**{len(pp_lines)}** props available · **{len(all_edges)}** sharp edges found · **{len(ab_combined)}** A/B combined picks")
+                    if all_edges and confirmed_count:
+                        st.markdown(f"**{len(ab_combined)} strong picks today — {confirmed_count} confirmed by sharp books**")
+                    elif all_edges:
+                        st.markdown(f"**{len(ab_combined)} strong picks today** — sharp lines available but no confirmed overlaps")
+                    else:
+                        st.markdown("**No sharp lines yet** — showing projection-only analysis")
+
                 # ── Today's Best Plays ──
-                top_a = pdf[pdf["rating"] == "A"].head(5)
-                if not top_a.empty:
+                # Use combined scoring when sharp edges exist, fall back to projection ranking
+                if scored_all:
+                    top_plays = [s for s in scored_all if s["combined_grade"] in ("A+", "A")][:5]
+                else:
+                    top_plays = []
+                if not top_plays:
+                    # Fall back to top A-grade projections
+                    for _, tp in pdf[pdf["rating"] == "A"].head(5).iterrows():
+                        top_plays.append({
+                            "player_name": tp["player_name"],
+                            "stat_type": tp["stat_type"],
+                            "line": tp["line"],
+                            "pick": tp["pick"],
+                            "combined_score": tp.get("edge", 0),
+                            "combined_grade": "A",
+                            "signal": SIGNAL_PROJECTION_ONLY,
+                            "proj_confidence": tp.get("confidence", 0.5),
+                        })
+
+                if top_plays:
                     st.markdown('<div class="section-hdr">Today\'s Best Plays</div>', unsafe_allow_html=True)
-                    bp_cols = st.columns(min(len(top_a), 5))
-                    for idx, (_, tp) in enumerate(top_a.iterrows()):
-                        if idx >= 5:
-                            break
+                    _bp_grade_emoji = {"A+": "💎", "A": "🟢", "B": "🔵", "C": "🟡", "D": "🔴"}
+                    _bp_signal_short = {SIGNAL_CONFIRMED: "✅", SIGNAL_SHARP_ONLY: "📊", SIGNAL_PROJECTION_ONLY: "🔮"}
+                    bp_cols = st.columns(min(len(top_plays), 5))
+                    for idx, tp in enumerate(top_plays[:5]):
                         pick_cls = "more" if tp["pick"] == "MORE" else "less"
-                        bl_tag = ' <span style="color:#FFB300;font-size:0.7rem">🎯 BUY LOW</span>' if tp.get("buy_low") else ""
+                        sig_icon = _bp_signal_short.get(tp.get("signal", ""), "")
+                        grade_icon = _bp_grade_emoji.get(tp.get("combined_grade", ""), "")
+                        conf_val = tp.get("proj_confidence", 0) or 0
                         with bp_cols[idx]:
                             st.markdown(f'''<div class="best-play">
-                                <div class="bp-name">{tp["player_name"]}{bl_tag}</div>
+                                <div class="bp-name">{grade_icon} {tp["player_name"]} {sig_icon}</div>
                                 <div class="bp-prop">{tp["stat_type"]} · Line {tp["line"]}</div>
-                                <div class="bp-pick {pick_cls}">{tp["pick"]} → {tp["projection"]}</div>
-                                <div class="bp-conf">{tp["confidence"]*100:.1f}% conf · {tp["edge"]*100:.1f}% edge</div>
+                                <div class="bp-pick {pick_cls}">{tp["pick"]}</div>
+                                <div class="bp-conf">Score: {tp["combined_score"]:.3f} · {tp["combined_grade"]}</div>
                             </div>''', unsafe_allow_html=True)
 
                 # ── Filters ──
@@ -696,6 +729,23 @@ with tab_edge:
                         st.warning("⚠️ This slip has correlation risks — review warnings below")
                     for emoji, text in format_warnings_streamlit(slip_warns):
                         st.markdown(f"{emoji} {text}")
+
+                    # Estimated slip strength from combined scores
+                    if scored_all:
+                        _scored_lookup = {
+                            f"{s['player_name'].lower()}|{s['stat_type'].lower()}": s
+                            for s in scored_all
+                        }
+                        slip_scores = []
+                        for sp in selected_picks:
+                            key = f"{sp['player_name'].lower()}|{sp['stat_type'].lower()}"
+                            matched = _scored_lookup.get(key)
+                            if matched:
+                                slip_scores.append(matched["combined_score"])
+                        if slip_scores:
+                            avg_score = sum(slip_scores) / len(slip_scores)
+                            strength_pct = min(50 + avg_score * 300, 85)  # Scale to readable %
+                            st.caption(f"Estimated slip strength: **{strength_pct:.0f}%** (avg combined score: {avg_score:.3f})")
 
                     sc1, sc2 = st.columns(2)
                     with sc1:
