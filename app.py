@@ -266,6 +266,15 @@ with tab_edge:
                 st.warning("⚠️ Could not load player stats — using league averages for projections.")
             else:
                 st.caption(f"Loaded {len(batting_df)} batters from FanGraphs")
+            # Debug: show loaded weights so we can verify on live app
+            import json as _json, os as _os
+            _wp = _os.path.join(_os.path.dirname(__file__), "data", "weights", "current.json")
+            try:
+                with open(_wp) as _f:
+                    _w = _json.load(_f)
+                st.caption(f"Debug weights: version={_w.get('version','?')}, fs_offset={_w.get('prop_type_offsets',{}).get('hitter_fantasy_score','?')}, more_mult={_w.get('direction_bias',{}).get('more_multiplier','?')}")
+            except Exception as _we:
+                st.caption(f"Debug weights: FAILED to load — {_we}")
             preds = []
             for _, row in pp_lines.iterrows():
                 team = row.get("team","")

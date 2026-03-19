@@ -27,9 +27,32 @@ WEIGHTING PHILOSOPHY (from research):
   - BvP data is powerful but requires 10+ PA to be meaningful
 """
 
+import json
+import os
 import numpy as np
 from scipy import stats as sp_stats
 from typing import Optional
+
+
+# ═══════════════════════════════════════════════════════
+# LEARNED WEIGHTS (loaded from data/weights/current.json)
+# ═══════════════════════════════════════════════════════
+
+_WEIGHTS_CACHE = {}
+
+
+def _load_weights() -> dict:
+    """Load learned weights from current.json. Cached after first call."""
+    if _WEIGHTS_CACHE:
+        return _WEIGHTS_CACHE
+    weights_path = os.path.join(os.path.dirname(__file__), "..", "data", "weights", "current.json")
+    try:
+        with open(weights_path) as f:
+            w = json.load(f)
+        _WEIGHTS_CACHE.update(w)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return _WEIGHTS_CACHE
 
 
 # ═══════════════════════════════════════════════════════
@@ -1072,6 +1095,28 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         proj_result = {"projection": line, "mu": line}
 
     projection = proj_result.get("projection", line)
+
+    # ── Apply learned weights from data/weights/current.json ──
+    weights = _load_weights()
+
+    # Prop-type offset (e.g. fantasy score systematically under-projected)
+    prop_offsets = weights.get("prop_type_offsets", {})
+    offset = prop_offsets.get(stat_internal, 0.0)
+    projection += offset
+
+    # Direction bias correction: nudge projection up (more_multiplier) or
+    # down (less_multiplier) to counteract systematic MORE/LESS skew.
+    # Applied as: if projection > line → trending MORE → apply more_multiplier
+    #             if projection < line → trending LESS → apply less_multiplier
+    dir_bias = weights.get("direction_bias", {})
+    if projection >= line:
+        projection *= dir_bias.get("more_multiplier", 1.0)
+    else:
+        projection *= dir_bias.get("less_multiplier", 1.0)
+
+    proj_result["projection"] = round(projection, 3)
+    proj_result["mu"] = projection
+
     prob_result = calculate_over_under_probability(projection, line, stat_internal)
 
     return {
