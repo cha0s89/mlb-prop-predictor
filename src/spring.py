@@ -139,15 +139,14 @@ def _get_all_team_ids() -> list[int]:
 
 def fetch_spring_training_stats(year: int = None) -> list[dict]:
     """
-    Pull Spring Training batting stats for all players from the MLB Stats API.
+    Pull Spring Training batting stats for all players in a single API call.
 
-    Uses the team roster + individual player game logs approach because
-    the MLB API doesn't have a single "all ST hitters" leaderboard endpoint.
-    Iterates each team's 40-man roster and pulls their ST hitting game log.
+    Uses the MLB Stats API bulk stats endpoint:
+        /v1/stats?stats=season&season=YYYY&group=hitting&gameType=S&sportId=1
 
     Returns a list of dicts, each with:
         player_id, player_name, team, G, AB, H, HR, RBI, BB, K,
-        AVG, SLG, OBP, 2B, 3B, SB, PA
+        AVG, SLG, OBP, OPS, 2B, 3B, SB, PA
 
     Args:
         year: The ST season year. Defaults to current year.
@@ -156,110 +155,68 @@ def fetch_spring_training_stats(year: int = None) -> list[dict]:
         List of player stat dicts. Empty list if API fails.
     """
     year = year or datetime.now().year
-    team_ids = _get_all_team_ids()
-    all_players: dict[int, dict] = {}  # keyed by player ID to dedupe
 
-    for team_id in team_ids:
-        # Pull the team roster to get player IDs
-        roster_data = _api_get(
-            f"/teams/{team_id}/roster",
-            params={"rosterType": "fullSeason", "season": year},
-        )
-        if not roster_data or "roster" not in roster_data:
-            continue
+    data = _api_get(
+        "/stats",
+        params={
+            "stats": "season",
+            "season": year,
+            "group": "hitting",
+            "gameType": GAME_TYPE_SPRING,
+            "sportId": 1,
+            "limit": 1000,
+            "offset": 0,
+        },
+    )
 
-        team_abbr = ""
-        # Try to get team abbreviation from the roster response
-        try:
-            team_info = _api_get(f"/teams/{team_id}")
-            if team_info and "teams" in team_info:
-                team_abbr = team_info["teams"][0].get("abbreviation", "")
-        except Exception:
-            pass
+    if not data or "stats" not in data:
+        return []
 
-        for player_entry in roster_data["roster"]:
+    all_players = []
+    for stat_group in data.get("stats", []):
+        for split in stat_group.get("splits", []):
             try:
-                pid = player_entry["person"]["id"]
-                pname = player_entry["person"]["fullName"]
-                position = player_entry.get("position", {}).get("abbreviation", "")
+                s = split.get("stat", {})
+                player = split.get("player", {})
+                team = split.get("team", {})
 
-                # Skip pitchers — we only want hitters for fantasy score
-                if position == "P":
+                ab = _safe_int(s.get("atBats", 0))
+                if ab == 0:
                     continue
 
-                # Skip if we already have this player from another team
-                if pid in all_players:
-                    continue
+                h = _safe_int(s.get("hits", 0))
+                doubles = _safe_int(s.get("doubles", 0))
+                triples = _safe_int(s.get("triples", 0))
+                hr = _safe_int(s.get("homeRuns", 0))
+                bb = _safe_int(s.get("baseOnBalls", 0))
+                hbp = _safe_int(s.get("hitByPitch", 0))
+                sf = _safe_int(s.get("sacFlies", 0))
+                so = _safe_int(s.get("strikeOuts", 0))
+                pa = ab + bb + hbp + sf
 
-                # Pull this player's ST game log
-                stats_data = _api_get(
-                    f"/people/{pid}/stats",
-                    params={
-                        "stats": "gameLog",
-                        "group": "hitting",
-                        "season": year,
-                        "gameType": GAME_TYPE_SPRING,
-                    },
-                )
+                avg = round(h / ab, 3)
+                slg = round(_calculate_slg(h, doubles, triples, hr, ab), 3)
+                obp = round((h + bb + hbp) / pa, 3) if pa > 0 else 0.0
+                ops = round(obp + slg, 3)
 
-                if not stats_data or "stats" not in stats_data:
-                    continue
-
-                # Aggregate across all ST game log entries
-                totals = {
-                    "G": 0, "AB": 0, "H": 0, "HR": 0, "RBI": 0,
-                    "BB": 0, "K": 0, "2B": 0, "3B": 0, "SB": 0,
-                    "PA": 0, "HBP": 0, "SF": 0,
-                }
-
-                for stat_group in stats_data.get("stats", []):
-                    for split in stat_group.get("splits", []):
-                        s = split.get("stat", {})
-                        totals["G"] += _safe_int(s.get("gamesPlayed", 0))
-                        totals["AB"] += _safe_int(s.get("atBats", 0))
-                        totals["H"] += _safe_int(s.get("hits", 0))
-                        totals["HR"] += _safe_int(s.get("homeRuns", 0))
-                        totals["RBI"] += _safe_int(s.get("rbi", 0))
-                        totals["BB"] += _safe_int(s.get("baseOnBalls", 0))
-                        totals["K"] += _safe_int(s.get("strikeOuts", 0))
-                        totals["2B"] += _safe_int(s.get("doubles", 0))
-                        totals["3B"] += _safe_int(s.get("triples", 0))
-                        totals["SB"] += _safe_int(s.get("stolenBases", 0))
-                        totals["HBP"] += _safe_int(s.get("hitByPitch", 0))
-                        totals["SF"] += _safe_int(s.get("sacFlies", 0))
-
-                # Calculate PA = AB + BB + HBP + SF
-                totals["PA"] = totals["AB"] + totals["BB"] + totals["HBP"] + totals["SF"]
-
-                # Skip players with zero ABs in ST
-                if totals["AB"] == 0:
-                    continue
-
-                # Compute rate stats
-                ab = totals["AB"]
-                totals["AVG"] = round(totals["H"] / ab, 3) if ab > 0 else 0.0
-                totals["SLG"] = round(
-                    _calculate_slg(totals["H"], totals["2B"], totals["3B"], totals["HR"], ab),
-                    3
-                ) if ab > 0 else 0.0
-                pa = totals["PA"]
-                totals["OBP"] = round(
-                    (totals["H"] + totals["BB"] + totals["HBP"]) / pa, 3
-                ) if pa > 0 else 0.0
-
-                all_players[pid] = {
-                    "player_id": pid,
-                    "player_name": pname,
-                    "team": team_abbr,
-                    **totals,
-                }
-
+                all_players.append({
+                    "player_id": player.get("id", 0),
+                    "player_name": player.get("fullName", ""),
+                    "team": team.get("abbreviation", ""),
+                    "G": _safe_int(s.get("gamesPlayed", 0)),
+                    "AB": ab, "H": h, "HR": hr,
+                    "RBI": _safe_int(s.get("rbi", 0)),
+                    "BB": bb, "K": so,
+                    "2B": doubles, "3B": triples,
+                    "SB": _safe_int(s.get("stolenBases", 0)),
+                    "PA": pa, "HBP": hbp, "SF": sf,
+                    "AVG": avg, "SLG": slg, "OBP": obp, "OPS": ops,
+                })
             except Exception as e:
-                # Never let one bad player record kill the whole loop
-                print(f"[spring.py] Error processing player on team {team_id}: {e}")
+                print(f"[spring.py] Error parsing ST player: {e}")
                 continue
 
-    return list(all_players.values())
+    return all_players
 
 
 def _calculate_slg(hits: int, doubles: int, triples: int, hr: int, ab: int) -> float:

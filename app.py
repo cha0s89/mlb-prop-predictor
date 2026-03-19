@@ -34,7 +34,10 @@ from src.slips import (
 )
 from src.autograder import auto_grade_date, auto_grade_yesterday
 from src.autolearn import run_adjustment_cycle, load_current_weights, get_weight_history
-from src.spring import get_player_injury_status, get_spring_form_multiplier
+from src.spring import (
+    get_player_injury_status, get_spring_form_multiplier,
+    fetch_spring_training_stats, fetch_injuries,
+)
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -286,6 +289,19 @@ with tab_edge:
                         weather_cache[team_abbr] = None
                 wx_prog.empty()
 
+            # Pre-fetch Spring Training stats + injuries (one API call each)
+            st_stats = []
+            injury_list = []
+            with st.spinner("Loading Spring Training data & injuries..."):
+                try:
+                    st_stats = fetch_spring_training_stats()
+                except Exception:
+                    st_stats = []
+                try:
+                    injury_list = fetch_injuries(days_back=60)
+                except Exception:
+                    injury_list = []
+
             prog = st.progress(0, text="Running projections...")
             total = len(pp_lines)
             for i, (_, row) in enumerate(pp_lines.iterrows()):
@@ -298,6 +314,7 @@ with tab_edge:
                         wx = weather_cache[r]
                 # Build batter profile from FanGraphs stats
                 batter_profile = None
+                matched = None
                 if not batting_df.empty:
                     matched = match_player_stats(row["player_name"], batting_df)
                     if matched is not None:
@@ -311,14 +328,39 @@ with tab_edge:
                     park_team=resolve_team(team) if team else None,
                     weather=wx,
                 )
+
+                # Spring form multiplier — compare ST performance to prior season
+                prior_slg = float(matched["SLG"]) if matched is not None and "SLG" in matched.index else 0.400
+                prior_avg = float(matched["AVG"]) if matched is not None and "AVG" in matched.index else 0.250
+                spring = get_spring_form_multiplier(
+                    player_name=row["player_name"],
+                    prior_season_slg=prior_slg,
+                    prior_season_avg=prior_avg,
+                    st_stats=st_stats,
+                )
+                spring_mult = spring["spring_mult"]
+                p["projection"] = round(p["projection"] * spring_mult, 2)
+                p["spring_mult"] = spring_mult
+                p["spring_badge"] = spring["badge"]
+
+                # Injury status
+                injury = get_player_injury_status(
+                    player_name=row["player_name"],
+                    injuries=injury_list,
+                )
+                p["injury_status"] = injury["status"]
+                p["injury_color"] = injury["color"]
+
                 p["team"] = team
                 preds.append(p)
             prog.empty()
             pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
-            d = pdf[["player_name","team","stat_type","line","projection","pick","confidence","edge","rating"]].head(30).copy()
-            d.columns = ["Player","Team","Prop","Line","Proj","Pick","Conf","Edge","Grade"]
+            d = pdf[["player_name","team","stat_type","line","projection","pick","confidence","edge","rating","injury_status","spring_badge"]].head(30).copy()
+            d.columns = ["Player","Team","Prop","Line","Proj","Pick","Conf","Edge","Grade","Health","Spring"]
             d["Conf"] = d["Conf"].apply(lambda x: f"{x*100:.1f}%")
             d["Edge"] = d["Edge"].apply(lambda x: f"{x*100:.1f}%")
+            d["Health"] = d["Health"].map({"IL": "🔴 IL", "day-to-day": "🟡 DTD", "active": "🟢"})
+            d["Spring"] = d["Spring"].map({"hot": "🔥 Hot", "cold": "❄️ Cold", "neutral": "➖ Normal"})
             st.dataframe(d, hide_index=True, use_container_width=True)
 
 with tab_slips:
