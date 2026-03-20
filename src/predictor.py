@@ -169,6 +169,21 @@ def _lineup_pa(order_pos):
     return LG["pa_per_lineup_spot"].get(order_pos, 4.2)
 
 
+def _ensure_pct(val, lg_default=None):
+    """Convert decimal rates (0.227) to percentages (22.7).
+
+    FanGraphs CSVs store K%/BB% as decimals (0.227) but the predictor
+    math expects percentages (22.7).  Values already in percentage form
+    (>= 1.0) are returned unchanged.  A league-average *lg_default* is
+    returned when *val* is falsy (0, None, etc.).
+    """
+    if not val and lg_default is not None:
+        return lg_default
+    if val is not None and val < 1.0:
+        return val * 100
+    return val
+
+
 # ═══════════════════════════════════════════════════════
 # PITCHER PROJECTIONS
 # ═══════════════════════════════════════════════════════
@@ -188,7 +203,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
       Park K factor (5%) — slight effect
       Weather (5%) — cold = grip issues = fewer Ks
     """
-    k_pct = p.get("k_pct", 0) or (p.get("k9", LG["k9"]) / 9 * 27 / LG["bf_per_ip"] * 100)
+    k_pct = _ensure_pct(p.get("k_pct", 0), lg_default=None) or (p.get("k9", LG["k9"]) / (LG["bf_per_ip"] * 9) * 100)
     bf_est = p.get("ip", 0) * LG["bf_per_ip"] if p.get("ip", 0) > 0 else 0
     csw = p.get("recent_csw_pct", 0)
     swstr = p.get("recent_swstr_pct", 0)
@@ -254,7 +269,7 @@ def project_pitcher_outs(p, park=None, wx=None):
     """
     ip = p.get("ip", 0)
     gs = max(p.get("gs", 1), 1)
-    bb_pct = p.get("bb_pct", LG["bb_pct_p"])
+    bb_pct = _ensure_pct(p.get("bb_pct"), lg_default=LG["bb_pct_p"])
     bf_est = ip * LG["bf_per_ip"] if ip > 0 else 0
 
     # Regress BB% (high BB = shorter outings)
@@ -322,7 +337,7 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
 
 def project_pitcher_walks(p, park=None, ump=None):
     """PITCHER WALKS ALLOWED — BB% is the key driver."""
-    bb_pct = p.get("bb_pct", LG["bb_pct_p"])
+    bb_pct = _ensure_pct(p.get("bb_pct"), lg_default=LG["bb_pct_p"])
     bb9 = p.get("bb9", LG["bb9"])
     ip = p.get("ip", 0)
     gs = max(p.get("gs", 1), 1)
@@ -399,7 +414,7 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
     avg = b.get("avg", LG["avg"])
     xba = b.get("xba", 0)
     pa = b.get("pa", 0)
-    k_rate = b.get("k_rate", LG["k_rate"])
+    k_rate = _ensure_pct(b.get("k_rate"), lg_default=LG["k_rate"])
     hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
     ev90 = b.get("recent_ev90", LG["ev90"])
     babip = b.get("babip", LG["babip"])
@@ -450,7 +465,7 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
 
     # Expected AB (PA minus walks/HBP ~9%)
     exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (b.get("bb_rate", LG["bb_rate"]) / 100))
+    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
 
     mu = max(exp_ab * reg_avg, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_avg": round(reg_avg, 3),
@@ -526,7 +541,7 @@ def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
         reg_slg *= blended_wx
 
     exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (b.get("bb_rate", LG["bb_rate"]) / 100))
+    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
 
     mu = max(exp_ab * reg_slg, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_slg": round(reg_slg, 3),
@@ -584,7 +599,7 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
     if wx: reg_hr *= wx.get("weather_hr_mult", 1.0)
 
     exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (b.get("bb_rate", LG["bb_rate"]) / 100))
+    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
 
     mu = max(exp_ab * reg_hr, 0.01)
     return {"projection": round(mu, 3), "mu": mu, "hr_rate": round(reg_hr, 4)}
@@ -741,7 +756,7 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
 
     High-K batters against high-K pitchers with a big-zone umpire = K over city.
     """
-    k_rate = b.get("k_rate", LG["k_rate"])
+    k_rate = _ensure_pct(b.get("k_rate"), lg_default=LG["k_rate"])
     pa = b.get("pa", 0)
     contact = b.get("contact_rate", 0)
 
@@ -754,7 +769,7 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
 
     # Opposing pitcher K ability
     if opp_p:
-        opp_k = opp_p.get("k_pct", LG["k_pct_p"])
+        opp_k = _ensure_pct(opp_p.get("k_pct"), lg_default=LG["k_pct_p"])
         opp_csw = opp_p.get("recent_csw_pct", LG["csw_pct"])
         opp_k_quality = (opp_k / LG["k_pct_p"] * 0.6 +
                           (opp_csw / LG["csw_pct"] if opp_csw > 0 else 1.0) * 0.4)
@@ -787,13 +802,13 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
 
 def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
     """BATTER WALKS — BB% + opposing pitcher BB% + umpire zone."""
-    bb_rate = b.get("bb_rate", LG["bb_rate"])
+    bb_rate = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
     pa = b.get("pa", 0)
 
     reg_bb = _regress(bb_rate, pa, STAB["bb_rate"], LG["bb_rate"])
 
     if opp_p:
-        opp_bb = opp_p.get("bb_pct", LG["bb_pct_p"])
+        opp_bb = _ensure_pct(opp_p.get("bb_pct"), lg_default=LG["bb_pct_p"])
         reg_bb *= (opp_bb / LG["bb_pct_p"])
 
     # Tight-zone ump = more walks
@@ -829,8 +844,8 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     obp = b.get("obp", LG["obp"])
     slg = b.get("slg", LG["slg"])
     iso = b.get("iso", LG["iso"])
-    bb_rate = b.get("bb_rate", LG["bb_rate"])
-    k_rate = b.get("k_rate", LG["k_rate"])
+    bb_rate = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
+    k_rate = _ensure_pct(b.get("k_rate"), lg_default=LG["k_rate"])
     hr = b.get("hr", 0)
     sb = b.get("sb", 0)
     rbi = b.get("rbi", 0)

@@ -657,6 +657,14 @@ def build_walkforward_profile(player_name: str, game_date: str,
                     profile[key] = float(val) if val is not None else 0.0
                 except (ValueError, TypeError):
                     profile[key] = 0.0
+
+        # Guard against decimal-vs-percentage confusion (FanGraphs CSVs
+        # store K%/BB% as decimals like 0.227; predictor expects 22.7).
+        for rate_key in ("k_pct", "bb_pct"):
+            v = profile.get(rate_key, 0)
+            if v and v < 1.0:
+                profile[rate_key] = v * 100
+
         return profile
 
     # ── Batter path ──
@@ -699,6 +707,13 @@ def build_walkforward_profile(player_name: str, game_date: str,
                 profile[key] = float(val) if val is not None else 0.0
             except (ValueError, TypeError):
                 profile[key] = 0.0
+
+    # Guard against decimal-vs-percentage confusion (FanGraphs CSVs
+    # store K%/BB% as decimals like 0.227; predictor expects 22.7).
+    for rate_key in ("k_rate", "bb_rate"):
+        v = profile.get(rate_key, 0)
+        if v and v < 1.0:
+            profile[rate_key] = v * 100
 
     # Statcast expected stats — set to 0 so the predictor uses season-only;
     # pulling per-player Statcast for every batter-day in a 6-month backtest
