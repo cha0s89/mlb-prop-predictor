@@ -47,7 +47,7 @@ import pandas as pd
 import requests
 
 # ── Project imports ──────────────────────────────────────────────────────────
-from src.predictor import generate_prediction
+from src.predictor import generate_prediction, _clear_weights_cache
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -1161,6 +1161,9 @@ def run_backtest(
         Summary report dict (same as generate_backtest_report output).
     """
     prop_types = prop_types or DEFAULT_PROP_TYPES
+
+    # Clear predictor weights cache to ensure fresh read from data/weights/current.json
+    _clear_weights_cache()
 
     # Load any previously saved results so we can resume
     all_results = load_results()
