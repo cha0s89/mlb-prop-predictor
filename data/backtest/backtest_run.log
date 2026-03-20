@@ -1,0 +1,153 @@
+======================================================================
+  MLB PROP EDGE — HISTORICAL BACKTEST
+  Range: 2025-04-01 to 2025-09-30 (183 days)
+  Props: hitter_fantasy_score, hits, total_bases, home_runs, pitcher_strikeouts
+  Resuming with 57524 existing results
+======================================================================
+
+  [57/183] Processing 2025-05-27 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-05-27&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [58/183] Processing 2025-05-28 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-05-28&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [59/183] Processing 2025-05-29 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-05-29&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [60/183] Processing 2025-05-30 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-05-30&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [61/183] Processing 2025-05-31 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-05-31&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [62/183] Processing 2025-06-01 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-01&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [63/183] Processing 2025-06-02 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-02&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [64/183] Processing 2025-06-03 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-03&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [65/183] Processing 2025-06-04 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-04&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [66/183] Processing 2025-06-05 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-05&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [67/183] Processing 2025-06-06 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-06&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [68/183] Processing 2025-06-07 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-07&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [69/183] Processing 2025-06-08 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-08&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [70/183] Processing 2025-06-09 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-09&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [71/183] Processing 2025-06-10 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-10&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [72/183] Processing 2025-06-11 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-11&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [73/183] Processing 2025-06-12 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-12&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [74/183] Processing 2025-06-13 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-13&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [75/183] Processing 2025-06-14 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-14&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [76/183] Processing 2025-06-15 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-15&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [77/183] Processing 2025-06-16 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-16&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [78/183] Processing 2025-06-17 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-17&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [79/183] Processing 2025-06-18 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-18&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [80/183] Processing 2025-06-19 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-19&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [81/183] Processing 2025-06-20 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-20&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [82/183] Processing 2025-06-21 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-21&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [83/183] Processing 2025-06-22 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-22&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [84/183] Processing 2025-06-23 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-23&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [85/183] Processing 2025-06-24 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-24&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [86/183] Processing 2025-06-25 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-25&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [87/183] Processing 2025-06-26 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-26&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [88/183] Processing 2025-06-27 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-27&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [89/183] Processing 2025-06-28 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-28&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [90/183] Processing 2025-06-29 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-29&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [91/183] Processing 2025-06-30 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-06-30&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [92/183] Processing 2025-07-01 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-07-01&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)
+  [SAVED] 57524 results -> data/backtest/backtest_2025.json
+
+  [93/183] Processing 2025-07-02 ...   [API ERROR] https://statsapi.mlb.com/api/v1/schedule — HTTPSConnectionPool(host='statsapi.mlb.com', port=443): Max retries exceeded with url: /api/v1/schedule?sportId=1&date=2025-07-02&hydrate=linescore (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+  0 predictions (0W-0L)

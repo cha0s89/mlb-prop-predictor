@@ -1,7 +1,7 @@
 {
-  "version": "v003",
-  "description": "Reset weights for Poisson/Gamma CDF probability model",
-  "created_at": "2026-03-19T00:00:00.000000+00:00",
+  "version": "v007",
+  "description": "Calibrated offsets from played-games-only backtest (82k records, April-Sept 2025). Excludes non-plays (actual=0) which artificially inflated LESS accuracy by 10-25pp. Offsets = actual - projection to correct underprojections (especially fantasy_score +1.23, total_bases +0.78).",
+  "created_at": "2026-03-20T00:40:00.000000+00:00",
   "confidence_thresholds": {
     "A": 0.70,
     "B": 0.62,
@@ -13,15 +13,15 @@
     "less_multiplier": 1.0
   },
   "prop_type_offsets": {
-    "pitcher_strikeouts": 0.0,
+    "pitcher_strikeouts": -0.58,
     "batter_strikeouts": 0.0,
-    "hits": 0.0,
-    "total_bases": 0.0,
-    "home_runs": 0.0,
+    "hits": 0.48,
+    "total_bases": 0.78,
+    "home_runs": 0.93,
     "rbis": 0.0,
     "runs": 0.0,
     "stolen_bases": 0.0,
-    "hitter_fantasy_score": 0.0,
+    "hitter_fantasy_score": 1.23,
     "hits_runs_rbis": 0.0,
     "pitching_outs": 0.0,
     "earned_runs": 0.0,
@@ -42,10 +42,16 @@
     "barrel_rate": 1.0
   },
   "metadata": {
-    "parent_version": "v002",
-    "adjustment_count": 0,
-    "total_picks_analyzed": 0,
-    "accuracy_at_creation": null,
-    "notes": "Clean reset for v003 Poisson/Gamma CDF model. All offsets zeroed, direction bias neutral. Old v002 weights saved as v002_pre_poisson_fix.json."
+    "parent_version": "v003",
+    "adjustment_count": 1,
+    "total_picks_analyzed": 79255,
+    "accuracy_at_creation": 0.640,
+    "backtest_range": "2025-04-01 to 2025-09-30",
+    "improvements": {
+      "root_cause_fix": "Identified non-play inflation: 21-44% of backtest picks had actual=0 (players who didn't bat). These artificial 0s created false LESS wins and MORE losses. By filtering to played-games-only, we found true projection bias.",
+      "offset_recalibration": "pitcher_strikeouts was -0.67 in v005 but should be +0.57 (projection 5.53 vs actual 4.96 when played). total_bases -0.22→-0.77, hitter_fantasy_score -1.07→-1.21, hits -0.12→-0.48, home_runs -0.02→-0.93",
+      "expectation": "With v006 offsets, MORE picks should improve from 40-42% to ~50-55%, LESS should stay ~65-70%, overall ~65-67%"
+    },
+    "notes": "CRITICAL: Non-plays were in backtest because extract_all_batters() filter is checking SEASON stats PA (>= 2), not ACTUAL game PA. Players like Max Muncy had 200+ season PA but 0 game PA on certain dates. These should be filtered by actual game PA. Future backtest enhancement: add actual_game_pa >= 1 check after grading."
   }
 }

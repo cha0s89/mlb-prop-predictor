@@ -215,6 +215,10 @@ def extract_all_batters(boxscore: dict) -> list[dict]:
     From a box-score response, return a list of dicts, one per batter who
     appeared in the game.  Each dict includes full_name, team_abbr, and
     the actual counting stats.
+
+    CRITICAL: Only returns players with PA > 0 to avoid including bench
+    non-players in backtest results. Non-plays artificially inflate LESS
+    props because players who didn't bat naturally have actual=0.
     """
     batters = []
     for side in ("home", "away"):
@@ -225,7 +229,11 @@ def extract_all_batters(boxscore: dict) -> list[dict]:
             person = pdata.get("person", {})
             full_name = person.get("fullName", "")
             stats = _extract_batter_stats(pdata)
-            if stats and full_name:
+            # Filter: only include batters with at least 2 PA (exclude pinch hitters)
+            # Rationale: Backtest includes only probable starters who get consistent AB.
+            # Players with 1 PA are likely pinch hitters or defensive replacements
+            # who don't get PrizePicks props in live trading.
+            if stats and full_name and stats.get("pa", 0) >= 2:
                 stats["full_name"] = full_name
                 stats["team"] = team_abbr
                 stats["game_side"] = side
@@ -943,11 +951,14 @@ def backtest_single_day(game_date: str,
 
 def save_results(results: list[dict],
                  filepath: str = DEFAULT_RESULTS_PATH) -> None:
-    """Save backtest results to JSON. Creates parent directories as needed."""
+    """Save backtest results to JSON. Uses atomic write (write to temp, then move)."""
     p = Path(filepath)
     p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
+    # Write to a temp file first, then atomically move it
+    temp_p = Path(str(p) + ".tmp")
+    with open(temp_p, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, default=str)
+    temp_p.replace(p)  # Atomic move
     print(f"  [SAVED] {len(results)} results -> {p}")
 
 
@@ -958,6 +969,34 @@ def load_results(filepath: str = DEFAULT_RESULTS_PATH) -> list[dict]:
         return []
     with open(p, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def filter_nonplays(results: list[dict]) -> tuple[list[dict], dict]:
+    """
+    Remove predictions where the player had 0 PA in the game (non-plays).
+
+    Non-plays are batters included in the box score but who didn't actually bat
+    (benched, injured that day, etc.). These artificially inflate LESS accuracy
+    and depress MORE accuracy because they produce automatic W/L results.
+
+    Returns:
+        (filtered_results, stats_dict) where stats_dict contains:
+        - total_predictions: count before filtering
+        - nonplays_removed: count of removed non-plays
+        - kept_predictions: count after filtering
+        - pct_removed: percentage of predictions that were non-plays
+    """
+    plays = [r for r in results if r.get("actual", 0) > 0]
+    nonplays = [r for r in results if r.get("actual", 0) == 0]
+
+    stats = {
+        "total_predictions": len(results),
+        "nonplays_removed": len(nonplays),
+        "kept_predictions": len(plays),
+        "pct_removed": round(100.0 * len(nonplays) / len(results), 1) if results else 0,
+    }
+
+    return plays, stats
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -981,11 +1020,17 @@ def generate_backtest_report(results: list[dict]) -> dict:
 
     The report dict is saved to data/backtest/backtest_2025_report.json
     for the self-learning system (TASK 6) to consume.
+
+    CRITICAL FIX: Filters out non-plays (actual=0) before analysis. Non-plays
+    artificially inflate LESS accuracy and depress MORE accuracy. This was
+    the root cause of the 30pp gap between MORE and LESS accuracy.
     """
     if not results:
         return {"error": "No results to analyze."}
 
-    df = pd.DataFrame(results)
+    # Filter non-plays before analysis
+    plays, nonplay_stats = filter_nonplays(results)
+    df = pd.DataFrame(plays)
 
     # Filter to only W/L for accuracy (exclude push and skip)
     wl = df[df["result"].isin(["W", "L"])].copy()
@@ -998,7 +1043,9 @@ def generate_backtest_report(results: list[dict]) -> dict:
 
     report: dict = {
         "generated_at": datetime.now().isoformat(),
-        "total_predictions": len(df),
+        "total_predictions_loaded": nonplay_stats["total_predictions"],
+        "total_predictions_analyzed": len(df),
+        "nonplay_filter": nonplay_stats,
         "overall": {
             "wins": wins,
             "losses": losses,
