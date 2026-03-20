@@ -24,8 +24,15 @@ def load_backtest():
         sys.exit(1)
     with open(BACKTEST_PATH) as f:
         data = json.load(f)
-    print(f"Loaded {len(data):,} backtest records\n")
-    return data
+    print(f"Loaded {len(data):,} backtest records")
+
+    # Filter non-plays (actual=0) which artificially inflate LESS and deflate MORE
+    nonplays = [r for r in data if r.get('actual', 0) == 0]
+    plays = [r for r in data if r.get('actual', 0) > 0]
+    print(f"  Non-plays (actual=0): {len(nonplays):,} ({100*len(nonplays)/len(data):.1f}%)")
+    print(f"  Actual plays: {len(plays):,} ({100*len(plays)/len(data):.1f}%)\n")
+
+    return plays
 
 
 def cross_tab(data):

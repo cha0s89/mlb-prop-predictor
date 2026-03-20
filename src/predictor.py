@@ -551,58 +551,69 @@ def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
 def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
                                park=None, wx=None, lineup_pos=None):
     """
-    BATTER HOME RUNS — highest variance prop. Use with caution.
+    BATTER HOME RUNS — REDESIGNED AS BINOMIAL MODEL (P(1+ HR in game))
 
+    Previous version used: HR/PA rate * expected AB = continuous projection (0.14)
+    But the line is 0.5, and actual HRs are discrete (0, 1, 2, ...)
+    So we need: P(at least 1 HR in expected PA) = 1 - (1 - HR_rate)^PA
+
+    This gives a probability (0-1) that directly compares to the 0.5 line.
     Even Judge only homers in ~26% of games. The line is usually 0.5.
-    Barrel rate + HR/FB + fly ball rate are the key inputs.
     """
     hr = b.get("hr", 0)
     pa = b.get("pa", 0)
     iso = b.get("iso", LG["iso"])
     barrel = b.get("recent_barrel_rate", LG["barrel_rate"])
 
+    # Base HR rate (per PA)
     hr_rate = hr / pa if pa > 0 else LG["hr_per_pa"]
-    reg_hr = _regress(hr_rate, pa, 300, LG["hr_per_pa"])
+    reg_hr_rate = _regress(hr_rate, pa, 300, LG["hr_per_pa"])
 
-    # Barrel rate is THE predictor
+    # Barrel rate is THE predictor of HR ability
     if barrel > 0:
         barrel_adj = barrel / LG["barrel_rate"]
-        reg_hr *= (1 + (barrel_adj - 1) * 0.35)
+        reg_hr_rate *= (1 + (barrel_adj - 1) * 0.35)
 
     # ISO confirmation
     reg_iso = _regress(iso, pa, STAB["iso"], LG["iso"])
     iso_adj = reg_iso / LG["iso"]
-    reg_hr *= (1 + (iso_adj - 1) * 0.15)
+    reg_hr_rate *= (1 + (iso_adj - 1) * 0.15)
 
     # BvP HR history
     if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 10:
         bvp_hr_rate = bvp["home_runs"] / bvp["pa"] if bvp["pa"] > 0 else 0
         if bvp_hr_rate > 0:
             bvp_w = min(bvp["pa"] / 60, 0.20)
-            reg_hr = reg_hr * (1 - bvp_w) + bvp_hr_rate * bvp_w
+            reg_hr_rate = reg_hr_rate * (1 - bvp_w) + bvp_hr_rate * bvp_w
 
     # Opposing pitcher HR tendency
     if opp_p:
         opp_hr9 = opp_p.get("hr9", LG["hr9"])
-        reg_hr *= (opp_hr9 / LG["hr9"])
+        reg_hr_rate *= (opp_hr9 / LG["hr9"])
 
     # Platoon (ISO is ~14% higher in favorable platoon)
     if platoon and platoon.get("favorable"):
-        reg_hr *= 1.14
+        reg_hr_rate *= 1.14
     elif platoon and platoon.get("favorable") is False:
-        reg_hr *= 0.86
+        reg_hr_rate *= 0.86
 
     # Park HR factor (biggest effect of any prop)
-    if park: reg_hr *= _park(park, PARK_HR)
+    if park: reg_hr_rate *= _park(park, PARK_HR)
 
     # Weather (temp is huge for HR — 2% per degree C above 72F)
-    if wx: reg_hr *= wx.get("weather_hr_mult", 1.0)
+    if wx: reg_hr_rate *= wx.get("weather_hr_mult", 1.0)
 
+    # Expected PA in the game
     exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
 
-    mu = max(exp_ab * reg_hr, 0.01)
-    return {"projection": round(mu, 3), "mu": mu, "hr_rate": round(reg_hr, 4)}
+    # NEW APPROACH: P(1+ HR in exp_pa) = 1 - (1 - rate)^pa
+    # Clamp rate to avoid numerical issues
+    rate_clamped = max(min(reg_hr_rate, 0.20), 0.001)
+    p_at_least_one_hr = 1.0 - ((1.0 - rate_clamped) ** exp_pa)
+
+    # The projection is the probability (0-1), which directly compares to line 0.5
+    mu = p_at_least_one_hr
+    return {"projection": round(mu, 3), "mu": mu, "p_1plus_hr": round(mu, 4)}
 
 
 def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
@@ -999,10 +1010,46 @@ def calculate_over_under_probability(projection, line, prop_type):
 
     Distribution selection:
       Poisson: most count props (hits, Ks, walks, runs, etc.)
-      Negative binomial: overdispersed rare events (HR, SB)
+      Negative binomial: overdispersed rare events (SB)
       Gamma: continuous-ish scores (fantasy score)
       Normal: high-mean continuous props (pitching outs, H+R+RBI)
+      SPECIAL: home_runs now uses binary classification (P(1+ HR))
+
+    Home Runs special case:
+      The projection is now P(1+ HR in game) = 0 to 1.
+      Line is 0.5. So: p_over = projection, p_under = 1 - projection
     """
+    # SPECIAL CASE: Home Runs uses binary probability
+    if prop_type == "home_runs":
+        p_over = projection  # P(1+ HR)
+        p_under = 1.0 - projection  # P(0 HR)
+        total = p_over + p_under
+        if total > 0:
+            p_over /= total
+            p_under /= total
+        else:
+            p_over = 0.5
+            p_under = 0.5
+        edge = abs(p_over - 0.5)
+        pick = "MORE" if p_over > 0.5 else "LESS"
+        confidence = max(p_over, p_under)
+        if confidence >= 0.70:
+            rating = "A"
+        elif confidence >= 0.62:
+            rating = "B"
+        elif confidence >= 0.57:
+            rating = "C"
+        else:
+            rating = "D"
+        return {
+            "p_over": round(p_over, 3),
+            "p_under": round(p_under, 3),
+            "pick": pick,
+            "confidence": round(confidence, 3),
+            "edge": round(edge, 3),
+            "rating": rating,
+        }
+
     mu = max(projection, 0.01)
 
     # NegBin/Gamma params are tunable via weights file (autolearn can adjust)
@@ -1010,7 +1057,6 @@ def calculate_over_under_probability(projection, line, prop_type):
     vr = weights.get("variance_ratios", {})
 
     negbin_props = {
-        "home_runs": vr.get("home_runs", 3.5),
         "stolen_bases": vr.get("stolen_bases", 2.5),
     }
     poisson_props = {
