@@ -47,6 +47,7 @@ from src.lineups import (
     fetch_todays_games, get_batting_order_position, get_pa_multiplier,
     get_game_context, get_probable_pitcher, fetch_confirmed_lineups,
 )
+from src.matchups import get_platoon_split_adjustment
 from src.database import (
     save_projected_stats, get_projection_accuracy,
     get_projection_history, init_projected_stats_table,
@@ -804,6 +805,78 @@ with tab_edge:
             except Exception:
                 pass
 
+            # Pre-build opposing pitcher lookup: team_abbr → {pitcher_name, hand, profile}
+            # For batter props, "opposing pitcher" is the pitcher the batter faces
+            # For pitcher props, "opposing lineup" stats come from the other team's batting
+            opp_pitcher_lookup = {}  # team_abbr → dict with pitcher info + FanGraphs profile
+            opp_team_k_lookup = {}   # team_abbr → team K% for pitcher K projections
+            try:
+                for game in todays_games:
+                    home_team = game.get("home_team", "")
+                    away_team = game.get("away_team", "")
+                    # Home batters face the AWAY pitcher
+                    if away_team and game.get("away_pitcher_name") != "TBD":
+                        opp_info = {
+                            "name": game.get("away_pitcher_name", ""),
+                            "hand": game.get("away_pitcher_hand", ""),
+                            "id": game.get("away_pitcher_id"),
+                        }
+                        # Try to find opposing pitcher in FanGraphs stats
+                        if not pitching_df.empty:
+                            opp_matched = match_pitcher_stats(opp_info["name"], pitching_df)
+                            if opp_matched is not None:
+                                opp_info["profile"] = build_pitcher_profile(opp_matched)
+                        opp_pitcher_lookup[home_team] = opp_info
+                    # Away batters face the HOME pitcher
+                    if home_team and game.get("home_pitcher_name") != "TBD":
+                        opp_info = {
+                            "name": game.get("home_pitcher_name", ""),
+                            "hand": game.get("home_pitcher_hand", ""),
+                            "id": game.get("home_pitcher_id"),
+                        }
+                        if not pitching_df.empty:
+                            opp_matched = match_pitcher_stats(opp_info["name"], pitching_df)
+                            if opp_matched is not None:
+                                opp_info["profile"] = build_pitcher_profile(opp_matched)
+                        opp_pitcher_lookup[away_team] = opp_info
+
+                    # Build opposing team K rate for pitcher K projections
+                    # Pitcher on home team faces away lineup, and vice versa
+                    if not batting_df.empty:
+                        for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
+                            if pitcher_team:
+                                # Average K% of opposing team's batters in our FanGraphs data
+                                team_batters = batting_df[
+                                    batting_df["Team"].str.contains(opp_batting_team, case=False, na=False)
+                                ] if "Team" in batting_df.columns else pd.DataFrame()
+                                if not team_batters.empty and "K%" in team_batters.columns:
+                                    try:
+                                        k_vals = team_batters["K%"].apply(
+                                            lambda x: float(str(x).replace("%", "").strip()) if pd.notna(x) else 22.7
+                                        )
+                                        opp_team_k_lookup[pitcher_team] = round(k_vals.mean(), 1)
+                                    except Exception:
+                                        pass
+            except Exception:
+                pass
+
+            # Pre-build batter hand cache from confirmed lineups (for platoon splits)
+            batter_hand_cache = {}  # player_name_upper → bat_hand (R/L/S)
+            try:
+                for game in todays_games:
+                    game_pk = game.get("game_pk")
+                    if not game_pk:
+                        continue
+                    lineups = fetch_confirmed_lineups(game_pk)
+                    for side in ("home", "away"):
+                        for batter in lineups.get(side, []):
+                            name = batter.get("player_name", "").upper().strip()
+                            hand = batter.get("bat_hand", "")
+                            if name and hand:
+                                batter_hand_cache[name] = hand
+            except Exception:
+                pass
+
             prog = st.progress(0, text="Running projections...")
             total = len(pp_lines)
             for i, (_, row) in enumerate(pp_lines.iterrows()):
@@ -831,11 +904,40 @@ with tab_edge:
 
                 # Look up home-plate umpire for this player's game
                 ump_name = None
-                if team and umpire_map:
-                    r_team = resolve_team(team)
-                    if r_team:
-                        ump_name = umpire_map.get(r_team)
+                r_team = resolve_team(team) if team else None
+                if r_team and umpire_map:
+                    ump_name = umpire_map.get(r_team)
                 ump_adj = get_umpire_k_adjustment(ump_name) if ump_name else None
+
+                # Look up batting order position (for batter props)
+                batting_pos = None
+                if not is_pitcher_prop:
+                    try:
+                        batting_pos = get_batting_order_position(
+                            row["player_name"], games=todays_games
+                        )
+                    except Exception:
+                        pass
+
+                # Look up opposing pitcher profile (for batter props)
+                opp_pitcher_profile = None
+                platoon_adj = None
+                if not is_pitcher_prop and r_team and r_team in opp_pitcher_lookup:
+                    opp_info = opp_pitcher_lookup[r_team]
+                    opp_pitcher_profile = opp_info.get("profile")
+                    # Platoon splits: need batter hand + pitcher hand
+                    opp_hand = opp_info.get("hand", "")
+                    if opp_hand:
+                        bat_hand = batter_hand_cache.get(
+                            row["player_name"].upper().strip(), ""
+                        )
+                        if bat_hand:
+                            platoon_adj = get_platoon_split_adjustment(bat_hand, opp_hand)
+
+                # Opposing team K rate (for pitcher K projections)
+                opp_k_rate = None
+                if is_pitcher_prop and r_team:
+                    opp_k_rate = opp_team_k_lookup.get(r_team)
 
                 p = generate_prediction(
                     player_name=row["player_name"],
@@ -844,9 +946,13 @@ with tab_edge:
                     line=row["line"],
                     batter_profile=batter_profile,
                     pitcher_profile=pitcher_profile,
-                    park_team=resolve_team(team) if team else None,
+                    opp_pitcher_profile=opp_pitcher_profile,
+                    opp_team_k_rate=opp_k_rate,
+                    platoon=platoon_adj,
+                    park_team=r_team,
                     weather=wx,
                     ump=ump_adj,
+                    lineup_pos=batting_pos,
                 )
 
                 # Props that are count-based (safe to apply multipliers to)
@@ -926,22 +1032,13 @@ with tab_edge:
                     if p.get("rating") in ("A", "A+"):
                         p["rating"] = "B"
 
-                # v018: Lineup position and PA adjustment
-                try:
-                    batting_pos = get_batting_order_position(row["player_name"], games=todays_games)
-                    if batting_pos and not row.get("is_pitcher_prop"):
-                        pa_mult = get_pa_multiplier(batting_pos)
-                        p["batting_order"] = batting_pos
-                        p["pa_multiplier"] = round(pa_mult, 3)
-                        # Adjust projection for PA-dependent props
-                        pa_props = {"hits", "total_bases", "rbis", "runs", "stolen_bases",
-                                    "hits_runs_rbis", "batter_strikeouts", "walks", "singles", "doubles"}
-                        if stat_int in pa_props:
-                            p["projection"] = round(p["projection"] * pa_mult, 2)
-                            if "mu" in p:
-                                p["mu"] = p["mu"] * pa_mult
-                except Exception:
-                    pass
+                # v018: Lineup position display info
+                # NOTE: PA adjustment now handled INSIDE generate_prediction() via
+                # lineup_pos → estimate_plate_appearances() (Task 3A). No post-hoc
+                # multiplier needed — that would double-count the effect.
+                if batting_pos:
+                    p["batting_order"] = batting_pos
+                    p["pa_multiplier"] = round(get_pa_multiplier(batting_pos), 3)
 
                 # v018: Game context for display
                 try:
@@ -954,6 +1051,13 @@ with tab_edge:
                             p["opp_pitcher"] = game_ctx["probable_pitcher"].get("name", "")
                 except Exception:
                     pass
+
+                # Add platoon and matchup context to result for display
+                if platoon_adj and platoon_adj.get("favorable") is not None:
+                    p["platoon"] = platoon_adj["description"]
+                    p["platoon_favorable"] = platoon_adj["favorable"]
+                if ump_name:
+                    p["umpire"] = ump_name
 
                 p["team"] = team
                 p["stat_internal"] = stat_int
