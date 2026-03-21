@@ -2,14 +2,27 @@
 PrizePicks Slip Tracker
 Track multi-pick entries (slips), calculate payouts, and manage P&L.
 
-PrizePicks payout structure:
-  5-pick Flex: 10x (all 5), 2x (4/5), 0.4x (3/5) — break-even ~54.2%
-  6-pick Flex: 25x (all 6), 5x (5/6), 1.5x (4/6), 0.25x (3/6) — break-even ~52.9%
-  3-pick Power: 5x (all 3) — break-even ~59.8%
-  2-pick Power: 3x (all 2) — break-even ~57.7%
+Official PrizePicks payout structure (March 2026):
+  Power Play (must be perfect):
+    2-Pick = 3x, 3-Pick = 6x, 4-Pick = 10x, 5-Pick = 20x, 6-Pick = 25x
+  Flex Play (partial payouts):
+    3-Pick: 3/3=3x, 2/3=1x
+    4-Pick: 4/4=6x, 3/4=1.5x
+    5-Pick: 5/5=10x, 4/5=2x, 3/5=0.4x
+    6-Pick: 6/6=12.5x, 5/6=2x, 4/6=0.4x
+
+  Ties: revert payout down one level (not removed like DNP)
+  2-Pick Power special: 1 correct + 1 tie = 1.5x; 1 loss + 1 tie = loss
+  DNP/Reboot: pick removed, lineup reverts (e.g., 3-pick Power → 2-pick Power)
+  2-Pick Power DNP → refund
+  If DNP removals leave all remaining picks on same team → refund (ineligible)
+
+  Note: Some payouts may differ for discounted projections, same-game combos,
+  specific leagues, and Demon/Goblin projections. In-app detail is authoritative.
 """
 
 import sqlite3
+import math
 import pandas as pd
 from datetime import datetime, date
 from pathlib import Path
@@ -18,18 +31,38 @@ from typing import Optional
 from src.database import get_connection, grade_prediction
 
 
-# ── Payout tables ──
+# ── Official PrizePicks Payout Tables (March 2026) ──
+# Source: PrizePicks Help Center, verified March 2026
 PAYOUTS = {
-    "5_flex": {5: 10.0, 4: 2.0, 3: 0.4, 2: 0, 1: 0, 0: 0},
-    "6_flex": {6: 25.0, 5: 5.0, 4: 1.5, 3: 0.25, 2: 0, 1: 0, 0: 0},
-    "3_power": {3: 5.0, 2: 0, 1: 0, 0: 0},
+    # Power Play (must be perfect)
     "2_power": {2: 3.0, 1: 0, 0: 0},
-    "4_flex": {4: 5.0, 3: 1.5, 2: 0.25, 1: 0, 0: 0},
+    "3_power": {3: 6.0, 2: 0, 1: 0, 0: 0},
+    "4_power": {4: 10.0, 3: 0, 2: 0, 1: 0, 0: 0},
+    "5_power": {5: 20.0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
+    "6_power": {6: 25.0, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
+    # Flex Play (partial payouts)
+    "3_flex": {3: 3.0, 2: 1.0, 1: 0, 0: 0},
+    "4_flex": {4: 6.0, 3: 1.5, 2: 0, 1: 0, 0: 0},
+    "5_flex": {5: 10.0, 4: 2.0, 3: 0.4, 2: 0, 1: 0, 0: 0},
+    "6_flex": {6: 12.5, 5: 2.0, 4: 0.4, 3: 0, 2: 0, 1: 0, 0: 0},
 }
 
+# Special tie payout for 2-pick Power
+TIE_SPECIAL = {
+    "2_power": {(1, 1): 1.5},  # 1 correct + 1 tie = 1.5x
+}
+
+# Per-leg iid break-even probabilities (exact, from research report)
 BREAKEVEN = {
-    "5_flex": 0.542, "6_flex": 0.529, "3_power": 0.598,
-    "2_power": 0.577, "4_flex": 0.555,
+    "2_power": 0.57735,
+    "3_power": 0.55032,
+    "4_power": 0.56234,
+    "5_power": 0.54928,
+    "6_power": 0.58480,
+    "3_flex":  0.57735,
+    "4_flex":  0.55032,
+    "5_flex":  0.54253,
+    "6_flex":  0.58984,
 }
 
 
@@ -191,19 +224,26 @@ def finalize_slip(slip_id: int) -> Optional[dict]:
 
         entry_type, entry_amount = slip_row
 
-        # PrizePicks tie/push handling: payout reverts down by one level.
-        # A 5-pick Flex with 1 push becomes a 4-pick Flex payout table.
-        # A Power play with a push reverts similarly.
+        # PrizePicks tie/push handling (March 2026 rules):
+        # Ties revert payout down one level (not removed like DNP).
+        # Special: 2-Pick Power with 1 correct + 1 tie = 1.5x
+        # Special: 2-Pick Power with 1 loss + 1 tie = loss
+        is_power = "power" in entry_type
+
         if pushes > 0:
-            # Determine the reverted entry type
-            original_size = wins + losses + pushes
-            is_power = "power" in entry_type
-            effective_type = f"{effective_picks}_{'power' if is_power else 'flex'}"
-            payout_table = PAYOUTS.get(effective_type, PAYOUTS.get(entry_type, {}))
+            # Check special tie cases first
+            special = TIE_SPECIAL.get(entry_type, {})
+            special_key = (wins, pushes)
+            if special_key in special:
+                payout_mult = special[special_key]
+            else:
+                # Revert down: ties reduce effective lineup size
+                effective_type = f"{effective_picks}_{'power' if is_power else 'flex'}"
+                payout_table = PAYOUTS.get(effective_type, PAYOUTS.get(entry_type, {}))
+                payout_mult = payout_table.get(wins, 0)
         else:
             payout_table = PAYOUTS.get(entry_type, {})
-
-        payout_mult = payout_table.get(wins, 0)
+            payout_mult = payout_table.get(wins, 0)
         status = "win" if payout_mult > 1 else ("loss" if payout_mult == 0 else "partial")
 
     slip_info = conn.execute(

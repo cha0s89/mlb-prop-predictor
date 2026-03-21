@@ -283,6 +283,106 @@ def _lineup_pa(order_pos):
     return LG["pa_per_lineup_spot"].get(order_pos, 4.2)
 
 
+def estimate_plate_appearances(
+    lineup_pos: int = None,
+    team_runs_per_game: float = None,
+    blowout_risk: float = 0.0,
+    pinch_hit_risk: float = 0.0,
+) -> dict:
+    """Opportunity-first PA estimation for hitters.
+
+    Models PA distribution (not just mean) based on:
+    - Lineup position (1-9): top of order gets ~1 more PA than bottom
+    - Team run environment: high-scoring teams cycle lineup more
+    - Blowout risk: lopsided games → starters pulled early
+    - Pinch-hit risk: platoon players / late-inning substitution
+
+    Returns dict with mean_pa, std_pa, and expected_ab.
+
+    Source: Research Reports 3 & 4 — opportunity-first architecture
+    """
+    # Base PA from lineup slot
+    base_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+
+    # Team run environment adjustment
+    # High-scoring teams turn over the lineup more → more PA at top
+    if team_runs_per_game and team_runs_per_game > 0:
+        lg_rpg = 4.5  # league average runs per game
+        run_env_adj = (team_runs_per_game / lg_rpg - 1) * 0.12
+        base_pa *= (1 + run_env_adj)
+
+    # Blowout risk reduces PA (starters pulled in lopsided games)
+    if blowout_risk > 0:
+        base_pa *= (1 - blowout_risk * 0.15)
+
+    # Pinch-hit risk (platoon players may not get full game)
+    if pinch_hit_risk > 0:
+        base_pa *= (1 - pinch_hit_risk)
+
+    # PA standard deviation: ~0.8-1.0 for most lineup spots
+    # Top of order has slightly higher variance (more extras/walkoff PAs)
+    if lineup_pos and lineup_pos <= 3:
+        std_pa = 1.0
+    elif lineup_pos and lineup_pos >= 7:
+        std_pa = 0.75
+    else:
+        std_pa = 0.85
+
+    # Expected AB: PA minus walks/HBP (~12% of PA for average hitter)
+    exp_ab = base_pa * 0.88
+
+    return {
+        "mean_pa": round(base_pa, 2),
+        "std_pa": round(std_pa, 2),
+        "expected_ab": round(exp_ab, 2),
+        "lineup_pos": lineup_pos,
+    }
+
+
+def estimate_batters_faced(
+    pitcher_ip: float = 5.5,
+    pitcher_whip: float = None,
+    early_season_discount: float = 1.0,
+    opposing_lineup_woba: float = None,
+) -> dict:
+    """Opportunity-first BF estimation for pitchers.
+
+    Models BF distribution based on:
+    - Expected IP (from pitcher projections + early-season discount)
+    - WHIP (more baserunners = more BF per inning)
+    - Opposing lineup quality (better lineups → more BF)
+
+    Returns dict with mean_bf, std_bf.
+
+    Source: Research Reports 3 & 4 — opportunity-first architecture
+    """
+    # Base BF from expected IP
+    bf_per_ip = LG["bf_per_ip"]  # ~4.3 league average
+
+    # WHIP adjustment: higher WHIP → more BF per IP
+    if pitcher_whip and pitcher_whip > 0:
+        whip_adj = pitcher_whip / LG["whip"]
+        bf_per_ip *= (0.7 + 0.3 * whip_adj)  # Partial adjustment
+
+    # Opposing lineup quality
+    if opposing_lineup_woba and opposing_lineup_woba > 0:
+        lineup_adj = opposing_lineup_woba / LG["woba"]
+        bf_per_ip *= (0.85 + 0.15 * lineup_adj)
+
+    effective_ip = pitcher_ip * early_season_discount
+    mean_bf = effective_ip * bf_per_ip
+
+    # BF standard deviation: ~3-5 for starters (wide range of outcomes)
+    std_bf = max(2.5, mean_bf * 0.18)
+
+    return {
+        "mean_bf": round(mean_bf, 1),
+        "std_bf": round(std_bf, 1),
+        "effective_ip": round(effective_ip, 2),
+        "bf_per_ip": round(bf_per_ip, 2),
+    }
+
+
 def _ensure_pct(val, lg_default=None):
     """Convert decimal rates (0.227) to percentages (22.7).
 

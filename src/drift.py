@@ -173,13 +173,122 @@ def check_model_health(predictions: list[dict], min_sample: int = 50) -> dict:
                 f"(Brier shifting {cusum_result['direction']})"
             )
 
+    # Log loss (cross-entropy)
+    overall_logloss = _compute_log_loss(predictions)
+
     healthy = overall_accuracy >= 0.52 and not regime_change and overall_brier < 0.25
 
     return {
         "healthy": healthy,
         "overall_brier": round(overall_brier, 4),
         "overall_accuracy": round(overall_accuracy, 4),
+        "overall_logloss": round(overall_logloss, 4) if overall_logloss else None,
         "by_prop": dict(prop_health),
         "alerts": alerts,
         "regime_change": regime_change,
+    }
+
+
+def _compute_log_loss(predictions: list[dict]) -> Optional[float]:
+    """Compute log loss (cross-entropy) over predictions."""
+    if not predictions:
+        return None
+    eps = 1e-15
+    total = 0.0
+    for pred in predictions:
+        y = 1.0 if pred.get("result") == "W" else 0.0
+        p = max(min(pred.get("confidence", 0.5), 1 - eps), eps)
+        total += -(y * np.log(p) + (1 - y) * np.log(1 - p))
+    return total / len(predictions)
+
+
+def compute_crps_binary(predicted_prob: float, outcome: int) -> float:
+    """Compute CRPS for a binary prediction.
+
+    For binary outcomes, CRPS simplifies to:
+      CRPS = (predicted_prob - outcome)^2 + predicted_prob * (1 - predicted_prob) / 3
+
+    This is a strictly proper scoring rule for distributional forecasts.
+    Lower is better. CRPS=0.25 for a coin-flip model.
+
+    Args:
+        predicted_prob: P(outcome=1), i.e., probability of the positive class
+        outcome: 0 or 1 (actual result)
+
+    Returns:
+        CRPS value (float)
+
+    Source: Research Reports 3 & 4 — CRPS as proper distributional scoring rule
+    """
+    return (predicted_prob - outcome) ** 2 + predicted_prob * (1 - predicted_prob) / 3
+
+
+def compute_crps_batch(predictions: list[dict]) -> Optional[float]:
+    """Compute mean CRPS over a batch of binary predictions.
+
+    Each prediction dict should have:
+        - confidence: float (P(correct))
+        - result: "W" or "L"
+    """
+    if not predictions:
+        return None
+
+    total = 0.0
+    for pred in predictions:
+        y = 1.0 if pred.get("result") == "W" else 0.0
+        p = pred.get("confidence", 0.5)
+        total += compute_crps_binary(p, y)
+
+    return total / len(predictions)
+
+
+def compute_ece(predictions: list[dict], n_bins: int = 10) -> dict:
+    """Compute Expected Calibration Error (ECE) with reliability diagram data.
+
+    Bins predictions by confidence, compares predicted vs actual rate.
+
+    Args:
+        predictions: list of dicts with confidence and result
+        n_bins: number of bins
+
+    Returns:
+        dict with ece, max_calibration_error, and bins
+    """
+    if not predictions:
+        return {"ece": None, "max_ce": None, "bins": []}
+
+    bins = [[] for _ in range(n_bins)]
+
+    for pred in predictions:
+        p = pred.get("confidence", 0.5)
+        y = 1.0 if pred.get("result") == "W" else 0.0
+        # Bin index
+        idx = min(int(p * n_bins), n_bins - 1)
+        bins[idx].append((p, y))
+
+    ece = 0.0
+    max_ce = 0.0
+    bin_data = []
+
+    for i, b in enumerate(bins):
+        if not b:
+            continue
+        avg_conf = np.mean([x[0] for x in b])
+        avg_acc = np.mean([x[1] for x in b])
+        ce = abs(avg_conf - avg_acc)
+        weight = len(b) / len(predictions)
+        ece += weight * ce
+        max_ce = max(max_ce, ce)
+        bin_data.append({
+            "bin_center": round((i + 0.5) / n_bins, 2),
+            "avg_confidence": round(avg_conf, 4),
+            "avg_accuracy": round(avg_acc, 4),
+            "calibration_error": round(ce, 4),
+            "count": len(b),
+        })
+
+    return {
+        "ece": round(ece, 4),
+        "max_ce": round(max_ce, 4),
+        "bins": bin_data,
     }

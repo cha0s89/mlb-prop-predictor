@@ -448,11 +448,15 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
             else:
                 rating = "D"
 
-            # EV calculation for different entry types
-            ev_5pick = (fair_prob ** 5 * 10 + 5 * fair_prob ** 4 * (1 - fair_prob) * 2 +
-                        10 * fair_prob ** 3 * (1 - fair_prob) ** 2 * 0.4) - 1
-            ev_6pick = (fair_prob ** 6 * 25 + 6 * fair_prob ** 5 * (1 - fair_prob) * 2 +
-                        15 * fair_prob ** 4 * (1 - fair_prob) ** 2 * 0.4) - 1
+            # EV calculation using official March 2026 PrizePicks payouts
+            # 5-pick Flex: 10x (5/5), 2x (4/5), 0.4x (3/5)
+            from scipy.special import comb
+            p, q = fair_prob, 1 - fair_prob
+            ev_5pick = (p**5 * 10 + comb(5,4)*p**4*q * 2 +
+                        comb(5,3)*p**3*q**2 * 0.4) - 1
+            # 6-pick Flex: 12.5x (6/6), 2x (5/6), 0.4x (4/6)
+            ev_6pick = (p**6 * 12.5 + comb(6,5)*p**5*q * 2 +
+                        comb(6,4)*p**4*q**2 * 0.4) - 1
 
             edges.append({
                 "player_name": pp_row["player_name"],
@@ -497,3 +501,121 @@ def get_api_usage(api_key: str = None) -> dict:
         }
     except Exception:
         return {"remaining": "Error", "used": "Error"}
+
+
+# ═══════════════════════════════════════════════════════
+# Hedge-Style Online Book-Weight Learning
+# ═══════════════════════════════════════════════════════
+# Instead of static book weights, learn which books are most
+# reliable for each prop market over time using multiplicative
+# weights (Hedge algorithm) with time decay.
+#
+# Source: Report 4 (Sierra) — continuous book-weight learning
+# w_{b}^{t+1} ∝ w_{b}^{t} * exp(-η * loss_t(b))
+
+import math as _math
+
+_LEARNED_WEIGHTS_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "data", "book_weights.json"
+)
+
+
+def load_learned_book_weights() -> dict:
+    """Load per-market learned book weights from disk.
+
+    Returns dict of {market_key: {book_key: weight}}.
+    Falls back to static BOOK_WEIGHTS if no learned weights exist.
+    """
+    try:
+        with open(_LEARNED_WEIGHTS_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_learned_book_weights(weights: dict) -> None:
+    """Persist learned book weights to disk."""
+    os.makedirs(os.path.dirname(_LEARNED_WEIGHTS_PATH), exist_ok=True)
+    with open(_LEARNED_WEIGHTS_PATH, "w") as f:
+        json.dump(weights, f, indent=2)
+
+
+def hedge_update_book_weights(
+    book_probs: dict,
+    outcome: int,
+    market_key: str,
+    eta: float = 0.05,
+    decay_half_life_hours: float = 24.0,
+    dt_hours: float = 1.0,
+) -> dict:
+    """Update book weights for a market using Hedge algorithm with time decay.
+
+    Args:
+        book_probs: {book_key: devigged_probability} for the winning side
+        outcome: 1 if over hit, 0 if under hit
+        market_key: e.g. "pitcher_strikeouts", "batter_hits"
+        eta: learning rate (lower = more conservative)
+        decay_half_life_hours: time decay toward uniform
+        dt_hours: time since last update
+
+    Returns:
+        Updated weights dict for this market
+    """
+    all_weights = load_learned_book_weights()
+    market_weights = all_weights.get(market_key, {})
+
+    # Initialize from static weights if empty
+    if not market_weights:
+        for book in book_probs:
+            market_weights[book] = BOOK_WEIGHTS.get(book, 0.5)
+
+    # Add any new books not seen before
+    for book in book_probs:
+        if book not in market_weights:
+            market_weights[book] = 0.5
+
+    # Step 1: Time decay toward uniform
+    books = list(market_weights.keys())
+    if books:
+        decay = 0.5 ** (dt_hours / decay_half_life_hours)
+        uniform = 1.0 / len(books)
+        for b in books:
+            market_weights[b] = decay * market_weights[b] + (1 - decay) * uniform
+
+    # Step 2: Compute per-book log loss and apply multiplicative update
+    eps = 1e-6
+    for b in books:
+        if b in book_probs:
+            p = min(max(book_probs[b], eps), 1 - eps)
+            loss = -(outcome * _math.log(p) + (1 - outcome) * _math.log(1 - p))
+            market_weights[b] *= _math.exp(-eta * loss)
+
+    # Step 3: Renormalize
+    total = sum(market_weights.values())
+    if total > 0:
+        for b in books:
+            market_weights[b] = market_weights[b] / total
+
+    # Save
+    all_weights[market_key] = market_weights
+    save_learned_book_weights(all_weights)
+
+    return market_weights
+
+
+def get_effective_book_weight(book_key: str, market_key: str = None) -> float:
+    """Get the effective weight for a book, blending static and learned.
+
+    If learned weights exist for this market, use them.
+    Otherwise fall back to static BOOK_WEIGHTS.
+    """
+    if market_key:
+        learned = load_learned_book_weights()
+        market_weights = learned.get(market_key, {})
+        if book_key in market_weights:
+            # Blend: 60% learned, 40% static (prevent runaway drift)
+            learned_w = market_weights[book_key]
+            static_w = BOOK_WEIGHTS.get(book_key, 0.5)
+            return 0.6 * learned_w + 0.4 * static_w
+
+    return BOOK_WEIGHTS.get(book_key, 0.3)

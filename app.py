@@ -53,7 +53,8 @@ from src.database import (
 )
 from src.kelly import half_kelly, calculate_slip_sizing
 from src.parlay_suggest import suggest_slips, score_slip_quality
-from src.drift import check_model_health
+from src.drift import check_model_health, compute_crps_batch, compute_ece
+from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matrix
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
