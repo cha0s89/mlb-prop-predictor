@@ -451,6 +451,73 @@ def fetch_injuries(days_back: int = 30) -> list[dict]:
     return injuries
 
 
+def fetch_recent_transactions(days_back: int = 3) -> list[dict]:
+    """
+    Fetch ALL recent MLB transactions (trades, call-ups, IL moves, etc.)
+    for use as a news feed. More comprehensive than fetch_injuries which
+    only returns IL-related transactions.
+
+    Returns list of dicts with: player_name, team, description, date, type
+    """
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+
+    data = _api_get(
+        "/transactions",
+        params={"startDate": start_date, "endDate": end_date},
+    )
+
+    if not data or "transactions" not in data:
+        return []
+
+    txns = []
+    for txn in data.get("transactions", []):
+        try:
+            player_info = txn.get("person", {})
+            team_info = txn.get("team", {})
+            txn_type = txn.get("typeDesc", "")
+            desc = txn.get("description", txn_type)
+
+            # Categorize the transaction
+            type_lower = txn_type.lower()
+            if "injured list" in type_lower or "il" in type_lower:
+                category = "injury"
+                icon = "🏥"
+            elif "recalled" in type_lower or "selected" in type_lower or "call" in type_lower:
+                category = "roster"
+                icon = "📋"
+            elif "traded" in type_lower:
+                category = "trade"
+                icon = "🔄"
+            elif "signed" in type_lower or "contract" in type_lower:
+                category = "signing"
+                icon = "✍️"
+            elif "designat" in type_lower or "released" in type_lower:
+                category = "release"
+                icon = "❌"
+            elif "activat" in type_lower or "reinstat" in type_lower:
+                category = "activation"
+                icon = "✅"
+            else:
+                category = "other"
+                icon = "📰"
+
+            txns.append({
+                "player_name": player_info.get("fullName", "Unknown"),
+                "player_id": player_info.get("id", 0),
+                "team": team_info.get("abbreviation", team_info.get("name", "")),
+                "description": desc,
+                "date": txn.get("date", ""),
+                "type": txn_type,
+                "category": category,
+                "icon": icon,
+            })
+        except Exception:
+            continue
+
+    return txns
+
+
 def _parse_il_type(type_desc: str, description: str) -> str:
     """
     Extract the IL type (10-day, 15-day, 60-day) from transaction text.

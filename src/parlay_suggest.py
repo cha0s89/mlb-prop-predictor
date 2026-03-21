@@ -1,0 +1,378 @@
+"""
+Parlay and slip suggestion module for MLB prop predictor.
+
+Generates optimal parlay slip combinations from a list of predictions,
+applying rules for diversification, balance, and correlation reduction.
+"""
+
+from collections import Counter, defaultdict
+from itertools import combinations
+import math
+
+
+def score_slip_quality(picks: list[dict]) -> float:
+    """
+    Score a slip's quality on a 0-100 scale based on diversification criteria.
+
+    Scoring breakdown:
+    - Direction balance (MORE/LESS mix): 0-25 points (50/50 is ideal)
+    - Team diversity: 0-25 points (fewer duplicate teams is better)
+    - Average confidence: 0-25 points (higher is better)
+    - Prop type diversity: 0-25 points (fewer duplicate types is better)
+
+    Args:
+        picks: List of prediction dicts, each with keys including 'pick', 'confidence', 'team', 'stat_type'
+
+    Returns:
+        float: Quality score between 0 and 100
+    """
+    if not picks:
+        return 0.0
+
+    score = 0.0
+
+    # 1. Direction balance (0-25 points)
+    # Ideal: 50% MORE, 50% LESS
+    directions = [p.get('pick') for p in picks]
+    more_count = sum(1 for d in directions if d == 'MORE')
+    less_count = sum(1 for d in directions if d == 'LESS')
+    total = len(picks)
+
+    more_pct = more_count / total if total > 0 else 0
+    less_pct = less_count / total if total > 0 else 0
+
+    # Penalty from ideal 50/50 split
+    balance_deviation = abs(more_pct - 0.5)
+    direction_score = max(0, 25 * (1 - balance_deviation))
+    score += direction_score
+
+    # 2. Team diversity (0-25 points)
+    # Penalize duplicate teams; max 2 from same team is acceptable
+    teams = [p.get('team') for p in picks]
+    team_counts = Counter(teams)
+    duplicate_penalty = sum(max(0, count - 2) for count in team_counts.values())
+    team_diversity_score = max(0, 25 * (1 - (duplicate_penalty / total)))
+    score += team_diversity_score
+
+    # 3. Average confidence (0-25 points)
+    confidences = [p.get('confidence', 0.5) for p in picks]
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
+    confidence_score = avg_confidence * 25
+    score += confidence_score
+
+    # 4. Prop type diversity (0-25 points)
+    # Penalize stacking same stat_type
+    stat_types = [p.get('stat_type') for p in picks]
+    type_counts = Counter(stat_types)
+    type_penalty = sum(max(0, count - 2) for count in type_counts.values())
+    prop_diversity_score = max(0, 25 * (1 - (type_penalty / total)))
+    score += prop_diversity_score
+
+    return min(100, score)
+
+
+def suggest_slips(
+    predictions: list[dict],
+    num_slips: int = 3,
+    slip_size: int = 5
+) -> list[dict]:
+    """
+    Generate optimal parlay slip suggestions from a list of predictions.
+
+    Applies heuristic rules to build diverse, balanced slips:
+    - Mix MORE and LESS picks (aim for 2-3 of each per slip)
+    - Max 2 picks from the same team per slip
+    - Prefer A and B rated picks
+    - Prioritize picks from different games (reduce correlation)
+    - Diversify prop types (don't stack same type)
+    - Each slip should be unique
+
+    Args:
+        predictions: List of prediction dicts. Each dict must contain:
+            - player_name (str)
+            - team (str)
+            - stat_type (str)
+            - stat_internal (str)
+            - line (float)
+            - pick (str): 'MORE' or 'LESS'
+            - confidence (float): 0-1
+            - rating (str): 'A', 'B', 'C', 'D'
+            - edge (float): expected value edge
+        num_slips: Number of slip suggestions to generate
+        slip_size: Number of picks per slip (default 5)
+
+    Returns:
+        List of slip dicts, each containing:
+        - picks: list of selected prediction dicts
+        - avg_confidence: mean confidence of picks
+        - direction_balance: string like "3 MORE / 2 LESS"
+        - teams_used: list of unique teams
+        - risk_level: "low", "medium", or "high"
+        - estimated_win_prob: probability of all picks hitting (with correlation discount)
+        - label: human-readable label
+        - quality_score: 0-100 slip quality metric
+    """
+
+    if not predictions or len(predictions) < slip_size:
+        return []
+
+    # Sort predictions by rating priority (A > B > C > D), then by confidence
+    rating_order = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+    sorted_preds = sorted(
+        predictions,
+        key=lambda p: (
+            rating_order.get(p.get('rating', 'D'), 4),
+            -p.get('confidence', 0)
+        )
+    )
+
+    # Separate MORE and LESS picks
+    more_picks = [p for p in sorted_preds if p.get('pick') == 'MORE']
+    less_picks = [p for p in sorted_preds if p.get('pick') == 'LESS']
+
+    slips = []
+    used_combinations = set()
+
+    # Generate candidate slips by trying different direction balances
+    # Target: 2-3 MORE and 2-3 LESS for a 5-pick slip
+    target_mixes = [
+        (3, 2),  # 3 MORE, 2 LESS
+        (2, 3),  # 2 MORE, 3 LESS
+        (3, 2),  # duplicate for emphasis
+    ]
+
+    for more_count, less_count in target_mixes:
+        if more_count > len(more_picks) or less_count > len(less_picks):
+            continue
+
+        # Try different combinations
+        for more_combo in combinations(range(len(more_picks)), min(more_count, len(more_picks))):
+            for less_combo in combinations(range(len(less_picks)), min(less_count, len(less_picks))):
+                if len(slips) >= num_slips:
+                    break
+
+                selected_more = [more_picks[i] for i in more_combo]
+                selected_less = [less_picks[j] for j in less_combo]
+                picks = selected_more + selected_less
+
+                if len(picks) != slip_size:
+                    continue
+
+                # Validate slip constraints
+                if not _is_valid_slip(picks, slip_size):
+                    continue
+
+                # Check for uniqueness
+                combo_key = frozenset(
+                    (p.get('player_name'), p.get('stat_type'), p.get('pick'))
+                    for p in picks
+                )
+                if combo_key in used_combinations:
+                    continue
+
+                used_combinations.add(combo_key)
+
+                # Build slip dict
+                slip = _build_slip_dict(picks, more_count, less_count)
+                slips.append(slip)
+
+    # If we don't have enough slips, use a fallback greedy approach
+    if len(slips) < num_slips:
+        slips.extend(_generate_fallback_slips(sorted_preds, slip_size, num_slips - len(slips)))
+
+    # Sort by quality score and trim to num_slips
+    slips.sort(key=lambda s: s.get('quality_score', 0), reverse=True)
+    slips = slips[:num_slips]
+
+    # Assign labels based on characteristics
+    slips = _assign_slip_labels(slips)
+
+    return slips
+
+
+def _is_valid_slip(picks: list[dict], slip_size: int) -> bool:
+    """
+    Validate that a slip meets diversity constraints.
+
+    Rules:
+    - Exactly slip_size picks
+    - Max 2 picks from the same team
+
+    Args:
+        picks: List of prediction dicts
+        slip_size: Expected number of picks
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    if len(picks) != slip_size:
+        return False
+
+    # Max 2 from same team
+    teams = [p.get('team') for p in picks]
+    team_counts = Counter(teams)
+    if any(count > 2 for count in team_counts.values()):
+        return False
+
+    return True
+
+
+def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dict:
+    """
+    Build a slip dictionary with all required fields.
+
+    Args:
+        picks: List of prediction dicts
+        more_count: Number of MORE picks
+        less_count: Number of LESS picks
+
+    Returns:
+        dict: Slip with metadata
+    """
+    confidences = [p.get('confidence', 0.5) for p in picks]
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
+
+    # Estimated win probability with 0.90 correlation discount
+    win_prob = 1.0
+    for conf in confidences:
+        win_prob *= conf
+    win_prob *= 0.90  # Correlation discount
+
+    # Determine risk level based on average confidence
+    if avg_confidence >= 0.65:
+        risk_level = "low"
+    elif avg_confidence >= 0.55:
+        risk_level = "medium"
+    else:
+        risk_level = "high"
+
+    # Team and stat type lists
+    teams = list(set(p.get('team') for p in picks))
+    stat_types = list(set(p.get('stat_type') for p in picks))
+
+    quality_score = score_slip_quality(picks)
+
+    return {
+        'picks': picks,
+        'avg_confidence': round(avg_confidence, 3),
+        'direction_balance': f"{more_count} MORE / {less_count} LESS",
+        'teams_used': teams,
+        'stat_types': stat_types,
+        'risk_level': risk_level,
+        'estimated_win_prob': round(win_prob, 4),
+        'quality_score': round(quality_score, 1),
+        'label': None,  # Assigned later
+    }
+
+
+def _generate_fallback_slips(
+    sorted_preds: list[dict],
+    slip_size: int,
+    num_needed: int
+) -> list[dict]:
+    """
+    Generate fallback slips using a greedy approach when combinatorial search insufficient.
+
+    Args:
+        sorted_preds: Pre-sorted predictions (by rating and confidence)
+        slip_size: Number of picks per slip
+        num_needed: Number of additional slips to generate
+
+    Returns:
+        list: Additional slip dicts
+    """
+    slips = []
+
+    for start_idx in range(0, len(sorted_preds) - slip_size, max(1, slip_size // 2)):
+        if len(slips) >= num_needed:
+            break
+
+        candidate_picks = sorted_preds[start_idx:start_idx + slip_size * 2]
+
+        # Greedy selection
+        selected = []
+        used_teams = defaultdict(int)
+        used_types = defaultdict(int)
+
+        for pick in candidate_picks:
+            if len(selected) >= slip_size:
+                break
+
+            team = pick.get('team')
+            stat_type = pick.get('stat_type')
+
+            # Constraint checks
+            if used_teams[team] >= 2:
+                continue
+            if used_types[stat_type] >= 2:
+                continue
+
+            selected.append(pick)
+            used_teams[team] += 1
+            used_types[stat_type] += 1
+
+        if len(selected) == slip_size:
+            more_count = sum(1 for p in selected if p.get('pick') == 'MORE')
+            less_count = slip_size - more_count
+            slip = _build_slip_dict(selected, more_count, less_count)
+            slips.append(slip)
+
+    return slips
+
+
+def _assign_slip_labels(slips: list[dict]) -> list[dict]:
+    """
+    Assign human-readable labels to slips based on characteristics.
+
+    Labels:
+    - "Best Value Slip" (highest quality_score)
+    - "Conservative Slip" (highest avg_confidence, low risk)
+    - "Aggressive Upside" (lowest avg_confidence, high potential)
+    - "Balanced Slip" (medium confidence, balanced)
+
+    Args:
+        slips: List of slip dicts
+
+    Returns:
+        list: Slips with assigned labels
+    """
+    if not slips:
+        return slips
+
+    labels_assigned = {}
+
+    # Best Value (highest quality score)
+    if slips:
+        best_idx = max(range(len(slips)), key=lambda i: slips[i].get('quality_score', 0))
+        labels_assigned[best_idx] = "Best Value Slip"
+
+    # Conservative (highest confidence, low risk)
+    low_risk_slips = [i for i, s in enumerate(slips) if s.get('risk_level') == 'low']
+    if low_risk_slips:
+        conservative_idx = max(low_risk_slips, key=lambda i: slips[i].get('avg_confidence', 0))
+        if conservative_idx not in labels_assigned:
+            labels_assigned[conservative_idx] = "Conservative Slip"
+
+    # Aggressive (highest upside potential)
+    high_risk_slips = [i for i, s in enumerate(slips) if s.get('risk_level') == 'high']
+    if high_risk_slips:
+        aggressive_idx = max(high_risk_slips, key=lambda i: slips[i].get('estimated_win_prob', 0))
+        if aggressive_idx not in labels_assigned:
+            labels_assigned[aggressive_idx] = "Aggressive Upside"
+
+    # Balanced (medium risk, middle-ground confidence)
+    for i, slip in enumerate(slips):
+        if i not in labels_assigned:
+            if slip.get('risk_level') == 'medium':
+                labels_assigned[i] = "Balanced Slip"
+                break
+
+    # Fallback labels
+    for i, slip in enumerate(slips):
+        if i not in labels_assigned:
+            labels_assigned[i] = f"Slip #{i + 1}"
+
+    for i, slip in enumerate(slips):
+        slip['label'] = labels_assigned.get(i, f"Slip #{i + 1}")
+
+    return slips
