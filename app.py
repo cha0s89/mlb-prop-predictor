@@ -736,13 +736,25 @@ with tab_edge:
 
                 # ── Today's Best Plays ──
                 # Use combined scoring when sharp edges exist, fall back to projection ranking
+                # Trivial low-line LESS picks (SB 0.5, HR 0.5) always look like
+                # huge edges but provide no real signal — exclude from best plays.
+                _TRIVIAL_LESS_PROPS = {"stolen_bases", "home_runs"}
+                def _is_trivial(pick: dict) -> bool:
+                    return (
+                        pick.get("pick") == "LESS"
+                        and float(pick.get("line", 99)) <= 0.5
+                        and pick.get("stat_type", "").lower().replace(" ", "_") in _TRIVIAL_LESS_PROPS
+                    )
+
                 if scored_all:
-                    top_plays = [s for s in scored_all if s["combined_grade"] in ("A+", "A")][:5]
+                    top_plays = [s for s in scored_all if s["combined_grade"] in ("A+", "A") and not _is_trivial(s)][:5]
                 else:
                     top_plays = []
                 if not top_plays:
-                    # Fall back to top A-grade projections
-                    for _, tp in pdf[pdf["rating"] == "A"].head(5).iterrows():
+                    # Fall back to top A-grade projections, skipping trivial LESS picks
+                    for _, tp in pdf[pdf["rating"] == "A"].head(20).iterrows():
+                        if _is_trivial(tp):
+                            continue
                         top_plays.append({
                             "player_name": tp["player_name"],
                             "stat_type": tp["stat_type"],
@@ -753,6 +765,8 @@ with tab_edge:
                             "signal": SIGNAL_PROJECTION_ONLY,
                             "proj_confidence": tp.get("confidence", 0.5),
                         })
+                        if len(top_plays) >= 5:
+                            break
 
                 if top_plays:
                     st.markdown('<div class="section-hdr">Today\'s Best Plays</div>', unsafe_allow_html=True)
@@ -813,7 +827,7 @@ with tab_edge:
                         _dir_arrow = "▲" if pick_row['pick'] == "MORE" else "▼"
                         _dir_color = "#00C853" if pick_row['pick'] == "MORE" else "#FF4444"
                         with st.expander(
-                            f"{badge(pick_row['rating'])}  **{pick_row['player_name']}**  {pick_row.get('team','')} · "
+                            f"{grade_label(pick_row['rating'])}  **{pick_row['player_name']}**  {pick_row.get('team','')} · "
                             f"{pick_row['stat_type']} {pick_row['line']} → "
                             f"**{pick_row['pick']}** {pick_row['projection']} · "
                             f"Conf {conf_pct} · +{edge_pct} · "
