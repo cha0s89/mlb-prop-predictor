@@ -234,18 +234,14 @@ PP_TRADEABLE: dict = {
 }
 
 PP_NEVER_SHOW: set = {
-    ("home_runs", "MORE"),
     ("home_runs", "LESS"),
-    ("stolen_bases", "MORE"),
     ("stolen_bases", "LESS"),
     ("total_bases", "LESS"),
     ("hitter_fantasy_score", "MORE"),  # 59.9% in v017 but low volume — keep filtered for PrizePicks tradability
 }
 
 _PP_FILTERED_LABELS = {
-    ("home_runs", "MORE"): "HR MORE",
     ("home_runs", "LESS"): "HR LESS",
-    ("stolen_bases", "MORE"): "SB MORE",
     ("stolen_bases", "LESS"): "SB LESS",
     ("total_bases", "LESS"): "TB LESS",
 }
@@ -997,8 +993,10 @@ with tab_edge:
                                 park_team = resolve_team(pick_row.get("team", "")) if pick_row.get("team") else None
                                 if park_team and park_team in PARK_FACTORS:
                                     pf = PARK_FACTORS[park_team]
-                                    pf_pct = (pf - 1.0) * 100
-                                    factors.append(("Park factor", pf_pct))
+                                    # Park factors are stored as integers (e.g. 104 = 104% of league avg)
+                                    pf_pct = pf - 100  # 104 → +4%, 97 → -3%
+                                    if pf_pct != 0:
+                                        factors.append(("Park factor", pf_pct))
                                 # Weather
                                 if pick_row.get("team"):
                                     rt = resolve_team(pick_row["team"])
