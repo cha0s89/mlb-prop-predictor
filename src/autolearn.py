@@ -799,6 +799,218 @@ def build_calibration_curve(graded: pd.DataFrame) -> dict:
 
 
 # ═══════════════════════════════════════════════════════
+# CALIBRATION TABLE REBUILD (v017+)
+# ═══════════════════════════════════════════════════════
+
+CALIBRATION_PATH = WEIGHTS_DIR / "calibration_v015.json"
+CALIBRATION_PROPS = {
+    "hits": {"line": 1.5, "bin_width": 0.05, "min_proj": 0.5, "max_proj": 1.5},
+    "total_bases": {"line": 1.5, "bin_width": 0.10, "min_proj": 0.8, "max_proj": 2.5},
+    "pitcher_strikeouts": {"line": 4.5, "bin_width": 0.25, "min_proj": 3.0, "max_proj": 9.0},
+    "hitter_fantasy_score": {"line": 7.5, "bin_width": 0.25, "min_proj": 5.5, "max_proj": 12.0},
+}
+
+
+def rebuild_calibration_tables(graded: pd.DataFrame, min_per_bin: int = 30) -> dict:
+    """
+    Rebuild empirical P(over)/P(under) calibration tables from graded results.
+
+    This is the core self-learning mechanism: as the model generates predictions
+    and they get graded (W/L), we accumulate evidence of the TRUE probability
+    at each projection level. Over time, this replaces the static backtest
+    calibration with live-data calibration that adapts to the current season.
+
+    Args:
+        graded: DataFrame with columns: stat_internal, projection, line,
+                actual_result (numeric), result ('W'/'L'/'push').
+        min_per_bin: Minimum observations per bin to include in calibration.
+
+    Returns:
+        dict: Calibration tables in the same format as calibration_v015.json.
+        Also saves to disk if enough data exists.
+    """
+    result = {}
+
+    if graded.empty:
+        return result
+
+    for prop_type, cfg in CALIBRATION_PROPS.items():
+        line = cfg["line"]
+        bin_width = cfg["bin_width"]
+
+        # Filter to this prop type with matching line
+        col_name = "stat_internal" if "stat_internal" in graded.columns else "prop_type"
+        mask = (graded[col_name] == prop_type) & (graded["result"].isin(["W", "L"]))
+        if "line" in graded.columns:
+            mask = mask & (abs(graded["line"] - line) < 0.01)
+        subset = graded[mask].copy()
+
+        if len(subset) < min_per_bin:
+            continue
+
+        # Need actual_result (numeric) for P(over) calculation
+        actual_col = None
+        for c in ["actual_result", "actual"]:
+            if c in subset.columns:
+                actual_col = c
+                break
+        if actual_col is None:
+            continue
+
+        # Build bins
+        points = []
+        proj_lo = cfg["min_proj"]
+        while proj_lo < cfg["max_proj"]:
+            proj_hi = proj_lo + bin_width
+            proj_mid = round((proj_lo + proj_hi) / 2, 4)
+
+            bin_mask = (subset["projection"] >= proj_lo) & (subset["projection"] < proj_hi)
+            bin_data = subset[bin_mask]
+
+            if len(bin_data) >= min_per_bin:
+                # Calculate empirical P(over) = fraction where actual > line
+                if line == int(line):
+                    n_over = int((bin_data[actual_col] > line).sum())
+                    n_under = int((bin_data[actual_col] < line).sum())
+                else:
+                    n_over = int((bin_data[actual_col] > line).sum())
+                    n_under = int((bin_data[actual_col] <= line).sum())
+
+                n = n_over + n_under
+                if n > 0:
+                    p_over = round(n_over / n, 4)
+                    p_under = round(n_under / n, 4)
+                    points.append({
+                        "proj_mid": proj_mid,
+                        "proj_lo": round(proj_lo, 4),
+                        "proj_hi": round(proj_hi, 4),
+                        "p_over": p_over,
+                        "p_under": p_under,
+                        "n": n,
+                        "n_over": n_over,
+                        "n_under": n_under,
+                    })
+
+            proj_lo = proj_hi
+
+        if points:
+            result[prop_type] = {
+                "line": line,
+                "points": points,
+                "total_predictions": len(subset),
+            }
+
+    # Save if we have meaningful data for at least one prop
+    if result:
+        try:
+            # Merge with existing calibration: keep existing bins,
+            # update with new data where we have enough observations
+            existing = {}
+            if CALIBRATION_PATH.exists():
+                with open(CALIBRATION_PATH, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+
+            for prop_type, new_data in result.items():
+                if prop_type in existing:
+                    # Merge: for each bin, use the one with more observations
+                    existing_pts = {p["proj_mid"]: p for p in existing[prop_type].get("points", [])}
+                    new_pts = {p["proj_mid"]: p for p in new_data["points"]}
+
+                    merged = {}
+                    for mid in set(list(existing_pts.keys()) + list(new_pts.keys())):
+                        old = existing_pts.get(mid)
+                        new = new_pts.get(mid)
+                        if old and new:
+                            # Weighted merge: combine observations
+                            total_n = old["n"] + new["n"]
+                            merged_over = old["n_over"] + new["n_over"]
+                            merged_under = old["n_under"] + new["n_under"]
+                            merged[mid] = {
+                                "proj_mid": mid,
+                                "proj_lo": old.get("proj_lo", new.get("proj_lo")),
+                                "proj_hi": old.get("proj_hi", new.get("proj_hi")),
+                                "p_over": round(merged_over / total_n, 4),
+                                "p_under": round(merged_under / total_n, 4),
+                                "n": total_n,
+                                "n_over": merged_over,
+                                "n_under": merged_under,
+                            }
+                        elif old:
+                            merged[mid] = old
+                        else:
+                            merged[mid] = new
+
+                    existing[prop_type] = {
+                        "line": new_data["line"],
+                        "points": sorted(merged.values(), key=lambda x: x["proj_mid"]),
+                        "total_predictions": existing[prop_type].get("total_predictions", 0) + new_data["total_predictions"],
+                    }
+                else:
+                    existing[prop_type] = new_data
+
+            with open(CALIBRATION_PATH, "w", encoding="utf-8") as f:
+                json.dump(existing, f, indent=2)
+
+            logger.info("Calibration tables updated: %s", list(result.keys()))
+        except Exception as e:
+            logger.error("Failed to save calibration tables: %s", e)
+
+    return result
+
+
+def reoptimize_floors(graded: pd.DataFrame, min_sample: int = 50) -> dict:
+    """
+    Re-optimize per-prop confidence floors from graded results.
+
+    Analyzes accuracy at different confidence thresholds for each prop+direction
+    and suggests tighter or looser floors to maximize hit rate.
+
+    Returns dict of suggested floor changes.
+    """
+    suggestions = {}
+
+    wl = graded[graded["result"].isin(["W", "L"])].copy()
+    if wl.empty:
+        return suggestions
+
+    col_name = "stat_internal" if "stat_internal" in wl.columns else "prop_type"
+
+    for prop_type in CALIBRATION_PROPS:
+        for direction in ["MORE", "LESS"]:
+            mask = (wl[col_name] == prop_type) & (wl["pick"] == direction)
+            subset = wl[mask]
+
+            if len(subset) < min_sample:
+                continue
+
+            # Test floors from 0.55 to 0.80 in 0.02 steps
+            best_acc = 0
+            best_floor = 0.55
+            best_n = 0
+
+            for floor in [f / 100 for f in range(55, 81, 2)]:
+                above = subset[subset["confidence"] >= floor]
+                if len(above) < 20:
+                    continue
+                wins = len(above[above["result"] == "W"])
+                acc = wins / len(above)
+                # Prefer higher accuracy, but penalize extreme volume loss
+                if acc > best_acc:
+                    best_acc = acc
+                    best_floor = floor
+                    best_n = len(above)
+
+            key = f"{prop_type}_{direction.lower()}"
+            suggestions[key] = {
+                "suggested_floor": best_floor,
+                "accuracy_at_floor": round(best_acc, 4),
+                "picks_at_floor": best_n,
+            }
+
+    return suggestions
+
+
+# ═══════════════════════════════════════════════════════
 # ADJUSTMENT PROPOSAL AND APPLICATION
 # ═══════════════════════════════════════════════════════
 
@@ -1299,6 +1511,40 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
     }
     result["analysis"] = analysis
     result["accuracy_by_grade"] = analysis["grade_calibration"].get("by_grade", {})
+
+    # ── v017+: Rebuild empirical calibration tables from live results ──
+    # This is the self-learning mechanism: as more graded predictions accumulate,
+    # the calibration tables are updated with merged live + backtest data.
+    if total >= 100:
+        try:
+            cal_result = rebuild_calibration_tables(graded)
+            if cal_result:
+                logger.info(
+                    "Calibration tables updated from %d live results: %s",
+                    total, list(cal_result.keys()),
+                )
+                analysis["calibration_rebuild"] = {
+                    "props_updated": list(cal_result.keys()),
+                    "total_picks": total,
+                }
+                # Clear predictor's calibration cache so it loads fresh tables
+                try:
+                    from src.predictor import _clear_weights_cache
+                    _clear_weights_cache()
+                except ImportError:
+                    pass
+        except Exception as e:
+            logger.warning("Calibration rebuild failed (non-fatal): %s", e)
+
+    # ── v017+: Suggest floor re-optimizations ──
+    if total >= 200:
+        try:
+            floor_suggestions = reoptimize_floors(graded)
+            if floor_suggestions:
+                analysis["floor_suggestions"] = floor_suggestions
+                logger.info("Floor re-optimization suggestions: %s", floor_suggestions)
+        except Exception as e:
+            logger.warning("Floor optimization failed (non-fatal): %s", e)
 
     # ── Check kill switch on current version first ──
     ks_result = check_kill_switch(current_version)

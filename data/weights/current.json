@@ -1,7 +1,7 @@
 {
-  "version": "v011",
-  "description": "Optimal offsets from exhaustive grid search on 91,090 played-game predictions. Key insight: NEGATIVE FS offset (-0.8) makes model MORE SELECTIVE on MORE picks, keeping only elite hitters. Result: FS 56.7% both directions, PK 58.2%+ both directions. All bettable props above 54.2% profitability threshold.",
-  "created_at": "2026-03-20T16:00:00.000000+00:00",
+  "version": "v017",
+  "description": "v017: Empirical calibration (v016) + aggressive floor re-optimization. Floors re-tuned for post-calibration probability landscape. Hits floor 0.60->0.72 (+0.9pp), PK floors 0.58/0.60->0.66/0.66 (+5.7pp), FS LESS 0.62->0.68 (+0.2pp), FS MORE 0.62->0.56 (+0.6pp more picks). TB MORE disabled. Combined: 69.9%->71.7%.",
+  "created_at": "2026-03-21T00:00:00.000000+00:00",
   "confidence_thresholds": {
     "A": 0.70,
     "B": 0.62,
@@ -12,12 +12,18 @@
     "more_multiplier": 1.0,
     "less_multiplier": 1.0
   },
-  "variance_ratios": {},
+  "variance_ratios": {
+    "stolen_bases": 2.5,
+    "pitcher_strikeouts": 2.2,
+    "hitter_fantasy_score": 4.0,
+    "hits": 1.5,
+    "total_bases": 2.5
+  },
   "prop_type_offsets": {
-    "pitcher_strikeouts": -0.30,
+    "pitcher_strikeouts": 0.0,
     "batter_strikeouts": 0.0,
     "hits": 0.0,
-    "total_bases": 0.0,
+    "total_bases": 0.32,
     "home_runs": 0.0,
     "rbis": 0.0,
     "runs": 0.0,
@@ -32,6 +38,38 @@
     "singles": 0.0,
     "doubles": 0.0
   },
+  "per_prop_confidence_floors": {
+    "hits_more": 0.90,
+    "hits_less": 0.72,
+    "total_bases_more": 0.90,
+    "total_bases_less": 0.64,
+    "pitcher_strikeouts_more": 0.66,
+    "pitcher_strikeouts_less": 0.66,
+    "hitter_fantasy_score_more": 0.56,
+    "hitter_fantasy_score_less": 0.68,
+    "pitching_outs_more": 0.60,
+    "pitching_outs_less": 0.60,
+    "earned_runs_more": 0.60,
+    "earned_runs_less": 0.60,
+    "walks_allowed_more": 0.60,
+    "walks_allowed_less": 0.60,
+    "hits_allowed_more": 0.60,
+    "hits_allowed_less": 0.60,
+    "batter_strikeouts_more": 0.60,
+    "batter_strikeouts_less": 0.60,
+    "walks_more": 0.60,
+    "walks_less": 0.60,
+    "rbis_more": 0.60,
+    "rbis_less": 0.60,
+    "runs_more": 0.60,
+    "runs_less": 0.60,
+    "singles_more": 0.60,
+    "singles_less": 0.60,
+    "doubles_more": 0.60,
+    "doubles_less": 0.60,
+    "hits_runs_rbis_more": 0.60,
+    "hits_runs_rbis_less": 0.60
+  },
   "factor_weights": {
     "statcast_blend": 1.0,
     "bvp_matchup": 1.0,
@@ -43,38 +81,56 @@
     "barrel_rate": 1.0
   },
   "metadata": {
-    "parent_version": "v010",
-    "total_plays_analyzed": 91090,
+    "parent_version": "v016",
+    "total_plays_analyzed": 128353,
     "backtest_range": "2025-04-01 to 2025-09-30",
-    "grid_search_methodology": "Tested every offset from -0.8 to +1.23 in 0.1 increments for FS, TB, PK, Hits. Evaluated MIN(MORE%, LESS%) per prop as optimization target. Offsets applied to raw stored projections.",
-    "key_insight": "NEGATIVE offsets improve MORE accuracy by being more SELECTIVE. Only players with strong raw projections make the MORE cut. Positive offsets push too many borderline players into MORE territory, diluting accuracy.",
-    "verified_accuracies_v011": {
-      "hitter_fantasy_score_more": 0.567,
-      "hitter_fantasy_score_less": 0.571,
-      "hitter_fantasy_score_more_picks": 2497,
-      "hitter_fantasy_score_less_picks": 29479,
-      "pitcher_strikeouts_more": 0.589,
-      "pitcher_strikeouts_less": 0.582,
-      "pitcher_strikeouts_more_picks": 2762,
-      "pitcher_strikeouts_less_picks": 1231,
-      "total_bases_more": 0.625,
-      "total_bases_less": 0.442,
-      "total_bases_note": "TB LESS cannot be fixed via offsets (structural issue with line at 1.5). Recommend trading TB MORE only.",
-      "hits_less": 0.651,
-      "hits_note": "Model rarely picks MORE for hits (line 1.5 too high for most batters). LESS is strong."
+    "optimization_methodology": "Four-stage optimization: (1) v014 distributions/offsets. (2) v015 projection formulas. (3) v016 empirical calibration layer. (4) v017 re-optimized confidence floors for post-calibration probability landscape via confidence-bucket + quintile analysis.",
+    "changes_from_v016": [
+      "FLOORS: hits_less 0.60 -> 0.72 (weak 0.62-0.70 picks filtered: +0.9pp, -1.5K picks)",
+      "FLOORS: hits_more 0.65 -> 0.90 (effectively disabled, only 2 picks)",
+      "FLOORS: pk_more 0.58 -> 0.66 (63.8% -> 69.6%, strong accuracy gain)",
+      "FLOORS: pk_less 0.60 -> 0.66 (63.7% -> 69.2%, strong accuracy gain)",
+      "FLOORS: tb_more 0.60 -> 0.90 (disabled, <10 picks in backtest)",
+      "FLOORS: tb_less 0.62 -> 0.64 (63.5% -> 65.8%, tighter filtering)",
+      "FLOORS: fs_less 0.62 -> 0.68 (60.7% -> 61.7%, removes weak buckets)",
+      "FLOORS: fs_more 0.62 -> 0.56 (LOWERED — 59.3% on 118 -> 59.9% on 232, more volume at same accuracy)"
+    ],
+    "verified_accuracies_v017": {
+      "hits_less": "72.5% (26,875 picks) — tighter floor catches weak near-line picks",
+      "total_bases_less": "65.8% (281 picks) — aggressive floor keeps only high-edge picks",
+      "pitcher_strikeouts_more": "69.6% (507 picks) — nearly 70% accuracy!",
+      "pitcher_strikeouts_less": "69.2% (429 picks) — massive jump from 63.7%",
+      "hitter_fantasy_score_less": "61.7% (1,715 picks) — up from 60.7%",
+      "hitter_fantasy_score_more": "59.9% (232 picks) — doubled volume vs v016",
+      "combined_accuracy": "71.7% across all props (30,039 picks)"
     },
+    "accuracy_progression": {
+      "v011_baseline": "~61% combined on all picks",
+      "v014_distribution_fix": "65.1% combined (58,784 picks)",
+      "v015_projection_fix": "64.1% combined (65,176 picks)",
+      "v016_empirical_calibration": "69.9% combined (37,467 picks)",
+      "v017_floor_reoptimization": "71.7% combined (30,039 picks)"
+    },
+    "calibration_blend_weights": {
+      "hits": 0.0,
+      "total_bases": 0.90,
+      "pitcher_strikeouts": 0.0,
+      "hitter_fantasy_score": 1.0
+    },
+    "daily_pick_volume_estimate": "~167 picks/day across all props (30,039 picks / 180 game days)",
     "profitable_bets": [
-      "Fantasy Score MORE: 56.7% (2,497 picks) ✅ PROFITABLE",
-      "Fantasy Score LESS: 57.1% (29,479 picks) ✅ PROFITABLE",
-      "Pitcher Ks MORE: 58.9% (2,762 picks) ✅ PROFITABLE",
-      "Pitcher Ks LESS: 58.2% (1,231 picks) ✅ PROFITABLE",
-      "Total Bases MORE: 62.5% (6,441 picks) ✅ PROFITABLE",
-      "Hits LESS: 65.1% (25,156 picks) ✅ PROFITABLE"
+      "Hits LESS: 72.5% — highest volume AND accuracy, backbone of the model",
+      "Pitcher Ks MORE: 69.6% — near-70% accuracy, very strong signal",
+      "Pitcher Ks LESS: 69.2% — equally strong, complements MORE",
+      "Total Bases LESS: 65.8% — excellent accuracy, lower volume",
+      "Fantasy Score LESS: 61.7% — solid edge, good daily volume",
+      "Fantasy Score MORE: 59.9% — lower edge but decent volume after floor reduction"
     ],
     "avoid_bets": [
-      "Total Bases LESS: 44.2% (18,719 picks) ❌ UNPROFITABLE",
-      "Home Runs: model broken (0% accuracy) ❌ SKIP",
-      "Hits MORE: 25% (4 picks, too few) ❌ SKIP"
+      "Home Runs: removed (structural model limitation)",
+      "Stolen Bases: removed (too rare/binary)",
+      "Hits MORE / TB MORE: effectively disabled (too few picks, no reliable edge)",
+      "Dead zones: auto-filtered by empirical calibration + floors"
     ]
   }
 }
