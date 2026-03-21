@@ -553,7 +553,13 @@ with tab_edge:
         except: pp_lines = pd.DataFrame()
 
     if pp_lines.empty:
-        st.info("No MLB lines on PrizePicks right now. Lines usually post by 10 AM ET.")
+        today = date.today()
+        opening_day = date(today.year, 3, 27)
+        if today < opening_day and today >= date(today.year, 3, 21):
+            days_left = (opening_day - today).days
+            st.info(f"⚾ **Opening Day is {opening_day.strftime('%B %d')}** — {days_left} day{'s' if days_left != 1 else ''} away! Spring Training has ended and PrizePicks won't post regular-season props until Opening Day. Check back on March 27.")
+        else:
+            st.info("No MLB lines on PrizePicks right now. Lines usually post by 10 AM ET.")
     else:
         st.markdown(f"**{len(pp_lines)} MLB props** on PrizePicks today")
         all_edges = []
@@ -617,13 +623,15 @@ with tab_edge:
             with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
                 _brc1, _brc2 = st.columns(2)
                 with _brc1:
-                    st.markdown("**✅ BET THESE PROPS**")
+                    st.markdown("**✅ BET THESE PROPS** *(2025 backtest)*")
                     st.markdown(
-                        "- Pitcher Strikeouts (MORE and LESS)\n"
-                        "- Hitter Fantasy Score (MORE and LESS)\n"
-                        "- Total Bases MORE · Hits · H+R+RBI"
+                        "- Hits LESS — **64%** ⭐\n"
+                        "- Total Bases MORE — **62%**\n"
+                        "- Pitcher Strikeouts (MORE + LESS) — **58%**\n"
+                        "- Hitter Fantasy Score (MORE + LESS) — **56%**\n"
+                        "- Hits+Runs+RBIs (H+R+RBI)"
                     )
-                    st.markdown("**❌ AVOID:** TB LESS, HR LESS 0.5, SB LESS 0.5")
+                    st.markdown("**❌ AVOID:** TB LESS (44%), HR props, SB LESS")
                 with _brc2:
                     st.markdown("**🎫 SLIP RULES:** Mix MORE+LESS, max 2 picks/team, min B grade, 5–6 Pick Flex")
                     st.markdown("**💰 BANKROLL:** 1–2% per slip, max 5 slips/day, stop if down 10%")
@@ -832,20 +840,19 @@ with tab_edge:
                 with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
                     rc1, rc2 = st.columns(2)
                     with rc1:
-                        st.markdown("**✅ BET THESE PROPS**")
+                        st.markdown("**✅ BET THESE PROPS** *(2025 backtest accuracy)*")
                         st.markdown(
-                            "- Pitcher Strikeouts (MORE and LESS)\n"
-                            "- Hitter Fantasy Score (MORE and LESS)\n"
-                            "- Total Bases MORE\n"
-                            "- Hits (MORE and LESS)\n"
-                            "- Hits+Runs+RBIs (H+R+RBI)\n"
-                            "- Batter Strikeouts"
+                            "- Hits LESS — **64.3%** ⭐ Best performer\n"
+                            "- Total Bases MORE — **62.5%**\n"
+                            "- Pitcher Strikeouts (MORE + LESS) — **57-59%**\n"
+                            "- Hitter Fantasy Score (MORE + LESS) — **55-57%**\n"
+                            "- Hits+Runs+RBIs (H+R+RBI)"
                         )
                         st.markdown("**❌ AVOID THESE**")
                         st.markdown(
-                            "- Total Bases LESS (44% accuracy — not worth it)\n"
-                            "- Home Runs LESS (PP rarely offers it)\n"
-                            "- SB LESS 0.5 (PP doesn't offer SB LESS)"
+                            "- Total Bases LESS (44% — structurally broken)\n"
+                            "- Home Runs (model unreliable)\n"
+                            "- SB LESS 0.5 (not offered on PrizePicks)"
                         )
                     with rc2:
                         st.markdown("**🎫 SLIP RULES**")
@@ -1260,7 +1267,12 @@ with tab_slips:
 with tab_picks:
     st.markdown('<div class="section-hdr">All PrizePicks MLB Lines</div>', unsafe_allow_html=True)
     if pp_lines.empty:
-        st.info("No lines available right now. Lines usually post by 10 AM ET.")
+        _today = date.today()
+        _opening_day = date(_today.year, 3, 27)
+        if _today < _opening_day and _today >= date(_today.year, 3, 21):
+            st.info(f"⚾ No lines until Opening Day ({_opening_day.strftime('%B %d')}). Spring Training has ended.")
+        else:
+            st.info("No lines available right now. Lines usually post by 10 AM ET.")
     else:
         st.markdown(f'<div class="info-strip">📋 <span class="hl">{len(pp_lines)}</span> props on the board today</div>', unsafe_allow_html=True)
         s = st.text_input("🔍 Search player", "", key="s2", placeholder="Type player name...")
