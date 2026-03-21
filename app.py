@@ -237,6 +237,7 @@ PP_NEVER_SHOW: set = {
     ("home_runs", "LESS"),
     ("stolen_bases", "LESS"),
     ("total_bases", "LESS"),
+    ("hitter_fantasy_score", "MORE"),  # 53.1% in v012 backtest — below 54.2% threshold
 }
 
 _PP_FILTERED_LABELS = {
@@ -617,13 +618,15 @@ with tab_edge:
             with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
                 _brc1, _brc2 = st.columns(2)
                 with _brc1:
-                    st.markdown("**✅ BET THESE PROPS**")
+                    st.markdown("**✅ BET THESE PROPS** *(v012 backtest)*")
                     st.markdown(
-                        "- Pitcher Strikeouts (MORE and LESS)\n"
-                        "- Hitter Fantasy Score (MORE and LESS)\n"
-                        "- Total Bases MORE · Hits · H+R+RBI"
+                        "- Hits LESS 1.5 — **64.3%** (15,805W / 24,593)\n"
+                        "- Total Bases MORE 1.5 — **62.9%** (3,995W / 6,354)\n"
+                        "- Pitcher Ks MORE 4.5 — **61.7%** (1,230W / 1,994)\n"
+                        "- FS LESS 7.5 — **55.8%** (15,662W / 28,075)\n"
+                        "- ⚠️ Pitcher Ks LESS 4.5 — **54.2%** borderline"
                     )
-                    st.markdown("**❌ AVOID:** TB LESS, HR LESS 0.5, SB LESS 0.5")
+                    st.markdown("**❌ AVOID:** FS MORE (53.1%), TB LESS (43.6%), HR LESS (eval bug), SB LESS")
                 with _brc2:
                     st.markdown("**🎫 SLIP RULES:** Mix MORE+LESS, max 2 picks/team, min B grade, 5–6 Pick Flex")
                     st.markdown("**💰 BANKROLL:** 1–2% per slip, max 5 slips/day, stop if down 10%")
@@ -1352,6 +1355,31 @@ with tab_dash:
                     st.caption(f"{h.get('timestamp', '?')}: {h.get('description', 'adjustment')}")
         except Exception:
             st.caption("No adjustment history yet")
+
+    # ── Backtest Accuracy (v012) ───────────────────────────────────────────────
+    st.markdown('<div class="section-hdr">Backtest Accuracy — v012 (Played Games Only)</div>', unsafe_allow_html=True)
+    _bt_rows = [
+        {"Prop": "Hits LESS 1.5",        "W": 15805, "Total": 24593, "Accuracy": 0.643},
+        {"Prop": "TB MORE 1.5",           "W":  3995, "Total":  6354, "Accuracy": 0.629},
+        {"Prop": "Pitcher Ks MORE 4.5",   "W":  1230, "Total":  1994, "Accuracy": 0.617},
+        {"Prop": "FS LESS 7.5",           "W": 15662, "Total": 28075, "Accuracy": 0.558},
+        {"Prop": "Pitcher Ks LESS 4.5",   "W":  1086, "Total":  2003, "Accuracy": 0.542},
+    ]
+    _bt_html = []
+    for _r in _bt_rows:
+        _acc = _r["Accuracy"]
+        _color = "#00C853" if _acc >= 0.57 else ("#F9A825" if _acc >= 0.54 else "#FF4444")
+        _bar_w = int(_acc * 100)
+        _bt_html.append(
+            f'<div style="display:flex;align-items:center;gap:0.8rem;padding:0.45rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'<span style="min-width:220px;font-size:0.82rem;color:#E8ECF1;">{_r["Prop"]}</span>'
+            f'<div style="flex:1"><div class="conf-track"><div class="conf-fill" style="width:{_bar_w}%;background:{_color};border-radius:4px;height:8px;"></div></div></div>'
+            f'<span style="font-family:JetBrains Mono,monospace;font-size:0.85rem;min-width:52px;color:{_color};font-weight:600">{_acc:.1%}</span>'
+            f'<span style="font-size:0.72rem;color:rgba(232,236,241,0.35);min-width:100px">{_r["W"]:,}W / {_r["Total"]:,}</span>'
+            f'</div>'
+        )
+    st.markdown("".join(_bt_html), unsafe_allow_html=True)
+    st.caption("Green ≥57% · Yellow 54–57% · Red <54% · Source: 2025 full-season walk-forward backtest")
 
     # ── Daily Log (last 14 days) ──────────────────────────────────────────────
     st.markdown('<div class="section-hdr">Daily Log — Last 14 Days</div>', unsafe_allow_html=True)
