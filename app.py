@@ -623,14 +623,16 @@ with tab_edge:
             with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
                 _brc1, _brc2 = st.columns(2)
                 with _brc1:
-                    st.markdown("**✅ BET THESE PROPS** *(2025 backtest)*")
+                    st.markdown("**✅ BET THESE PROPS** *(v012 backtest)*")
                     st.markdown(
-                        "- Hits LESS — **64%** ⭐\n"
-                        "- Total Bases MORE — **62%**\n"
-                        "- Pitcher Strikeouts (MORE + LESS) — **58%**\n"
-                        "- Hitter Fantasy Score (MORE + LESS) — **56%**\n"
+                        "- Hits LESS — **64.3%**\n"
+                        "- Total Bases MORE — **62.9%**\n"
+                        "- Pitcher Ks MORE — **61.0%**\n"
+                        "- Pitcher Ks LESS — **55.4%**\n"
+                        "- Hitter Fantasy Score LESS — **55.8%**\n"
                         "- Hits+Runs+RBIs (H+R+RBI)"
                     )
+                    st.markdown("**⚠️ CAUTION:** FS MORE only 53.1% (near break-even)")
                     st.markdown("**❌ AVOID:** TB LESS (44%), HR props, SB LESS")
                 with _brc2:
                     st.markdown("**🎫 SLIP RULES:** Mix MORE+LESS, max 2 picks/team, min B grade, 5–6 Pick Flex")
@@ -840,14 +842,16 @@ with tab_edge:
                 with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
                     rc1, rc2 = st.columns(2)
                     with rc1:
-                        st.markdown("**✅ BET THESE PROPS** *(2025 backtest accuracy)*")
+                        st.markdown("**✅ BET THESE PROPS** *(v012 backtest)*")
                         st.markdown(
-                            "- Hits LESS — **64.3%** ⭐ Best performer\n"
-                            "- Total Bases MORE — **62.5%**\n"
-                            "- Pitcher Strikeouts (MORE + LESS) — **57-59%**\n"
-                            "- Hitter Fantasy Score (MORE + LESS) — **55-57%**\n"
+                            "- Hits LESS — **64.3%**\n"
+                            "- Total Bases MORE — **62.9%**\n"
+                            "- Pitcher Ks MORE — **61.0%**\n"
+                            "- Pitcher Ks LESS — **55.4%**\n"
+                            "- Hitter Fantasy Score LESS — **55.8%**\n"
                             "- Hits+Runs+RBIs (H+R+RBI)"
                         )
+                        st.markdown("**⚠️ CAUTION:** FS MORE only 53.1% (near break-even)")
                         st.markdown("**❌ AVOID THESE**")
                         st.markdown(
                             "- Total Bases LESS (44% — structurally broken)\n"
