@@ -191,9 +191,17 @@ def finalize_slip(slip_id: int) -> Optional[dict]:
 
         entry_type, entry_amount = slip_row
 
-        # Find the right payout table based on effective picks
-        effective_type = f"{effective_picks}_flex"
-        payout_table = PAYOUTS.get(entry_type, PAYOUTS.get(effective_type, {}))
+        # PrizePicks tie/push handling: payout reverts down by one level.
+        # A 5-pick Flex with 1 push becomes a 4-pick Flex payout table.
+        # A Power play with a push reverts similarly.
+        if pushes > 0:
+            # Determine the reverted entry type
+            original_size = wins + losses + pushes
+            is_power = "power" in entry_type
+            effective_type = f"{effective_picks}_{'power' if is_power else 'flex'}"
+            payout_table = PAYOUTS.get(effective_type, PAYOUTS.get(entry_type, {}))
+        else:
+            payout_table = PAYOUTS.get(entry_type, {})
 
         payout_mult = payout_table.get(wins, 0)
         status = "win" if payout_mult > 1 else ("loss" if payout_mult == 0 else "partial")

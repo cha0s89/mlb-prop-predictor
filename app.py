@@ -49,6 +49,7 @@ from src.lineups import (
 from src.database import (
     save_projected_stats, get_projection_accuracy,
     get_projection_history, init_projected_stats_table,
+    get_calibration_data,
 )
 from src.kelly import half_kelly, calculate_slip_sizing
 from src.parlay_suggest import suggest_slips, score_slip_quality
@@ -1590,6 +1591,59 @@ with tab_dash:
             st.caption("No graded projections yet. Grade results in the Grade tab to see live accuracy tracking.")
     except Exception:
         st.caption("Projection accuracy tracking will appear here once games are graded.")
+
+    # ── Calibration & Proper Scoring Rules ──
+    st.markdown('<div class="section-hdr">Model Calibration — Brier Score &amp; Reliability</div>', unsafe_allow_html=True)
+    try:
+        _cal = get_calibration_data(days_back=30)
+        if _cal and _cal.get("total", 0) > 10:
+            _cal_c1, _cal_c2 = st.columns(2)
+            with _cal_c1:
+                _brier = _cal.get("brier_score", 0)
+                _ll = _cal.get("log_loss", 0)
+                _brier_cls = "#00C853" if _brier < 0.23 else ("#FFB300" if _brier < 0.25 else "#FF4444")
+                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;">
+                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Proper Scoring Rules</div>
+                    <div style="display:flex;gap:2rem;">
+                        <div>
+                            <div style="font-size:0.7rem;color:rgba(232,236,241,0.4);">Brier Score</div>
+                            <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:{_brier_cls};">{_brier:.4f}</div>
+                            <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Lower is better · 0.25 = coin flip</div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.7rem;color:rgba(232,236,241,0.4);">Log Loss</div>
+                            <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:#E8ECF1;">{_ll:.4f}</div>
+                            <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Lower is better · 0.693 = coin flip</div>
+                        </div>
+                    </div>
+                </div>''', unsafe_allow_html=True)
+            with _cal_c2:
+                _buckets = _cal.get("buckets", [])
+                if _buckets:
+                    st.markdown('''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;">
+                        <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Reliability Diagram</div>''', unsafe_allow_html=True)
+                    _rel_html = []
+                    for _b in _buckets:
+                        _pred = _b.get("predicted_mean", 0) * 100
+                        _actual = _b.get("actual_rate", 0) * 100
+                        _cnt = _b.get("count", 0)
+                        _diff = _actual - _pred
+                        _diff_clr = "#00C853" if abs(_diff) < 3 else ("#FFB300" if abs(_diff) < 5 else "#FF4444")
+                        _rel_html.append(
+                            f'<div style="display:flex;align-items:center;gap:0.6rem;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.78rem;">'
+                            f'<span style="min-width:60px;color:rgba(232,236,241,0.5);">Pred {_pred:.0f}%</span>'
+                            f'<span style="min-width:65px;font-family:JetBrains Mono;color:#E8ECF1;font-weight:600;">Act {_actual:.1f}%</span>'
+                            f'<span style="min-width:50px;font-family:JetBrains Mono;color:{_diff_clr};font-size:0.72rem;">{_diff:+.1f}%</span>'
+                            f'<span style="font-size:0.68rem;color:rgba(232,236,241,0.25);">n={_cnt}</span>'
+                            f'</div>'
+                        )
+                    st.markdown("".join(_rel_html) + '</div>', unsafe_allow_html=True)
+                else:
+                    st.caption("Not enough data for calibration buckets yet.")
+        else:
+            st.caption("Calibration data requires 10+ graded picks. Keep grading!")
+    except Exception:
+        st.caption("Calibration data will appear here once enough games are graded.")
 
     st.markdown('<div class="section-hdr">Daily Log — Last 14 Days</div>', unsafe_allow_html=True)
     _log_rows = get_daily_log_summary(14)

@@ -35,6 +35,8 @@ from scipy import stats as sp_stats
 from scipy.stats import poisson, nbinom, norm, gamma
 from typing import Optional
 
+from src import distributions
+
 
 # ═══════════════════════════════════════════════════════
 # LEARNED WEIGHTS (loaded from data/weights/current.json)
@@ -427,8 +429,27 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         proj = 6.0 + excess * 0.65  # Dampen the excess above 6.0 by 35%
 
     mu = max(proj, 0.5)
-    return {"projection": round(mu, 2), "mu": mu, "regressed_k_pct": round(reg_k, 1),
-            "expected_ip": round(expected_ip, 1), "expected_bf": round(exp_bf, 1)}
+
+    # Beta-Binomial distribution parameters for strikeout projections
+    # Use stabilized K-rate and precision based on pitcher reliability
+    raw_k_rate = reg_k / 100.0  # Convert percentage to decimal
+    sample_bf = p.get("gs", 10) * 25  # Approximation: ~25 BF/start
+    stabilized_k_rate = distributions.bayesian_stabilize(
+        raw_k_rate, LG["k_pct_p"] / 100.0, sample_bf, "pitcher_k_rate"
+    )
+    precision = distributions.pitcher_k_precision(p.get("gs", 10), k_rate_stability=0.56)
+    alpha, beta = distributions.betabinom_params(stabilized_k_rate, precision=precision)
+
+    bb_mean, bb_var = distributions.betabinom_mean_var(int(exp_bf), alpha, beta)
+
+    result = {
+        "projection": round(mu, 2), "mu": mu, "regressed_k_pct": round(reg_k, 1),
+        "expected_ip": round(expected_ip, 1), "expected_bf": round(exp_bf, 1),
+        # Beta-Binomial distribution info
+        "bb_alpha": round(alpha, 3), "bb_beta": round(beta, 3),
+        "bb_mean": round(bb_mean, 2), "bb_variance": round(bb_var, 2),
+    }
+    return result
 
 
 def project_pitcher_outs(p, park=None, wx=None):
@@ -1193,7 +1214,7 @@ def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
 # PROBABILITY & DISTRIBUTION
 # ═══════════════════════════════════════════════════════
 
-def calculate_over_under_probability(projection, line, prop_type):
+def calculate_over_under_probability(projection, line, prop_type, proj_result=None):
     """
     P(over) and P(under) using prop-appropriate distributions.
 
@@ -1202,7 +1223,14 @@ def calculate_over_under_probability(projection, line, prop_type):
       Negative binomial: overdispersed rare events (SB)
       Gamma: continuous-ish scores (fantasy score)
       Normal: high-mean continuous props (pitching outs, H+R+RBI)
+      Beta-Binomial: pitcher strikeouts (when BB params available)
       SPECIAL: home_runs now uses binary classification (P(1+ HR))
+
+    Args:
+        projection: The mean projection value
+        line: The prop line
+        prop_type: Type of prop (e.g., "pitcher_strikeouts")
+        proj_result: Optional dict with projection details (e.g., BB params for strikeouts)
 
     Home Runs special case:
       The projection is now P(1+ HR in game) = 0 to 1.
@@ -1241,98 +1269,116 @@ def calculate_over_under_probability(projection, line, prop_type):
 
     mu = max(projection, 0.01)
 
-    # NegBin/Gamma params are tunable via weights file (autolearn can adjust)
+    # Load weights once (needed for both BB and non-BB paths)
     weights = _load_weights()
-    vr = weights.get("variance_ratios", {})
 
-    negbin_props = {
-        "stolen_bases": vr.get("stolen_bases", 2.5),
-        # Pitcher Ks are overdispersed vs Poisson (ace vs bad starts have high variance).
-        # NegBin with vr=2.2: PK accuracy 58.4% → 64.3% when combined with offset fix.
-        "pitcher_strikeouts": vr.get("pitcher_strikeouts", 2.2),
-        # v014: Hits overdispersed vs Poisson (0-hit and multi-hit games more common
-        # than Poisson predicts). NegBin vr=1.5 produces better-calibrated probabilities.
-        "hits": vr.get("hits", 1.5),
-        # v014: TB highly overdispersed — extra-base hits create multimodal distribution.
-        # NegBin vr=2.5 + offset +0.32 fixes under-projection: 54.4% → 59.7%.
-        "total_bases": vr.get("total_bases", 2.5),
-    }
-    poisson_props = {
-        "rbis", "runs", "walks",
-        "earned_runs", "walks_allowed",
-        "hits_allowed", "batter_strikeouts", "singles", "doubles",
-    }
-    gamma_props = {
-        # vr=4.0 validated on 2025 backtest: FS MORE 56.7%, LESS 57.1% (pre-floor).
-        # With confidence floors applied, improves to MORE 59.1%, LESS 59.5%.
-        "hitter_fantasy_score": vr.get("hitter_fantasy_score", 4.0),
-    }
-    normal_props = {
-        "pitching_outs": 1.3,
-        "hits_runs_rbis": 1.5,
-    }
+    # ── Beta-Binomial distribution for pitcher strikeouts ──────────────────
+    # If proj_result contains BB parameters, use Beta-Binomial for pitcher strikeouts
+    p_over = None
+    p_under = None
+    if (prop_type == "pitcher_strikeouts" and proj_result is not None and
+        "bb_alpha" in proj_result and "bb_beta" in proj_result and
+        "expected_bf" in proj_result):
+        alpha = proj_result.get("bb_alpha")
+        beta = proj_result.get("bb_beta")
+        n_batters = int(proj_result.get("expected_bf", 18))
+        if alpha > 0 and beta > 0 and n_batters > 0:
+            p_over = distributions.prob_over_betabinom(line, n_batters, alpha, beta)
+            p_under = distributions.prob_under_betabinom(line, n_batters, alpha, beta)
 
-    if prop_type in negbin_props:
-        r = negbin_props[prop_type]
-        var = mu * r
-        if var > mu and mu > 0:
-            n_param = (mu ** 2) / (var - mu)
-            p_param = mu / var
+    # If Beta-Binomial wasn't used, calculate using standard distributions
+    if p_over is None or p_under is None:
+        # NegBin/Gamma params are tunable via weights file (autolearn can adjust)
+        vr = weights.get("variance_ratios", {})
+
+        negbin_props = {
+            "stolen_bases": vr.get("stolen_bases", 2.5),
+            # Pitcher Ks are overdispersed vs Poisson (ace vs bad starts have high variance).
+            # NegBin with vr=2.2: PK accuracy 58.4% → 64.3% when combined with offset fix.
+            "pitcher_strikeouts": vr.get("pitcher_strikeouts", 2.2),
+            # v014: Hits overdispersed vs Poisson (0-hit and multi-hit games more common
+            # than Poisson predicts). NegBin vr=1.5 produces better-calibrated probabilities.
+            "hits": vr.get("hits", 1.5),
+            # v014: TB highly overdispersed — extra-base hits create multimodal distribution.
+            # NegBin vr=2.5 + offset +0.32 fixes under-projection: 54.4% → 59.7%.
+            "total_bases": vr.get("total_bases", 2.5),
+        }
+        poisson_props = {
+            "rbis", "runs", "walks",
+            "earned_runs", "walks_allowed",
+            "hits_allowed", "batter_strikeouts", "singles", "doubles",
+        }
+        gamma_props = {
+            # vr=4.0 validated on 2025 backtest: FS MORE 56.7%, LESS 57.1% (pre-floor).
+            # With confidence floors applied, improves to MORE 59.1%, LESS 59.5%.
+            "hitter_fantasy_score": vr.get("hitter_fantasy_score", 4.0),
+        }
+        normal_props = {
+            "pitching_outs": 1.3,
+            "hits_runs_rbis": 1.5,
+        }
+
+        if prop_type in negbin_props:
+            r = negbin_props[prop_type]
+            var = mu * r
+            if var > mu and mu > 0:
+                n_param = (mu ** 2) / (var - mu)
+                p_param = mu / var
+                if line == int(line):
+                    int_line = int(line)
+                    p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
+                    p_under = nbinom.cdf(int_line - 1, n_param, p_param)
+                else:
+                    int_line = int(line)
+                    p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
+                    p_under = nbinom.cdf(int_line, n_param, p_param)
+            else:
+                if line == int(line):
+                    p_over = 1 - poisson.cdf(int(line), mu)
+                    p_under = poisson.cdf(int(line) - 1, mu)
+                else:
+                    p_over = 1 - poisson.cdf(int(line), mu)
+                    p_under = poisson.cdf(int(line), mu)
+
+        elif prop_type in poisson_props:
             if line == int(line):
                 int_line = int(line)
-                p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
-                p_under = nbinom.cdf(int_line - 1, n_param, p_param)
+                p_over = 1 - poisson.cdf(int_line, mu)
+                p_under = poisson.cdf(int_line - 1, mu)
             else:
                 int_line = int(line)
-                p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
-                p_under = nbinom.cdf(int_line, n_param, p_param)
-        else:
+                p_over = 1 - poisson.cdf(int_line, mu)
+                p_under = poisson.cdf(int_line, mu)
+
+        elif prop_type in gamma_props:
+            var_ratio = gamma_props[prop_type]
+            var = mu * var_ratio
+            shape = (mu ** 2) / var
+            scale = var / mu
             if line == int(line):
-                p_over = 1 - poisson.cdf(int(line), mu)
-                p_under = poisson.cdf(int(line) - 1, mu)
+                p_over = 1 - gamma.cdf(line + 0.5, shape, scale=scale)
+                p_under = gamma.cdf(line - 0.5, shape, scale=scale)
             else:
-                p_over = 1 - poisson.cdf(int(line), mu)
-                p_under = poisson.cdf(int(line), mu)
+                p_over = 1 - gamma.cdf(line, shape, scale=scale)
+                p_under = gamma.cdf(line, shape, scale=scale)
 
-    elif prop_type in poisson_props:
-        if line == int(line):
-            int_line = int(line)
-            p_over = 1 - poisson.cdf(int_line, mu)
-            p_under = poisson.cdf(int_line - 1, mu)
         else:
-            int_line = int(line)
-            p_over = 1 - poisson.cdf(int_line, mu)
-            p_under = poisson.cdf(int_line, mu)
+            var_ratio = normal_props.get(prop_type, 1.5)
+            sigma = max(np.sqrt(mu * var_ratio), 0.25)
+            if line == int(line):
+                p_over = 1 - norm.cdf(line + 0.5, loc=mu, scale=sigma)
+                p_under = norm.cdf(line - 0.5, loc=mu, scale=sigma)
+            else:
+                p_over = 1 - norm.cdf(line, loc=mu, scale=sigma)
+                p_under = norm.cdf(line, loc=mu, scale=sigma)
 
-    elif prop_type in gamma_props:
-        var_ratio = gamma_props[prop_type]
-        var = mu * var_ratio
-        shape = (mu ** 2) / var
-        scale = var / mu
-        if line == int(line):
-            p_over = 1 - gamma.cdf(line + 0.5, shape, scale=scale)
-            p_under = gamma.cdf(line - 0.5, shape, scale=scale)
+        total = p_over + p_under
+        if total > 0:
+            p_over /= total
+            p_under /= total
         else:
-            p_over = 1 - gamma.cdf(line, shape, scale=scale)
-            p_under = gamma.cdf(line, shape, scale=scale)
-
-    else:
-        var_ratio = normal_props.get(prop_type, 1.5)
-        sigma = max(np.sqrt(mu * var_ratio), 0.25)
-        if line == int(line):
-            p_over = 1 - norm.cdf(line + 0.5, loc=mu, scale=sigma)
-            p_under = norm.cdf(line - 0.5, loc=mu, scale=sigma)
-        else:
-            p_over = 1 - norm.cdf(line, loc=mu, scale=sigma)
-            p_under = norm.cdf(line, loc=mu, scale=sigma)
-
-    total = p_over + p_under
-    if total > 0:
-        p_over /= total
-        p_under /= total
-    else:
-        p_over = 0.5
-        p_under = 0.5
+            p_over = 0.5
+            p_under = 0.5
 
     # ── v016: Empirical calibration blend ──────────────────
     # Per-prop blend of theoretical distribution probability with empirical
@@ -1499,7 +1545,14 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     proj_result["projection"] = round(projection, 3)
     proj_result["mu"] = projection
 
-    prob_result = calculate_over_under_probability(projection, line, stat_internal)
+    prob_result = calculate_over_under_probability(projection, line, stat_internal,
+                                                    proj_result=proj_result)
+
+    # Add distribution info for pitcher strikeouts if available
+    if stat_internal == "pitcher_strikeouts" and "bb_alpha" in proj_result:
+        prob_result["distribution"] = "beta_binomial"
+        prob_result["bb_p_over"] = prob_result.get("p_over")
+        prob_result["bb_p_under"] = prob_result.get("p_under")
 
     return {
         "player_name": player_name, "stat_type": stat_type,

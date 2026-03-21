@@ -5,6 +5,7 @@ SQLite-based prediction logging, auto-grading, and accuracy tracking.
 
 import sqlite3
 import pandas as pd
+import numpy as np
 from datetime import datetime, date
 from pathlib import Path
 
@@ -334,7 +335,7 @@ def get_projection_accuracy(days_back: int = 30) -> dict:
         days_back (int): Number of days to look back
 
     Returns:
-        dict with per-prop accuracy stats
+        dict with per-prop accuracy stats including Brier score, log loss, and calibration
     """
     conn = get_connection()
 
@@ -351,6 +352,9 @@ def get_projection_accuracy(days_back: int = 30) -> dict:
             "total": 0,
             "correct": 0,
             "accuracy": 0,
+            "brier_score": None,
+            "log_loss": None,
+            "calibration_by_bucket": [],
             "by_stat_type": {},
             "by_rating": {},
             "by_pick": {}
@@ -359,6 +363,45 @@ def get_projection_accuracy(days_back: int = 30) -> dict:
     total = len(graded)
     correct = len(graded[graded["was_correct"] == 1])
     accuracy = correct / total if total > 0 else 0
+
+    # Compute Brier score: mean of (predicted_probability - outcome)^2
+    brier_score = None
+    log_loss = None
+    calibration_by_bucket = []
+
+    if not graded["confidence"].isna().all() and not graded["was_correct"].isna().all():
+        # Brier score
+        brier_score = np.mean((graded["confidence"] - graded["was_correct"]) ** 2)
+
+        # Log loss: -[y*log(p) + (1-y)*log(1-p)]
+        # Clamp confidence to avoid log(0)
+        confidence_clamped = np.clip(graded["confidence"], 1e-10, 1 - 1e-10)
+        log_loss = -np.mean(
+            graded["was_correct"] * np.log(confidence_clamped) +
+            (1 - graded["was_correct"]) * np.log(1 - confidence_clamped)
+        )
+
+        # Calibration by bucket
+        buckets = [
+            (0.50, 0.55, "50-55%"),
+            (0.55, 0.60, "55-60%"),
+            (0.60, 0.65, "60-65%"),
+            (0.65, 0.70, "65-70%"),
+            (0.70, 1.01, "70%+")
+        ]
+
+        for lower, upper, label in buckets:
+            mask = (graded["confidence"] >= lower) & (graded["confidence"] < upper)
+            bucket_data = graded[mask]
+            if len(bucket_data) > 0:
+                predicted_mean = bucket_data["confidence"].mean()
+                actual_rate = bucket_data["was_correct"].mean()
+                calibration_by_bucket.append({
+                    "bucket": label,
+                    "predicted_mean": float(predicted_mean),
+                    "actual_rate": float(actual_rate),
+                    "count": int(len(bucket_data))
+                })
 
     # By stat type
     by_stat_type = {}
@@ -404,6 +447,9 @@ def get_projection_accuracy(days_back: int = 30) -> dict:
         "total": total,
         "correct": correct,
         "accuracy": accuracy,
+        "brier_score": float(brier_score) if brier_score is not None else None,
+        "log_loss": float(log_loss) if log_loss is not None else None,
+        "calibration_by_bucket": calibration_by_bucket,
         "by_stat_type": by_stat_type,
         "by_rating": by_rating,
         "by_pick": by_pick
@@ -499,6 +545,77 @@ def get_daily_projection_summary(game_date: str) -> dict:
     }
 
     return summary
+
+
+def get_calibration_data(days_back: int = 30) -> dict:
+    """Get calibration data for reliability diagrams.
+
+    Groups predictions into 5 buckets by confidence and computes actual win rate
+    per bucket. Also returns overall Brier score and log loss.
+
+    Args:
+        days_back (int): Number of days to look back
+
+    Returns:
+        dict with 'buckets' (list of dicts) and 'brier_score' and 'log_loss'
+    """
+    conn = get_connection()
+
+    # Get graded projections from last N days
+    graded = pd.read_sql_query("""
+        SELECT confidence, was_correct FROM projected_stats
+        WHERE was_correct IS NOT NULL AND confidence IS NOT NULL
+        AND game_date >= date('now', '-' || ? || ' days')
+    """, conn, params=(days_back,))
+    conn.close()
+
+    if graded.empty:
+        return {
+            "buckets": [],
+            "brier_score": None,
+            "log_loss": None,
+            "total_samples": 0
+        }
+
+    # Compute Brier score
+    brier_score = np.mean((graded["confidence"] - graded["was_correct"]) ** 2)
+
+    # Compute log loss
+    confidence_clamped = np.clip(graded["confidence"], 1e-10, 1 - 1e-10)
+    log_loss = -np.mean(
+        graded["was_correct"] * np.log(confidence_clamped) +
+        (1 - graded["was_correct"]) * np.log(1 - confidence_clamped)
+    )
+
+    # Calibration buckets
+    buckets = [
+        (0.50, 0.55, "50-55%"),
+        (0.55, 0.60, "55-60%"),
+        (0.60, 0.65, "60-65%"),
+        (0.65, 0.70, "65-70%"),
+        (0.70, 1.01, "70%+")
+    ]
+
+    bucket_list = []
+    for lower, upper, label in buckets:
+        mask = (graded["confidence"] >= lower) & (graded["confidence"] < upper)
+        bucket_data = graded[mask]
+        if len(bucket_data) > 0:
+            predicted_mean = bucket_data["confidence"].mean()
+            actual_rate = bucket_data["was_correct"].mean()
+            bucket_list.append({
+                "bucket": label,
+                "predicted_mean": float(predicted_mean),
+                "actual_rate": float(actual_rate),
+                "count": int(len(bucket_data))
+            })
+
+    return {
+        "buckets": bucket_list,
+        "brier_score": float(brier_score),
+        "log_loss": float(log_loss),
+        "total_samples": int(len(graded))
+    }
 
 
 # Initialize DB on import
