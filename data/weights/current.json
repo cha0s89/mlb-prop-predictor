@@ -1,7 +1,7 @@
 {
-  "version": "v007",
-  "description": "Calibrated offsets from played-games-only backtest (82k records, April-Sept 2025). Excludes non-plays (actual=0) which artificially inflated LESS accuracy by 10-25pp. Offsets = actual - projection to correct underprojections (especially fantasy_score +1.23, total_bases +0.78).",
-  "created_at": "2026-03-20T00:40:00.000000+00:00",
+  "version": "v012",
+  "description": "v012: Confidence floors + NegBin Ks (vr=2.2) + Gamma FS (vr=4.0). Derived from confidence-bucket analysis on 91,090 played-game predictions. HR model confirmed correct (89% LESS acc) - evaluation bug was filter, not model. HR added to tradeable list.",
+  "created_at": "2026-03-20T00:00:00.000000+00:00",
   "confidence_thresholds": {
     "A": 0.70,
     "B": 0.62,
@@ -31,6 +31,23 @@
     "singles": 0.0,
     "doubles": 0.0
   },
+  "variance_ratios": {
+    "hitter_fantasy_score": 4.0,
+    "pitcher_strikeouts": 2.2,
+    "stolen_bases": 2.5
+  },
+  "per_prop_confidence_floors": {
+    "hitter_fantasy_score_more": 0.55,
+    "hitter_fantasy_score_less": 0.60,
+    "pitcher_strikeouts_more": 0.55
+  },
+  "tradeable_props": {
+    "hitter_fantasy_score": {"more": true, "less": true},
+    "pitcher_strikeouts": {"more": true, "less": true},
+    "hits": {"more": false, "less": true},
+    "home_runs": {"more": false, "less": true},
+    "total_bases": {"more": true, "less": false}
+  },
   "factor_weights": {
     "statcast_blend": 1.0,
     "bvp_matchup": 1.0,
@@ -42,16 +59,40 @@
     "barrel_rate": 1.0
   },
   "metadata": {
-    "parent_version": "v003",
-    "adjustment_count": 1,
-    "total_picks_analyzed": 79255,
-    "accuracy_at_creation": 0.640,
+    "parent_version": "v007",
+    "adjustment_count": 2,
+    "total_picks_analyzed": 91090,
     "backtest_range": "2025-04-01 to 2025-09-30",
     "improvements": {
-      "root_cause_fix": "Identified non-play inflation: 21-44% of backtest picks had actual=0 (players who didn't bat). These artificial 0s created false LESS wins and MORE losses. By filtering to played-games-only, we found true projection bias.",
-      "offset_recalibration": "pitcher_strikeouts was -0.67 in v005 but should be +0.57 (projection 5.53 vs actual 4.96 when played). total_bases -0.22→-0.77, hitter_fantasy_score -1.07→-1.21, hits -0.12→-0.48, home_runs -0.02→-0.93",
-      "expectation": "With v006 offsets, MORE picks should improve from 40-42% to ~50-55%, LESS should stay ~65-70%, overall ~65-67%"
+      "approach_1_confidence_floors": {
+        "hitter_fantasy_score_more_floor_0.55": "Filters 47.9-48.1% junk in 0.50-0.55 bucket (3,799 picks). Remaining 1,106 picks project at 59.1% (+2.4pp from 56.7%).",
+        "hitter_fantasy_score_less_floor_0.60": "Filters 52.8-54.6% junk in 0.50-0.60 range (13,398 picks). Remaining 15,998 picks project at 59.5% (+2.4pp from 57.1%).",
+        "pitcher_strikeouts_more_floor_0.55": "Filters 55.1% junk in 0.50-0.55 bucket (750 picks). Remaining 1,815 picks project at 62.4% (+3.5pp).",
+        "pitcher_strikeouts_less_no_floor": "Only 1,428 picks total; applying 0.60 floor drops to 525 (below 1000 min). Left unfiltered at 58.1%."
+      },
+      "approach_5_variance_ratios": {
+        "pitcher_strikeouts_negbin_vr2.2": "Switching from Poisson to NegBin overdispersion (vr=2.2). Total accuracy +0.9pp (58.6%->59.5%). MORE improves to 60.2% (2,565 picks), marginal MORE picks shift to LESS.",
+        "hitter_fantasy_score_gamma_vr4.0": "Confirmed: vr=4.0 matches v011 results exactly (MORE 56.7%, LESS 57.1%). Baked into defaults."
+      },
+      "approach_4_hr_model": {
+        "finding": "HR model is CORRECT. P(1+HR in game) = 1-(1-rate)^PA gives proj 0.10-0.20 for most batters, always picks LESS vs 0.5 line.",
+        "root_cause_of_0.3pct": "Evaluation bug: actual!=0 filter removes valid 0-HR games (player batted, no HR). These are LESS wins. True HR LESS accuracy = 38,782/(38,782+4,801) = 89%.",
+        "action": "HR LESS added to tradeable_props. Confidence floor not needed (89% baseline). No code change to HR model needed."
+      },
+      "approaches_not_implemented": {
+        "approach_2_opposing_pitcher": "Backtest JSON lacks opposing pitcher FIP/ERA fields. Cannot evaluate from stored data. Factor weight currently 1.0 - future: add opp_pitcher quality to backtest records.",
+        "approach_3_home_away": "Backtest JSON lacks home/away or day/night fields. Cannot evaluate from stored data. Future backtest run should capture game_side per prediction."
+      }
     },
-    "notes": "CRITICAL: Non-plays were in backtest because extract_all_batters() filter is checking SEASON stats PA (>= 2), not ACTUAL game PA. Players like Max Muncy had 200+ season PA but 0 game PA on certain dates. These should be filtered by actual game PA. Future backtest enhancement: add actual_game_pa >= 1 check after grading."
+    "projected_accuracy_v012": {
+      "hitter_fantasy_score_more": "59.1% (1,106 picks after floor)",
+      "hitter_fantasy_score_less": "59.5% (15,998 picks after floor)",
+      "pitcher_strikeouts_more": "62.4% (1,815 picks after floor)",
+      "pitcher_strikeouts_less": "58.1% (1,428 picks, no floor)",
+      "hits_less": "65.1% (25,156 picks, unchanged)",
+      "home_runs_less": "89.0% (43,583 picks, all records including 0-HR games)",
+      "total_bases_more": "62.5% (6,441 picks, unchanged)"
+    },
+    "notes": "HR evaluation: actual=0 for HR is NOT a non-play (backtester filters game_pa>=2). HR zeros = valid 'player batted, no HR' results = LESS wins. Do NOT apply actual!=0 filter to HR records in future analysis. Approaches 2 and 3 (opposing pitcher quality weighting, home/away splits) cannot be evaluated from current backtest data - need fresh backtest with additional fields."
   }
 }
