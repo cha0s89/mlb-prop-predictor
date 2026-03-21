@@ -22,7 +22,8 @@ from typing import Optional
 import requests
 import pandas as pd
 
-from src.database import get_ungraded_predictions, grade_prediction
+from src.database import get_connection, get_ungraded_predictions, grade_prediction
+from src.slips import grade_slip_pick
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ DK_WEIGHTS = {
 # Maps prediction stat_internal values to the box score field used for grading.
 # Each value is the key in the player stats dict returned by extract_player_stats().
 STAT_TYPE_MAP = {
+    # Batting props
     "hitter_fantasy_score": "fantasy_score",
     "hits": "hits",
     "total_bases": "total_bases",
@@ -53,12 +55,25 @@ STAT_TYPE_MAP = {
     "runs": "runs",
     "stolen_bases": "stolen_bases",
     "walks": "walks",
-    "pitcher_strikeouts": "pitcher_strikeouts",
     "hits_runs_rbis": "hits_runs_rbis",
     "singles": "singles",
     "doubles": "doubles",
     "triples": "triples",
+    "batter_strikeouts": "strikeouts",
+    # Pitching props
+    "pitcher_strikeouts": "pitcher_strikeouts",
+    "pitching_outs": "pitching_outs",
+    "earned_runs": "earned_runs",
+    "walks_allowed": "walks_allowed",
 }
+
+# Stats that come from a pitcher's box score entry (not a batter's)
+_PITCHING_STAT_INTERNALS = frozenset({
+    "pitcher_strikeouts",
+    "pitching_outs",
+    "earned_runs",
+    "walks_allowed",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -263,11 +278,24 @@ def _extract_pitching_stats(player_data: dict, player_name: str) -> Optional[dic
     if ip_float == 0.0:
         return None
 
+    # Convert MLB innings-pitched notation to total outs.
+    # MLB uses fractional notation where ".1" = 1 out, ".2" = 2 outs (not decimals).
+    # e.g. "6.2" means 6 complete innings + 2 extra outs = 20 total outs.
+    try:
+        ip_str = str(innings)
+        parts = ip_str.split(".")
+        full_innings = int(parts[0])
+        extra_outs = int(parts[1]) if len(parts) > 1 else 0
+        pitching_outs = full_innings * 3 + extra_outs
+    except (ValueError, IndexError):
+        pitching_outs = int(ip_float * 3)
+
     return {
         "player_name": player_name,
         "player_type": "pitcher",
         "pitcher_strikeouts": pitching.get("strikeOuts", 0),
         "innings_pitched": innings,
+        "pitching_outs": pitching_outs,
         "hits_allowed": pitching.get("hits", 0),
         "runs_allowed": pitching.get("runs", 0),
         "earned_runs": pitching.get("earnedRuns", 0),
@@ -367,7 +395,7 @@ def _find_matching_player_stats(
     Returns:
         The matching stats dict, or None if no match found.
     """
-    is_pitching_stat = stat_internal in ("pitcher_strikeouts",)
+    is_pitching_stat = stat_internal in _PITCHING_STAT_INTERNALS
     target_type = "pitcher" if is_pitching_stat else "batter"
 
     for ps in player_stats_list:
@@ -437,6 +465,46 @@ def auto_grade_prediction(
 
 
 # ---------------------------------------------------------------------------
+# Slip auto-grading helpers
+# ---------------------------------------------------------------------------
+
+def _grade_linked_slip_picks(pred_id: int, actual_value: float) -> int:
+    """Grade any slip picks that reference the given prediction ID.
+
+    When a prediction is auto-graded we also want to grade the corresponding
+    slip picks so PrizePicks slip P&L is kept up to date without manual work.
+
+    Args:
+        pred_id: The predictions.id that was just graded.
+        actual_value: The actual numeric result used for grading.
+
+    Returns:
+        Number of slip picks graded.
+    """
+    try:
+        conn = get_connection()
+        cur = conn.execute(
+            "SELECT id FROM slip_picks WHERE prediction_id = ? AND result IS NULL",
+            (pred_id,),
+        )
+        slip_pick_ids = [row[0] for row in cur.fetchall()]
+        conn.close()
+    except Exception as exc:
+        logger.warning("Could not query slip_picks for pred_id %d: %s", pred_id, exc)
+        return 0
+
+    graded_count = 0
+    for sp_id in slip_pick_ids:
+        try:
+            grade_slip_pick(sp_id, actual_value)
+            graded_count += 1
+        except Exception as exc:
+            logger.warning("Failed to grade slip_pick %d: %s", sp_id, exc)
+
+    return graded_count
+
+
+# ---------------------------------------------------------------------------
 # Main auto-grade orchestration
 # ---------------------------------------------------------------------------
 
@@ -467,6 +535,7 @@ def auto_grade_date(game_date: str) -> dict:
         "graded": 0,
         "not_matched": 0,
         "skipped_not_final": 0,
+        "slip_picks_graded": 0,
         "results": [],
         "errors": [],
     }
@@ -536,6 +605,10 @@ def auto_grade_date(game_date: str) -> dict:
                     "actual": actual,
                     "result": result,
                 })
+                # Also grade any slip picks linked to this prediction
+                if isinstance(actual, (int, float)):
+                    slip_graded = _grade_linked_slip_picks(int(pred_row["id"]), float(actual))
+                    report["slip_picks_graded"] += slip_graded
             else:
                 report["not_matched"] += 1
         except Exception as exc:
