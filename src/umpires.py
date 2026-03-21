@@ -196,15 +196,69 @@ def get_umpire_k_adjustment(umpire_name: str) -> dict:
     }
 
 
-def fetch_todays_umpires() -> dict:
-    """
-    Attempt to fetch today's umpire assignments.
-    Falls back to empty dict if unavailable.
+def fetch_todays_umpires(game_date: str = None) -> dict:
+    """Fetch today's home-plate umpire assignments from MLB Stats API.
 
-    Note: MLB doesn't have a clean public API for this.
-    In production, scrape from covers.com or umpscorecards.com.
-    For now, this is a placeholder that can be manually populated.
+    The schedule endpoint with `hydrate=officials` returns umpire crews
+    for each game. We extract the "Home Plate" official for each game
+    and map it by both team abbreviation and game_pk.
+
+    Args:
+        game_date: Optional YYYY-MM-DD string. Defaults to today.
+
+    Returns:
+        dict mapping team abbreviation (e.g. "NYY") → home plate umpire name,
+        plus "_by_game_pk" → {game_pk: umpire_name} for direct lookup.
+        Empty dict on any failure.
     """
-    # TODO: Implement scraping from UmpScorecards or Covers
-    # For now, return empty — user can manually input
-    return {}
+    if game_date is None:
+        game_date = datetime.now().strftime("%Y-%m-%d")
+
+    MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
+
+    try:
+        resp = requests.get(
+            f"{MLB_API_BASE}/schedule",
+            params={
+                "sportId": 1,
+                "date": game_date,
+                "hydrate": "officials",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return {}
+
+    umpire_map = {}
+    by_game_pk = {}
+
+    for date_entry in data.get("dates", []):
+        for game in date_entry.get("games", []):
+            game_pk = game.get("gamePk")
+            officials = game.get("officials", [])
+
+            hp_umpire = None
+            for official in officials:
+                if official.get("officialType") == "Home Plate":
+                    hp_umpire = official.get("official", {}).get("fullName")
+                    break
+
+            if not hp_umpire:
+                continue
+
+            # Store by game_pk
+            if game_pk:
+                by_game_pk[game_pk] = hp_umpire
+
+            # Store by team abbreviation (both teams get the same HP ump)
+            teams = game.get("teams", {})
+            for side in ("away", "home"):
+                team_info = teams.get(side, {}).get("team", {})
+                abbrev = team_info.get("abbreviation")
+                if abbrev:
+                    umpire_map[abbrev] = hp_umpire
+
+    umpire_map["_by_game_pk"] = by_game_pk
+    return umpire_map

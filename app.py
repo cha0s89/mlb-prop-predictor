@@ -17,7 +17,7 @@ from src.sharp_odds import (
     find_ev_edges, get_api_usage, get_api_key, PP_TO_ODDS_API,
 )
 from src.weather import fetch_game_weather, resolve_team, STADIUMS, get_stat_specific_weather_adjustment
-from src.umpires import get_umpire_k_adjustment
+from src.umpires import get_umpire_k_adjustment, fetch_todays_umpires
 from src.predictor import (
     generate_prediction, calculate_over_under_probability,
     PARK_FACTORS, PARK_FACTORS_HR, PARK_FACTORS_K,
@@ -797,6 +797,13 @@ with tab_edge:
                 except Exception:
                     injury_list = []
 
+            # Fetch today's home-plate umpire assignments
+            umpire_map = {}
+            try:
+                umpire_map = fetch_todays_umpires()
+            except Exception:
+                pass
+
             prog = st.progress(0, text="Running projections...")
             total = len(pp_lines)
             for i, (_, row) in enumerate(pp_lines.iterrows()):
@@ -822,6 +829,14 @@ with tab_edge:
                     if matched is not None:
                         batter_profile = build_batter_profile(matched)
 
+                # Look up home-plate umpire for this player's game
+                ump_name = None
+                if team and umpire_map:
+                    r_team = resolve_team(team)
+                    if r_team:
+                        ump_name = umpire_map.get(r_team)
+                ump_adj = get_umpire_k_adjustment(ump_name) if ump_name else None
+
                 p = generate_prediction(
                     player_name=row["player_name"],
                     stat_type=row["stat_type"],
@@ -831,6 +846,7 @@ with tab_edge:
                     pitcher_profile=pitcher_profile,
                     park_team=resolve_team(team) if team else None,
                     weather=wx,
+                    ump=ump_adj,
                 )
 
                 # Props that are count-based (safe to apply multipliers to)
