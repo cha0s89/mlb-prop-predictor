@@ -61,6 +61,56 @@ from src.board_logger import log_board_snapshot, mark_as_bet
 from src.line_snapshots import snapshot_pp_lines, detect_stale_lines, get_line_movement_summary
 from src.consistency import enforce_consistency, flag_inconsistencies
 
+
+# ─────────────────────────────────────────────
+# CACHED WRAPPERS — eliminate redundant API calls across Streamlit reruns
+# ─────────────────────────────────────────────
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_pp_lines():
+    """PrizePicks lines — cached 5 min."""
+    return fetch_prizepicks_mlb_lines()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_todays_games():
+    """MLB schedule + probable pitchers — cached 1 hr."""
+    return fetch_todays_games()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_umpires():
+    """Home-plate umpire map — cached 1 hr."""
+    return fetch_todays_umpires()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _cached_weather(team_abbr: str):
+    """Weather per stadium — cached 30 min."""
+    return fetch_game_weather(team_abbr)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_sharp_events(api_key: str):
+    """Sharp book events list — cached 5 min."""
+    return fetch_mlb_events(api_key)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_event_props(event_id: str, api_key: str):
+    """Props for one event — cached 5 min (saves 1 API credit per hit)."""
+    return fetch_event_props(event_id, api_key=api_key)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_spring_stats():
+    """Spring training stats — cached 1 hr."""
+    return fetch_spring_training_stats()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_injuries():
+    """Injury list — cached 1 hr."""
+    return fetch_injuries(days_back=60)
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_lineups(game_pk: int):
+    """Confirmed lineups per game — cached 10 min."""
+    return fetch_confirmed_lineups(game_pk)
+
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -622,7 +672,7 @@ with tab_edge:
         st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{usage.get("remaining","?")}</span> credits remaining &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
 
     with st.spinner("Pulling PrizePicks MLB lines..."):
-        try: pp_lines = fetch_prizepicks_mlb_lines()
+        try: pp_lines = _cached_pp_lines()
         except: pp_lines = pd.DataFrame()
 
     # Snapshot PP lines for CLV tracking and stale-line detection
@@ -641,11 +691,11 @@ with tab_edge:
             total_sharp_lines = 0
             events_with_props = 0
             with st.spinner("Fetching sharp lines & devigging..."):
-                events = fetch_mlb_events(api_key)
+                events = _cached_sharp_events(api_key)
                 for event in (events or [])[:15]:
                     eid = event.get("id","")
                     if not eid: continue
-                    result = fetch_event_props(eid, api_key=api_key)
+                    result = _cached_event_props(eid, api_key=api_key)
                     if result and "data" in result:
                         sharp = extract_sharp_lines(result["data"])
                         if sharp:
@@ -771,7 +821,7 @@ with tab_edge:
                         teams_in_slate.add(r)
             # Fetch today's games for lineup/batting order data
             try:
-                todays_games = fetch_todays_games()
+                todays_games = _cached_todays_games()
             except Exception:
                 todays_games = []
 
@@ -781,7 +831,7 @@ with tab_edge:
                 for j, team_abbr in enumerate(sorted(teams_in_slate)):
                     wx_prog.progress((j + 1) / len(teams_in_slate), text=f"Weather: {STADIUMS[team_abbr]['name']} ({j+1}/{len(teams_in_slate)})")
                     try:
-                        weather_cache[team_abbr] = fetch_game_weather(team_abbr)
+                        weather_cache[team_abbr] = _cached_weather(team_abbr)
                     except Exception:
                         weather_cache[team_abbr] = None
                 wx_prog.empty()
@@ -790,18 +840,18 @@ with tab_edge:
             injury_list = []
             with st.spinner("Loading Spring Training data & injuries..."):
                 try:
-                    st_stats = fetch_spring_training_stats()
+                    st_stats = _cached_spring_stats()
                 except Exception:
                     st_stats = []
                 try:
-                    injury_list = fetch_injuries(days_back=60)
+                    injury_list = _cached_injuries()
                 except Exception:
                     injury_list = []
 
             # Fetch today's home-plate umpire assignments
             umpire_map = {}
             try:
-                umpire_map = fetch_todays_umpires()
+                umpire_map = _cached_umpires()
             except Exception:
                 pass
 
@@ -860,20 +910,45 @@ with tab_edge:
             except Exception:
                 pass
 
-            # Pre-build batter hand cache from confirmed lineups (for platoon splits)
-            batter_hand_cache = {}  # player_name_upper → bat_hand (R/L/S)
+            # Pre-build batter hand + batting order caches from confirmed lineups
+            # Batch all game lineups upfront (cached per game_pk) to avoid N+1
+            batter_hand_cache = {}   # player_name_upper → bat_hand (R/L/S)
+            batting_order_cache = {} # player_name_upper → batting_order (1-9)
+            game_context_cache = {}  # team_abbr → {opponent, game_time, venue, ...}
             try:
                 for game in todays_games:
                     game_pk = game.get("game_pk")
                     if not game_pk:
                         continue
-                    lineups = fetch_confirmed_lineups(game_pk)
-                    for side in ("home", "away"):
+                    lineups = _cached_lineups(game_pk)
+                    home_team = game.get("home_team", "")
+                    away_team = game.get("away_team", "")
+
+                    for side, team_abbr, opp_abbr in [
+                        ("home", home_team, away_team),
+                        ("away", away_team, home_team),
+                    ]:
                         for batter in lineups.get(side, []):
                             name = batter.get("player_name", "").upper().strip()
                             hand = batter.get("bat_hand", "")
+                            order = batter.get("batting_order")
                             if name and hand:
                                 batter_hand_cache[name] = hand
+                            if name and order:
+                                batting_order_cache[name] = order
+
+                    # Build game context for both teams (no extra API call)
+                    for team_abbr, opp_abbr, is_home in [
+                        (home_team, away_team, True),
+                        (away_team, home_team, False),
+                    ]:
+                        if team_abbr:
+                            game_context_cache[team_abbr] = {
+                                "opponent": opp_abbr,
+                                "game_time": game.get("game_time", ""),
+                                "game_pk": game_pk,
+                                "is_home": is_home,
+                            }
             except Exception:
                 pass
 
@@ -909,15 +984,12 @@ with tab_edge:
                     ump_name = umpire_map.get(r_team)
                 ump_adj = get_umpire_k_adjustment(ump_name) if ump_name else None
 
-                # Look up batting order position (for batter props)
+                # Look up batting order position from pre-built cache (no API call)
                 batting_pos = None
                 if not is_pitcher_prop:
-                    try:
-                        batting_pos = get_batting_order_position(
-                            row["player_name"], games=todays_games
-                        )
-                    except Exception:
-                        pass
+                    batting_pos = batting_order_cache.get(
+                        row["player_name"].upper().strip()
+                    )
 
                 # Look up opposing pitcher profile (for batter props)
                 opp_pitcher_profile = None
@@ -1040,17 +1112,14 @@ with tab_edge:
                     p["batting_order"] = batting_pos
                     p["pa_multiplier"] = round(get_pa_multiplier(batting_pos), 3)
 
-                # v018: Game context for display
-                try:
-                    game_ctx = get_game_context(team, games=todays_games)
-                    if game_ctx:
-                        p["opponent"] = game_ctx.get("opponent", "")
-                        p["game_time"] = game_ctx.get("game_time", "")
-                        p["venue"] = game_ctx.get("venue", "")
-                        if game_ctx.get("probable_pitcher"):
-                            p["opp_pitcher"] = game_ctx["probable_pitcher"].get("name", "")
-                except Exception:
-                    pass
+                # v018: Game context from pre-built cache (no API call)
+                if r_team and r_team in game_context_cache:
+                    gctx = game_context_cache[r_team]
+                    p["opponent"] = gctx.get("opponent", "")
+                    p["game_time"] = gctx.get("game_time", "")
+                    # Opposing pitcher name from the pre-built lookup
+                    if r_team in opp_pitcher_lookup:
+                        p["opp_pitcher"] = opp_pitcher_lookup[r_team].get("name", "")
 
                 # Add platoon and matchup context to result for display
                 if platoon_adj and platoon_adj.get("favorable") is not None:
@@ -2198,7 +2267,7 @@ with tab_setup:
         _checks.append(("Backtest 2025 report", False, "Not yet run"))
 
     try:
-        _pp_test = fetch_prizepicks_mlb_lines()
+        _pp_test = _cached_pp_lines()
         _pp_ok = not _pp_test.empty
         _checks.append((f"PrizePicks API reachable ({len(_pp_test)} props today)" if _pp_ok else "PrizePicks API reachable (0 props)", _pp_ok, "Check PrizePicks API or network"))
     except Exception as _e:
