@@ -273,6 +273,84 @@ def _regress(observed, sample_n, stab_n, league_avg):
     return (sample_n * observed + stab_n * league_avg) / (sample_n + stab_n)
 
 
+# ═══════════════════════════════════════════════════════
+# LOG5 MATCHUP ADJUSTMENT (Bill James)
+# ═══════════════════════════════════════════════════════
+
+def log5_rate(pitcher_rate: float, batter_rate: float, league_rate: float) -> float:
+    """Log5 matchup adjustment for any binary rate stat.
+
+    Combines pitcher skill, batter skill, and league context to produce
+    a matchup-specific rate that's more accurate than either alone.
+
+    Example: Pitcher with 28% K rate vs lineup with 26% K rate (league 22%):
+      log5 = (0.28 * 0.26 / 0.22) / (0.28 * 0.26 / 0.22 + 0.72 * 0.74 / 0.78)
+           ≈ 0.326 → higher K rate than either individually
+
+    Args:
+        pitcher_rate: Pitcher's rate (decimal, e.g. 0.25 for 25% K rate)
+        batter_rate: Batter/team rate (decimal, e.g. 0.22 for 22% K rate)
+        league_rate: League average rate (decimal, e.g. 0.22)
+
+    Returns:
+        Matchup-adjusted rate (decimal)
+    """
+    # Guard against division by zero or extreme values
+    league_rate = max(0.01, min(0.99, league_rate))
+    pitcher_rate = max(0.01, min(0.99, pitcher_rate))
+    batter_rate = max(0.01, min(0.99, batter_rate))
+
+    num = pitcher_rate * batter_rate / league_rate
+    den = num + (1 - pitcher_rate) * (1 - batter_rate) / (1 - league_rate)
+    if den <= 0:
+        return league_rate
+    return num / den
+
+
+# ═══════════════════════════════════════════════════════
+# ABS CHALLENGE SYSTEM ADJUSTMENT (2026 Rule Change)
+# ═══════════════════════════════════════════════════════
+
+def abs_adjustment_factor(prop_type: str, game_date: date = None) -> float:
+    """Temporary ABS challenge system adjustment for 2026 season.
+
+    The ABS (Automated Ball-Strike) challenge system changes umpire behavior:
+    - Umps call a wider zone pre-challenge → fewer Ks, more walks early
+    - Effect decays as pitchers/hitters adapt over ~50 games (~7 weeks)
+
+    Args:
+        prop_type: Internal stat type (e.g. 'pitcher_strikeouts')
+        game_date: Date of the game (defaults to today)
+
+    Returns:
+        Multiplier to apply to projection (e.g. 0.98 for -2% K rate)
+    """
+    if game_date is None:
+        game_date = date.today()
+
+    # Check if ABS adjustment is enabled in weights
+    weights = _load_weights()
+    if not weights.get("abs_adjustment_enabled", True):
+        return 1.0
+
+    opening_day = date(2026, 3, 27)
+    days_since = (game_date - opening_day).days
+    if days_since < 0:
+        return 1.0  # Pre-season, no adjustment
+
+    # Decay factor: full effect day 1, zero effect by day 50
+    decay = max(0.0, 1.0 - days_since / 50)
+
+    adjustments = {
+        "pitcher_strikeouts": 1.0 - 0.02 * decay,   # -2% K rate initially
+        "batter_strikeouts": 1.0 - 0.02 * decay,     # -2% K rate initially
+        "walks_allowed": 1.0 + 0.015 * decay,         # +1.5% BB rate initially
+        "walks": 1.0 + 0.015 * decay,                 # +1.5% BB rate for batters too
+        "pitching_outs": 1.0 - 0.01 * decay,          # Slightly fewer outs (more walks)
+    }
+    return adjustments.get(prop_type, 1.0)
+
+
 def _park(team, factors_dict):
     """Get park factor as multiplier (1.0 = neutral)."""
     return factors_dict.get(team, 100) / 100.0
@@ -483,9 +561,14 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         swstr_delta = (swstr - LG["swstr_pct"]) * 1.5
         reg_k = reg_k * 0.85 + (reg_k + swstr_delta) * 0.15
 
-    # Opposing lineup K% (team K rates range 19%-27% — huge impact)
+    # v018: Log5 matchup adjustment for opposing lineup K% (replaces simple ratio)
+    # Team K rates range 19%-27% — huge impact on pitcher K projections
     if opp_k_rate and opp_k_rate > 0:
-        reg_k *= (opp_k_rate / LG["k_rate"])
+        pitcher_k_dec = reg_k / 100.0
+        opp_k_dec = opp_k_rate / 100.0 if opp_k_rate > 1 else opp_k_rate
+        lg_k_dec = LG["k_rate"] / 100.0
+        matchup_k = log5_rate(pitcher_k_dec, opp_k_dec, lg_k_dec)
+        reg_k = matchup_k * 100.0
 
     # BvP aggregate K adjustment
     if bvp and bvp.get("has_data") and bvp.get("total_pa", 0) >= 10:
@@ -527,6 +610,9 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     if proj > 6.0:
         excess = proj - 6.0
         proj = 6.0 + excess * 0.65  # Dampen the excess above 6.0 by 35%
+
+    # v018: ABS Challenge System adjustment (2026 rule change)
+    proj *= abs_adjustment_factor("pitcher_strikeouts")
 
     mu = max(proj, 0.5)
 
@@ -582,6 +668,9 @@ def project_pitcher_outs(p, park=None, wx=None):
 
     if park: proj_outs *= (1 + (_park(park, PARK) - 1) * -0.1)  # Hitter parks = fewer outs
     if wx: proj_outs *= (1 + (wx.get("weather_offense_mult", 1.0) - 1) * -0.1)
+
+    # v018: ABS Challenge System adjustment (more walks → fewer outs)
+    proj_outs *= abs_adjustment_factor("pitching_outs")
 
     mu = max(proj_outs, 9.0)
     return {"projection": round(mu, 1), "mu": mu, "avg_ip_start": round(avg_ip, 1),
@@ -664,6 +753,9 @@ def project_pitcher_walks(p, park=None, ump=None):
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
         proj -= k_adj * 0.3  # Inverse: high-K ump = fewer walks
+
+    # v018: ABS Challenge System adjustment
+    proj *= abs_adjustment_factor("walks_allowed")
 
     mu = max(proj, 0.5)
     return {"projection": round(mu, 2), "mu": mu, "regressed_bb_pct": round(reg_bb, 1)}
@@ -757,12 +849,23 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
         bvp_weight = min(bvp["pa"] / 50, 0.30)  # Max 30% weight at 50+ PA
         reg_avg = reg_avg * (1 - bvp_weight) + bvp_avg * bvp_weight
 
-    # Opposing pitcher quality
+    # v018: Log5 matchup adjustment for opposing pitcher
+    # Uses pitcher's hit-allowed rate vs batter AVG with league context
     if opp_p:
         opp_whip = opp_p.get("whip", LG["whip"])
         opp_fip = opp_p.get("fip", LG["fip"])
+        # Estimate pitcher's hit-allowed rate from WHIP
+        # WHIP = (H + BB) / IP, so H/IP ≈ WHIP - BB/9*9
+        opp_h_rate = max(0.15, min(0.35, 1.0 - (opp_fip / 15.0)))  # Approximate
+        matchup_avg = log5_rate(
+            1.0 - opp_h_rate,  # pitcher prevention rate
+            reg_avg,            # batter hit rate
+            LG["avg"]           # league AVG
+        )
+        # Blend: 60% Log5, 40% old quality method for stability
         opp_quality = (opp_whip / LG["whip"] * 0.6 + opp_fip / LG["fip"] * 0.4)
-        reg_avg *= (1 + (opp_quality - 1) * 0.35)
+        old_adj = reg_avg * (1 + (opp_quality - 1) * 0.35)
+        reg_avg = matchup_avg * 0.6 + old_adj * 0.4
 
     # Platoon
     if platoon and platoon.get("adjustment"):
@@ -1121,6 +1224,9 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
 
     if park: proj *= _park(park, PARK_K)
 
+    # v018: ABS Challenge System adjustment
+    proj *= abs_adjustment_factor("batter_strikeouts")
+
     mu = max(proj, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_k_rate": round(reg_k, 1)}
 
@@ -1143,6 +1249,9 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
 
     exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
     proj = exp_pa * (reg_bb / 100)
+
+    # v018: ABS Challenge System adjustment
+    proj *= abs_adjustment_factor("walks")
 
     mu = max(proj, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_bb_rate": round(reg_bb, 1)}

@@ -56,6 +56,7 @@ from src.kelly import half_kelly, calculate_slip_sizing
 from src.parlay_suggest import suggest_slips, score_slip_quality
 from src.drift import check_model_health, compute_crps_batch, compute_ece
 from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matrix
+from src.board_logger import log_board_snapshot, mark_as_bet
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -955,6 +956,12 @@ with tab_edge:
                 except Exception:
                     pass
 
+                # v018: Log full board snapshot (all props, not just selected)
+                try:
+                    log_board_snapshot(preds, edges=all_edges)
+                except Exception:
+                    pass
+
                 pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
 
                 scored_all = score_picks(all_edges, preds)
@@ -1223,7 +1230,7 @@ with tab_edge:
                 if len(_suggest_preds) >= 5:
                     st.markdown('<div class="section-hdr">Smart Slip Suggestions</div>', unsafe_allow_html=True)
                     st.caption("Auto-generated optimal slips based on confidence, diversity, and correlation rules")
-                    _slip_size = st.radio("Slip size", [5, 6], horizontal=True, key="suggest_size")
+                    _slip_size = st.radio("Slip size", [6, 5], horizontal=True, key="suggest_size")
                     try:
                         _suggested = suggest_slips(_suggest_preds, num_slips=3, slip_size=_slip_size)
                         if _suggested:
@@ -1331,21 +1338,35 @@ with tab_edge:
                     except Exception:
                         pass
 
-                    slip_type = st.selectbox("Slip type", ["5_flex", "6_flex", "4_flex", "3_power", "2_power"], key="slip_type_select")
+                    slip_type = st.selectbox("Slip type", ["6_flex", "5_flex", "4_flex", "3_power", "2_power"], key="slip_type_select")
                     slip_amt = st.number_input("Wager ($)", min_value=1.0, value=5.0, step=1.0, key="slip_amt_select")
                     _num_needed = int(slip_type[0])
 
-                    # Show expected payout + Kelly sizing
+                    # Show expected payout + Kelly sizing + house edge warning
                     if slip_type in PAYOUTS:
-                        _payout_mult = PAYOUTS[slip_type]
+                        _payout_table = PAYOUTS[slip_type]
+                        _payout_mult = _payout_table.get(_num_needed, 0)  # Perfect payout
                         _expected_payout = slip_amt * _payout_mult
                         _be = BREAKEVEN.get(slip_type, 0.5)
+                        # Show partial payouts for flex
+                        _partial_str = ""
+                        if "flex" in slip_type:
+                            _partials = [(k, v) for k, v in sorted(_payout_table.items(), reverse=True) if v > 0 and k < _num_needed]
+                            if _partials:
+                                _partial_str = " · Partial: " + ", ".join(f"{k}/{_num_needed}={v}x" for k, v in _partials)
                         st.markdown(
                             f'<div class="info-strip">Payout: <span class="hl">{_payout_mult}x</span> · '
                             f'Expected: <span class="hl">${_expected_payout:.2f}</span> · '
-                            f'Break-even: <span class="hl">{_be*100:.1f}%</span> per leg</div>',
+                            f'Break-even: <span class="hl">{_be*100:.1f}%</span> per leg{_partial_str}</div>',
                             unsafe_allow_html=True
                         )
+                        # Warn on high house edge entries
+                        if slip_type == "3_power":
+                            st.markdown(
+                                '<div class="warn-strip">⚠️ <strong>3-Pick Power has the highest house edge</strong> — '
+                                'consider 5 or 6-Pick Flex for better long-term EV.</div>',
+                                unsafe_allow_html=True
+                            )
                         # Kelly Criterion sizing
                         try:
                             _sel_picks_for_kelly = [{"confidence": p.get("confidence", 0.55)} for _, p in slip_df.iterrows()]

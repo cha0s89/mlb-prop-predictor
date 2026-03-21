@@ -80,6 +80,35 @@
     "opposing_quality": 1.0,
     "barrel_rate": 1.0
   },
+  "distribution_params": {
+    "pitcher_strikeouts": {"type": "betabinom", "phi": 25},
+    "hits": {"type": "negbin", "vr": 1.5},
+    "total_bases": {"type": "negbin", "vr": 2.5},
+    "home_runs": {"type": "binary"},
+    "stolen_bases": {"type": "negbin", "vr": 2.5},
+    "hitter_fantasy_score": {"type": "gamma", "vr": 4.0},
+    "earned_runs": {"type": "negbin", "vr": 2.2},
+    "batter_strikeouts": {"type": "poisson"},
+    "walks_allowed": {"type": "poisson"},
+    "hits_allowed": {"type": "poisson"},
+    "pitching_outs": {"type": "normal", "vr": 1.3},
+    "hits_runs_rbis": {"type": "normal", "vr": 1.5}
+  },
+  "ensemble_weights": {
+    "sharp_odds": 0.65,
+    "projection": 0.30,
+    "recent_form": 0.05
+  },
+  "abs_adjustment_enabled": true,
+  "league_averages_2026": {
+    "k_rate": 0.220,
+    "bb_rate": 0.085,
+    "hit_rate": 0.245,
+    "hr_rate": 0.033,
+    "sb_rate": 0.018,
+    "avg_pa_per_game": 4.2,
+    "avg_bf_per_start": 23.5
+  },
   "metadata": {
     "parent_version": "v016",
     "total_plays_analyzed": 128353,
