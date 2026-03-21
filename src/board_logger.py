@@ -219,9 +219,10 @@ def classify_edge_source(prediction: Dict, sharp: Dict = None) -> str:
     Edge sources:
       stale_line — sharp books moved but PP hasn't
       projection_disagreement — model proj diverges from market
-      lineup_shock — unexpected lineup change
+      lineup_shock — unexpected lineup change (pitcher or batter)
       weather_mismatch — weather not reflected in lines
       matchup_edge — Log5 matchup creates favorable rate
+      umpire_edge — umpire zone shape creates favorable K/BB rate
       combined — multiple small edges
     """
     sources = []
@@ -244,9 +245,18 @@ def classify_edge_source(prediction: Dict, sharp: Dict = None) -> str:
     if abs(wx_mult - 1.0) > 0.03:
         sources.append(("weather_mismatch", abs(wx_mult - 1.0)))
 
-    # Matchup edge
+    # Matchup edge (Log5 or PA multiplier)
     if prediction.get("pa_multiplier", 1.0) > 1.05:
         sources.append(("matchup_edge", prediction["pa_multiplier"] - 1.0))
+
+    # Lineup shock — late lineup change or unexpected starter
+    if prediction.get("lineup_changed", False):
+        sources.append(("lineup_shock", 0.05))
+
+    # Umpire edge — umpire zone notably favors the pick
+    ump_k_adj = prediction.get("ump_k_adjustment", 0)
+    if abs(ump_k_adj) > 0.3:
+        sources.append(("umpire_edge", abs(ump_k_adj) / 2.0))
 
     if not sources:
         return "combined"
@@ -254,6 +264,45 @@ def classify_edge_source(prediction: Dict, sharp: Dict = None) -> str:
     # Return the strongest edge source
     sources.sort(key=lambda x: x[1], reverse=True)
     return sources[0][0]
+
+
+def classify_all_edge_sources(prediction: Dict, sharp: Dict = None) -> List[Dict]:
+    """Return ALL edge sources with their magnitudes (not just the primary).
+
+    Useful for understanding which edges compound on a single pick,
+    and for tracking CLV by source over time.
+
+    Returns:
+        List of dicts with 'source' and 'magnitude' keys, sorted by magnitude
+    """
+    sources = []
+
+    if sharp:
+        sharp_prob = sharp.get("sharp_implied_prob", 0.5)
+        if abs(sharp_prob - 0.5) > 0.03:
+            sources.append({"source": "stale_line", "magnitude": round(abs(sharp_prob - 0.5), 4)})
+
+    proj = prediction.get("projection", 0)
+    line = prediction.get("line", 0)
+    if line > 0 and abs(proj - line) / line > 0.08:
+        sources.append({"source": "projection_disagreement", "magnitude": round(abs(proj - line) / line, 4)})
+
+    wx_mult = prediction.get("weather_mult", 1.0)
+    if abs(wx_mult - 1.0) > 0.03:
+        sources.append({"source": "weather_mismatch", "magnitude": round(abs(wx_mult - 1.0), 4)})
+
+    if prediction.get("pa_multiplier", 1.0) > 1.05:
+        sources.append({"source": "matchup_edge", "magnitude": round(prediction["pa_multiplier"] - 1.0, 4)})
+
+    if prediction.get("lineup_changed", False):
+        sources.append({"source": "lineup_shock", "magnitude": 0.05})
+
+    ump_k_adj = prediction.get("ump_k_adjustment", 0)
+    if abs(ump_k_adj) > 0.3:
+        sources.append({"source": "umpire_edge", "magnitude": round(abs(ump_k_adj) / 2.0, 4)})
+
+    sources.sort(key=lambda x: x["magnitude"], reverse=True)
+    return sources if sources else [{"source": "combined", "magnitude": 0.0}]
 
 
 # Initialize table on import

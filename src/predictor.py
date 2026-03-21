@@ -481,6 +481,38 @@ def _ensure_pct(val, lg_default=None):
 # ═══════════════════════════════════════════════════════
 
 
+def tto_k_rate_decay(base_k_rate: float, expected_bf: float) -> float:
+    """Apply Times Through Order penalty to K rate.
+
+    Research: K% drops by ~3% absolute on the third time through the order.
+    This translates to roughly -0.15 K% per batter faced beyond 18 BF
+    (the point where TTO3 begins for most lineups).
+
+    The effect is significant — a 28% K rate pitcher drops to ~25% on TTO3.
+    Not accounting for this causes systematic over-projection of Ks for
+    pitchers expected to go deep into games.
+
+    Args:
+        base_k_rate: Matchup-adjusted K rate (decimal, e.g. 0.25)
+        expected_bf: Expected batters faced
+
+    Returns:
+        Adjusted K rate accounting for TTO decay
+    """
+    if expected_bf <= 18:
+        return base_k_rate  # No TTO3 penalty if not reaching 3rd time
+
+    # BF beyond 18 (start of TTO3)
+    tto3_bf = expected_bf - 18
+
+    # Each TTO3 batter has ~3% lower K rate than base
+    # Weight by fraction of total BF in TTO3
+    tto3_fraction = tto3_bf / expected_bf
+    k_rate_drop = 0.03 * tto3_fraction  # Blended drop across all BF
+
+    return max(base_k_rate * 0.70, base_k_rate - k_rate_drop)  # Floor at 70% of base
+
+
 def _early_season_ip_discount(game_date: date = None) -> float:
     """
     Early-season workload discount for pitcher IP projections.
@@ -576,18 +608,27 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         bvp_adj = bvp_k / LG["k_rate"]
         reg_k *= (1 + (bvp_adj - 1) * 0.25)  # 25% weight on BvP
 
-    # Expected IP / batters faced
+    # v018 Task 3A: Opportunity-first BF estimation
+    # Use centralized estimate_batters_faced() for consistent pitcher opportunity modeling
     if expected_ip is None:
         ip = p.get("ip", 0)
         starts = max(p.get("gs", ip / 5.5), 1) if ip > 10 else 1
         expected_ip = min(ip / starts, 7.0) if ip > 10 else LG["avg_ip_starter"]
-        expected_ip = max(4.5, min(6.5, expected_ip))  # BUGFIX: 7.5 was too high for K projections
-    # v018: Early-season workload discount — teams limit pitch counts in first weeks
-    expected_ip *= _early_season_ip_discount()
-    exp_bf = expected_ip * LG["bf_per_ip"]
+        expected_ip = max(4.5, min(6.5, expected_ip))
+    bf_est_result = estimate_batters_faced(
+        pitcher_ip=expected_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+        opposing_lineup_woba=None,  # TODO: wire from game context
+    )
+    exp_bf = bf_est_result["mean_bf"]
+    expected_ip = bf_est_result["effective_ip"]
 
-    # Raw projection
-    proj = exp_bf * (reg_k / 100)
+    # v018 Task 3A: TTO penalty — K rate drops ~3% on third time through order
+    k_rate_tto = tto_k_rate_decay(reg_k / 100.0, exp_bf)
+
+    # Raw projection (using TTO-adjusted rate)
+    proj = exp_bf * k_rate_tto
 
     # Park K factor
     if park: proj *= _park(park, PARK_K)
@@ -662,9 +703,13 @@ def project_pitcher_outs(p, park=None, wx=None):
     bb_adj = 1.0 - (reg_bb - LG["bb_pct_p"]) / LG["bb_pct_p"] * 0.15
 
     proj_ip = avg_ip * bb_adj
-    # v018: Early-season workload discount — teams limit pitch counts in first weeks
-    proj_ip *= _early_season_ip_discount()
-    proj_outs = proj_ip * 3
+    # v018 Task 3A: Use centralized BF estimation for consistent opportunity modeling
+    bf_result = estimate_batters_faced(
+        pitcher_ip=proj_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+    )
+    proj_outs = bf_result["effective_ip"] * 3
 
     if park: proj_outs *= (1 + (_park(park, PARK) - 1) * -0.1)  # Hitter parks = fewer outs
     if wx: proj_outs *= (1 + (wx.get("weather_offense_mult", 1.0) - 1) * -0.1)
@@ -696,14 +741,19 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
     pitching_rate = era * 0.15 + fip * 0.35 + xfip * 0.50
     reg_rate = _regress(pitching_rate, bf_est, STAB["fip"], LG["fip"])
 
-    # Expected IP
+    # v018 Task 3A: Use centralized BF estimation
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for ER projections
-    # v018: Early-season workload discount — teams limit pitch counts in first weeks
-    avg_ip *= _early_season_ip_discount()
+    avg_ip = max(4.0, min(6.5, avg_ip))
+    bf_result = estimate_batters_faced(
+        pitcher_ip=avg_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+        opposing_lineup_woba=opp_woba,
+    )
+    effective_ip = bf_result["effective_ip"]
 
     # ER projection = (rate / 9) * expected IP
-    proj_er = (reg_rate / 9.0) * avg_ip
+    proj_er = (reg_rate / 9.0) * effective_ip
 
     # Opposing lineup quality
     if opp_woba and opp_woba > 0:
@@ -743,9 +793,15 @@ def project_pitcher_walks(p, park=None, ump=None):
         zone_adj = (zone - LG["zone_pct"]) / LG["zone_pct"] * -0.2
         reg_bb *= (1 + zone_adj)
 
+    # v018 Task 3A: Use centralized BF estimation
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for walks projections
-    exp_bf = avg_ip * LG["bf_per_ip"]
+    avg_ip = max(4.0, min(6.5, avg_ip))
+    bf_result = estimate_batters_faced(
+        pitcher_ip=avg_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+    )
+    exp_bf = bf_result["mean_bf"]
 
     proj = exp_bf * (reg_bb / 100)
 
@@ -875,9 +931,12 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
     if park: reg_avg *= (1 + (_park(park, PARK) - 1) * 0.25)
     if wx: reg_avg *= wx.get("weather_offense_mult", 1.0)
 
-    # Expected AB (PA minus walks/HBP ~9%)
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
+    # Use batter's actual BB rate for AB conversion (not league average 12%)
+    bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
+    exp_ab = exp_pa * (1 - bb_rate_pct / 100)
 
     mu = max(exp_ab * reg_avg, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_avg": round(reg_avg, 3),
@@ -957,12 +1016,15 @@ def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
         blended_wx = wx.get("weather_offense_mult", 1.0) * 0.5 + wx.get("weather_hr_mult", 1.0) * 0.5
         reg_slg *= blended_wx
 
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
+    bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
+    exp_ab = exp_pa * (1 - bb_rate_pct / 100)
 
     mu = max(exp_ab * reg_slg, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_slg": round(reg_slg, 3),
-            "expected_ab": round(exp_ab, 1)}
+            "expected_pa": round(exp_pa, 1), "expected_ab": round(exp_ab, 1)}
 
 
 def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
@@ -1020,8 +1082,9 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
     # Weather (temp is huge for HR — 2% per degree C above 72F)
     if wx: reg_hr_rate *= wx.get("weather_hr_mult", 1.0)
 
-    # Expected PA in the game
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
 
     # NEW APPROACH: P(1+ HR in exp_pa) = 1 - (1 - rate)^pa
     # Clamp rate to avoid numerical issues
@@ -1219,7 +1282,9 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
         k_ump_adj = ump.get("k_adjustment", 0) * 0.15  # Scaled for individual batter
         reg_k *= (1 + k_ump_adj / 5)
 
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
     proj = exp_pa * (reg_k / 100)
 
     if park: proj *= _park(park, PARK_K)
@@ -1228,7 +1293,8 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
     proj *= abs_adjustment_factor("batter_strikeouts")
 
     mu = max(proj, 0.1)
-    return {"projection": round(mu, 2), "mu": mu, "regressed_k_rate": round(reg_k, 1)}
+    return {"projection": round(mu, 2), "mu": mu, "regressed_k_rate": round(reg_k, 1),
+            "expected_pa": round(exp_pa, 1)}
 
 
 def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
@@ -1247,7 +1313,9 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
         k_adj = ump.get("k_adjustment", 0)
         reg_bb *= (1 - k_adj * 0.05)  # High-K ump = fewer walks
 
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
     proj = exp_pa * (reg_bb / 100)
 
     # v018: ABS Challenge System adjustment
@@ -1476,6 +1544,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
         return {
             "p_over": round(p_over, 3),
             "p_under": round(p_under, 3),
+            "p_push": 0.0,  # HR line is 0.5 — no push possible
             "pick": pick,
             "confidence": round(confidence, 3),
             "edge": round(edge, 3),
@@ -1491,6 +1560,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # If proj_result contains BB parameters, use Beta-Binomial for pitcher strikeouts
     p_over = None
     p_under = None
+    p_push = 0.0  # P(stat == line) — pushes void the leg on PrizePicks
     if (prop_type == "pitcher_strikeouts" and proj_result is not None and
         "bb_alpha" in proj_result and "bb_beta" in proj_result and
         "expected_bf" in proj_result):
@@ -1500,6 +1570,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
         if alpha > 0 and beta > 0 and n_batters > 0:
             p_over = distributions.prob_over_betabinom(line, n_batters, alpha, beta)
             p_under = distributions.prob_under_betabinom(line, n_batters, alpha, beta)
+            p_push = distributions.prob_push(line, n_batters, alpha, beta)
 
     # ── Negative Binomial distribution for earned runs ──────────────────
     # If proj_result contains NB parameters, use Negative Binomial for earned runs
@@ -1510,6 +1581,8 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
         if nb_n > 0 and 0 < nb_p < 1:
             p_over = distributions.prob_over_negbinom(line, nb_n, nb_p)
             p_under = distributions.prob_under_negbinom(line, nb_n, nb_p)
+            if line == int(line):
+                p_push = float(nbinom.pmf(int(line), nb_n, nb_p))
 
     # If Beta-Binomial or Negative Binomial wasn't used, calculate using standard distributions
     if p_over is None or p_under is None:
@@ -1553,6 +1626,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
                     int_line = int(line)
                     p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
                     p_under = nbinom.cdf(int_line - 1, n_param, p_param)
+                    p_push = float(nbinom.pmf(int_line, n_param, p_param))
                 else:
                     int_line = int(line)
                     p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
@@ -1561,6 +1635,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
                 if line == int(line):
                     p_over = 1 - poisson.cdf(int(line), mu)
                     p_under = poisson.cdf(int(line) - 1, mu)
+                    p_push = float(poisson.pmf(int(line), mu))
                 else:
                     p_over = 1 - poisson.cdf(int(line), mu)
                     p_under = poisson.cdf(int(line), mu)
@@ -1570,6 +1645,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
                 int_line = int(line)
                 p_over = 1 - poisson.cdf(int_line, mu)
                 p_under = poisson.cdf(int_line - 1, mu)
+                p_push = float(poisson.pmf(int_line, mu))
             else:
                 int_line = int(line)
                 p_over = 1 - poisson.cdf(int_line, mu)
@@ -1657,6 +1733,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
 
     return {
         "p_over": round(p_over, 4), "p_under": round(p_under, 4),
+        "p_push": round(p_push, 4),
         "pick": pick, "confidence": round(confidence, 4),
         "edge": round(edge, 4), "rating": rating,
         "projection": round(mu, 2), "line": line,

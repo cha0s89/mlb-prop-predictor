@@ -126,10 +126,14 @@ def simulate_slip_ev(
     leg_probs = []
     for leg in legs:
         win_p = leg["win_prob"]
-        push_p = _push_rate_for_line(
-            leg.get("stat_type", "unknown"),
-            leg.get("line", 0.5),
-        )
+        # Use model-computed p_push if available, else fall back to empirical rate
+        if "p_push" in leg and leg["p_push"] is not None and leg["p_push"] > 0:
+            push_p = leg["p_push"]
+        else:
+            push_p = _push_rate_for_line(
+                leg.get("stat_type", "unknown"),
+                leg.get("line", 0.5),
+            )
         # Adjust: win_prob is for the outcome direction, push reduces both sides
         loss_p = max(0, 1.0 - win_p - push_p)
         leg_probs.append((win_p, loss_p, push_p))
