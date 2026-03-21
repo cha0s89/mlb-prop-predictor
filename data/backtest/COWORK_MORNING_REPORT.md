@@ -223,3 +223,30 @@ High probability: P(1+ HR) = 0.60 → picks MORE with 60% confidence
 5. ⏳ Analyze results and determine if TB/FS need further fixes
 6. ⏳ Document final results
 
+
+---
+
+## Final Status
+
+**Session completed:** 2026-03-20 ~02:00 UTC
+**Changes committed:** eedabcb (Fix home runs projection model and cross_tab non-play filtering)
+
+**Deliverables:**
+- ✅ Root cause analysis (non-play bias identified)
+- ✅ Home runs projection redesigned (0.14→P(1+ HR) model)
+- ✅ CDF updated for probability-based HR
+- ✅ Weights updated (HR offset 0.93→0.0)
+- ✅ cross_tab.py fixed to filter non-plays
+- ✅ Comprehensive documentation
+- ✅ Changes committed to git
+
+**Evaluation framework is now honest:**
+- All metrics based on "played-games-only" (51.1% of data)
+- Non-plays (48.9%) filtered automatically
+- No more artificial direction bias from ghosts
+
+**Ready for next steps:**
+- Run full backtest with HR fix
+- Measure impact on TB LESS and FS MORE
+- Deploy when all props hit 54%+ on both directions
+

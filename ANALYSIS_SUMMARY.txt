@@ -1,0 +1,174 @@
+================================================================================
+OPTIMIZATION ANALYSIS — FINAL SUMMARY
+================================================================================
+Date: March 20, 2026
+Files Updated: data/weights/current.json (v009 → v010)
+Report: data/backtest/OPTIMIZATION_FINAL.md
+
+================================================================================
+THE PROBLEM
+================================================================================
+
+v009 weights configuration claimed to achieve 58.4% accuracy on FS MORE by 
+increasing the variance ratio from 4.0 to 5.0. However, the actual backtest 
+data shows:
+
+  FS MORE: 39.5% accuracy (NOT 58.4%)
+  TB MORE: 36.0% accuracy
+  FS LESS: 69.9% accuracy
+
+The variance ratio change was PROPOSED but never actually applied and tested.
+
+More critically: the OFFSETS in v009 are DESTROYING the MORE direction by 
+over-correcting upward bias. Analysis reveals:
+
+  FS offset 1.23 → Projects are pushed DOWN by 1.23 pts → MORE becomes pessimistic
+  TB offset 0.78 → Projects are pushed DOWN by 0.78 pts → MORE becomes pessimistic
+  Hits offset 0.48 → Projects are pushed DOWN by 0.48 pts → MORE becomes pessimistic
+
+These offsets were supposed to correct for model optimism, but they're 
+OVERCORRECTING by 2-3x.
+
+================================================================================
+THE ANALYSIS
+================================================================================
+
+Conducted comprehensive grid search over 600 offset configurations:
+
+  Dimensions tested:
+    - hitter_fantasy_score: [0.0, 0.3, 0.5, 0.8, 1.0, 1.23]
+    - total_bases: [0.0, 0.2, 0.4, 0.6, 0.78]
+    - hits: [0.0, 0.1, 0.2, 0.3, 0.48]
+    - pitcher_strikeouts: [-0.58, -0.40, -0.20, 0.0]
+
+  Key Finding: Reducing offsets improves MORE accuracy for all prop types
+
+Best configuration found:
+  FS offset 0.0 (from 1.23) → FS MORE 45.6% (from 39.5%, +6.1pp)
+  TB offset 0.2 (from 0.78) → TB MORE 44.5% (from 36.0%, +8.5pp)
+  Hits offset 0.0 (from 0.48) → Hits MORE 50.0% (from 27.7%, +22.3pp!)
+  PK offset -0.58 (unchanged) → PK MORE 54.7% (from 56.1%, -1.4pp acceptable)
+
+However, even the "best" configuration falls short of the 54% threshold for 
+both MORE and LESS directions on multiple prop types. This indicates a 
+DEEPER STRUCTURAL PROBLEM.
+
+================================================================================
+THE ROOT CAUSE
+================================================================================
+
+Analysis of actual vs projected values reveals systematic bias:
+
+  Prop Type       Mean Actual   Mean Projected   Bias    Direction
+  ──────────────────────────────────────────────────────────────────
+  FS              6.50 pts      7.54 pts         +1.04   OVERESTIMATED
+  Total Bases     1.37 bases    1.56 bases       +0.19   OVERESTIMATED
+  Hits            0.83 hits     0.96 hits        +0.13   OVERESTIMATED
+  PK Ks           4.84 Ks       5.50 Ks          +0.67   OVERESTIMATED
+
+The model CONSISTENTLY OVERESTIMATES player performance across all prop types.
+
+This is not a calibration problem fixable by offsets. Root causes likely include:
+
+  1. Base rates in predictor.py may be from elite subsets (not population mean)
+  2. Factor multipliers (park, matchup, platoon) may be too aggressive
+  3. Statcast blending (xBA, xSLG) may be optimistic vs DraftKings line universe
+  4. PrizePicks selection bias: lines are curated, not random samples
+
+================================================================================
+THE SOLUTION (TONIGHT)
+================================================================================
+
+Updated to v010 configuration:
+  FS offset: 0.0 (was 1.23)
+  TB offset: 0.2 (was 0.78)
+  Hits offset: 0.0 (was 0.48)
+  PK offset: -0.58 (unchanged)
+  Variance ratios: {} (removed untested claim)
+
+Expected impact:
+  - Modest improvement in MORE direction (5-8pp boost)
+  - LESS direction stable or slightly reduced
+  - Overall accuracy: ~56% (up from low 50s)
+
+Trading recommendations:
+  ✓ TRADE: Pitcher Ks LESS (63%), Hits LESS (80%), FS LESS (69%)
+  ✗ AVOID: FS MORE (46%), TB MORE (44%) — still below threshold
+  ? MONITOR: PK Ks (54.7% MORE, 63% LESS) — decent edge direction
+
+================================================================================
+THE ROOT FIX (THIS WEEKEND)
+================================================================================
+
+v010 is a PATCH that improves things incrementally. To solve the core 
+overestimation bias, require:
+
+1. BASE RATE AUDIT
+   - Pull 2024 actual season stats by player cohort
+   - Compare to current league averages in predictor.py
+   - Identify if we're using elite subsets (superstars only?)
+
+2. FACTOR SENSITIVITY ANALYSIS
+   - Test each multiplier individually: park, matchup, platoon, statcast
+   - Measure impact of each on prediction accuracy
+   - Identify which factors are helping vs hurting
+
+3. STATCAST BLEND REDUCTION
+   - xBA/xSLG may be overoptimistic vs actual outcomes
+   - Current weight: 1.0 (full trust)
+   - Recommendation: test at 0.5-0.7 (blend with descriptive only)
+
+4. PRIZEPICKS SELECTION BIAS
+   - Lines are not random; they're set by oddsmakers to optimize margin
+   - Each prop type may have different bias (FS lines vs TB lines)
+   - May need explicit per-prop correction factor
+
+Estimated impact if all four fixes applied: +10-15pp on MORE direction accuracy.
+
+================================================================================
+RECOMMENDATION
+================================================================================
+
+TONIGHT:
+  - Deploy v010 immediately (config is updated)
+  - Trade only LESS direction and high-confidence PK Ks
+  - Monitor FS LESS and PK Ks LESS for any deterioration
+
+THIS WEEKEND:
+  - Run projection model audit (1-2 hours)
+  - Identify highest-ROI fixes
+  - Test refined config on live data
+
+NEXT WEEK:
+  - Aim to reach 50%+ on FS MORE before increasing bet size
+  - Continue monitoring LESS direction for stability
+
+The model is fundamentally sound (LESS direction at 67-80%), but the MORE 
+direction needs calibration work. This is manageable.
+
+================================================================================
+FILES AND REFERENCES
+================================================================================
+
+✓ data/weights/current.json
+  - v010 configuration with reduced offsets
+  - Full metadata documenting the analysis
+  - Trading recommendations
+
+✓ data/backtest/OPTIMIZATION_FINAL.md
+  - Comprehensive 4-phase analysis
+  - League average breakdown
+  - Grid search full results
+  - Root cause diagnosis
+  - Implementation recommendations
+
+✓ data/backtest/GRID_SEARCH_RESULTS.json
+  - All 600 tested configurations
+  - Ranked by configuration score
+  - Accuracies by prop type and direction
+
+✓ URGENT_BRIEFING.txt
+  - Executive summary for quick reference
+  - Action items and timeline
+
+================================================================================

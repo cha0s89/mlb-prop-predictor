@@ -256,6 +256,8 @@ def build_pitcher_profile(stats_row) -> dict:
         "k_pct": safe_pct(stats_row.get("K%", 0)),
         "bb_pct": safe_pct(stats_row.get("BB%", 0)),
         "hr9": float(stats_row.get("HR/9", 0)),
+        "gs": int(float(stats_row.get("GS", stats_row.get("G", 1)))),
+        "xfip": float(stats_row.get("xFIP", stats_row.get("FIP", 0))),
     }
 
 

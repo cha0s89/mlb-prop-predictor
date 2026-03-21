@@ -5,13 +5,13 @@
     "details": "19165 projections"
   },
   "fangraphs_batting": {
-    "timestamp": "2026-03-19T22:27:53.072801",
-    "unix": 1773984473.0728014,
+    "timestamp": "2026-03-20T17:09:02.222898",
+    "unix": 1774051742.2228982,
     "details": "season=2024, 651 players"
   },
   "fangraphs_pitching": {
-    "timestamp": "2026-03-19T22:27:53.866166",
-    "unix": 1773984473.866166,
+    "timestamp": "2026-03-20T17:09:02.855790",
+    "unix": 1774051742.8557906,
     "details": "season=2024, 840 players"
   }
 }

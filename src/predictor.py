@@ -53,7 +53,7 @@ def _load_weights() -> dict:
         return _WEIGHTS_CACHE
     weights_path = os.path.join(os.path.dirname(__file__), "..", "data", "weights", "current.json")
     try:
-        with open(weights_path) as f:
+        with open(weights_path, encoding="utf-8") as f:
             w = json.load(f)
         _WEIGHTS_CACHE.update(w)
     except (FileNotFoundError, json.JSONDecodeError):
@@ -234,7 +234,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         ip = p.get("ip", 0)
         starts = max(p.get("gs", ip / 5.5), 1) if ip > 10 else 1
         expected_ip = min(ip / starts, 7.0) if ip > 10 else LG["avg_ip_starter"]
-        expected_ip = max(4.5, min(7.5, expected_ip))
+        expected_ip = max(4.5, min(6.5, expected_ip))  # BUGFIX: 7.5 was too high for K projections
     exp_bf = expected_ip * LG["bf_per_ip"]
 
     # Raw projection
@@ -277,7 +277,7 @@ def project_pitcher_outs(p, park=None, wx=None):
 
     # Average IP per start
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(8.0, avg_ip))
+    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 8.0 was too high, causing projections like 25+ outs
 
     # BB% adjustment: high walk rate = fewer outs (more pitches burned)
     bb_adj = 1.0 - (reg_bb - LG["bb_pct_p"]) / LG["bb_pct_p"] * 0.15
@@ -314,7 +314,7 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
 
     # Expected IP
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(7.5, avg_ip))
+    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for ER projections
 
     # ER projection = (rate / 9) * expected IP
     proj_er = (reg_rate / 9.0) * avg_ip
@@ -352,7 +352,7 @@ def project_pitcher_walks(p, park=None, ump=None):
         reg_bb *= (1 + zone_adj)
 
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(7.5, avg_ip))
+    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for walks projections
     exp_bf = avg_ip * LG["bf_per_ip"]
 
     proj = exp_bf * (reg_bb / 100)
@@ -379,7 +379,7 @@ def project_pitcher_hits_allowed(p, park=None, wx=None, opp_avg=None):
     h9 = max(h9, 5.0)
 
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(7.5, avg_ip))
+    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for hits_allowed projections
 
     proj = (h9 / 9.0) * avg_ip
 

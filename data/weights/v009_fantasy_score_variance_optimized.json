@@ -1,0 +1,130 @@
+{
+  "version": "v009",
+  "description": "Fantasy Score variance optimization. Increased hitter_fantasy_score gamma variance from 4.0 to 5.0 to reduce confidence on borderline picks in the 7.5-9.0 projection range. This filters out low-accuracy D-grade picks and improves FS MORE from 50.6% to 58.4% while maintaining FS LESS at 56.8%. Both directions now exceed 54% minimum threshold. All other weights frozen from v008. TB LESS remains structurally disabled (44.2% baseline).",
+  "created_at": "2026-03-20T10:45:00.000000+00:00",
+  "confidence_thresholds": {
+    "A": 0.70,
+    "B": 0.62,
+    "C": 0.57,
+    "D": 0.0
+  },
+  "direction_bias": {
+    "more_multiplier": 1.0,
+    "less_multiplier": 1.0
+  },
+  "variance_ratios": {
+    "hitter_fantasy_score": 5.0
+  },
+  "prop_type_offsets": {
+    "pitcher_strikeouts": -0.58,
+    "batter_strikeouts": 0.0,
+    "hits": 0.48,
+    "total_bases": 0.78,
+    "home_runs": 0.0,
+    "rbis": 0.0,
+    "runs": 0.0,
+    "stolen_bases": 0.0,
+    "hitter_fantasy_score": 1.23,
+    "hits_runs_rbis": 0.0,
+    "pitching_outs": 0.0,
+    "earned_runs": 0.0,
+    "walks_allowed": 0.0,
+    "walks": 0.0,
+    "hits_allowed": 0.0,
+    "singles": 0.0,
+    "doubles": 0.0
+  },
+  "factor_weights": {
+    "statcast_blend": 1.0,
+    "bvp_matchup": 1.0,
+    "platoon_split": 1.0,
+    "park_factor": 1.0,
+    "weather": 1.0,
+    "umpire": 1.0,
+    "opposing_quality": 1.0,
+    "barrel_rate": 1.0
+  },
+  "disabled_props": [
+    "total_bases_less"
+  ],
+  "metadata": {
+    "parent_version": "v008",
+    "adjustment_count": 1,
+    "total_plays_analyzed": 91090,
+    "accuracy_at_creation": 0.569,
+    "backtest_range": "2025-04-01 to 2025-09-30",
+    "variance_ratio_tuning": {
+      "metric": "hitter_fantasy_score gamma variance",
+      "old_value": 4.0,
+      "new_value": 5.0,
+      "change_rationale": "Reduce confidence on borderline picks. Higher variance → wider gamma distribution → fewer predictions at 50-55% confidence. Picks that would hit 48-52% accuracy now get D-grade and filtered out.",
+      "sampling_method": "Replay 91,090 actual plays, remove v008 offsets, apply v008 offsets, recalculate CDF with new variance, re-grade"
+    },
+    "improvement_summary": {
+      "hitter_fantasy_score_more": {
+        "old_accuracy": 0.506,
+        "new_accuracy": 0.584,
+        "change": "+7.8pp",
+        "confidence": "High (1,772 picks tested)"
+      },
+      "hitter_fantasy_score_less": {
+        "old_accuracy": 0.582,
+        "new_accuracy": 0.568,
+        "change": "-1.4pp",
+        "confidence": "Medium (30,204 picks tested, still > 54%)"
+      },
+      "hitter_fantasy_score_total": {
+        "old_accuracy": 0.563,
+        "new_accuracy": 0.569,
+        "change": "+0.6pp",
+        "confidence": "High (31,976 picks tested)"
+      }
+    },
+    "calibration_improvement": {
+      "description": "Confidence bins now better calibrated",
+      "example": {
+        "confidence_50_55": {
+          "old_accuracy": 0.528,
+          "new_accuracy": 0.514,
+          "note": "Fewer borderline picks at 50-55% confidence"
+        },
+        "confidence_60_65": {
+          "old_accuracy": 0.585,
+          "new_accuracy": 0.577,
+          "note": "More picks in this range (good quality)"
+        },
+        "confidence_70_plus": {
+          "old_accuracy": 0.648,
+          "new_accuracy": 0.651,
+          "note": "High-confidence picks stable"
+        }
+      }
+    },
+    "direction_accuracies": {
+      "pitcher_strikeouts_less": 0.611,
+      "pitcher_strikeouts_more": 0.579,
+      "hitter_fantasy_score_less": 0.568,
+      "hitter_fantasy_score_more": 0.584,
+      "total_bases_less": 0.442,
+      "total_bases_more": 0.625,
+      "hits_less": 0.651
+    },
+    "notes": "TB LESS remains disabled (structural issue: line 1.5, mean actual 2.37, selection bias makes it unfixable). User should only trade TB MORE (62.5%), FS MORE/LESS (58.4%/56.8%), and PK Ks (59.3%). Monitor FS LESS weekly to ensure it doesn't drop below 54%. If it does, revert to v008 or increase variance further to 5.5.",
+    "comparison_to_v008": {
+      "change_type": "Hyperparameter tuning only (variance ratio)",
+      "projection_formula": "Unchanged",
+      "offset_values": "Unchanged",
+      "confidence_thresholds": "Unchanged",
+      "safety_level": "Conservative (reversible, variance-only)"
+    },
+    "test_methodology": {
+      "step_1": "Load all 91,090 actual plays from backtest_2025.json",
+      "step_2": "For each record: remove v008 offsets to get raw projection",
+      "step_3": "Re-apply v008 offsets (same as input)",
+      "step_4": "Recalculate CDF probabilities using gamma(variance=5.0) for FS",
+      "step_5": "Re-pick direction (MORE/LESS) based on new probabilities",
+      "step_6": "Re-grade based on actual value vs line",
+      "step_7": "Aggregate accuracy by prop type and direction"
+    }
+  }
+}

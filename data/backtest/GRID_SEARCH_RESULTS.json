@@ -1,0 +1,2002 @@
+[
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.9664109156170344
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.9664109156170344
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.9664109156170344
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.962885387333296
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.962885387333296
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.962885387333296
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.9611681171015123
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.9611681171015123
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.9611681171015123
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.9578035370060776
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.9578035370060776
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.9578035370060776
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.957642588817774
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.957642588817774
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.957642588817774
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.952625471176826
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.952625471176826
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.45012468827930174,
+    "config_score": 1.952625471176826
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.952560738490555
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.952560738490555
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.952560738490555
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.9473826726613037
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.9473826726613037
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4448818897637795,
+    "config_score": 1.9473826726613037
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9391199945374353
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9391199945374353
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9391199945374353
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.935804333272428
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.935804333272428
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.935804333272428
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.935594466253697
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.935594466253697
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.935594466253697
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9322788049886896
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9322788049886896
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9322788049886896
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9305615347569058
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9305615347569058
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9305615347569058
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.930512615926478
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.930512615926478
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.930512615926478
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9271969546614711
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9271969546614711
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9271969546614711
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9270360064731675
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9270360064731675
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9270360064731675
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.0,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9253345500972268
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.1,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9253345500972268
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.4,
+      "hits": 0.2,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9253345500972268
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9220188888322196
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9220188888322196
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9220188888322196
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.921954156145949
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.921954156145949
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.921954156145949
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9205696937803554
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9205696937803554
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9205696937803554
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.917044165496617
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.917044165496617
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.917044165496617
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9167760903166975
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9167760903166975
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.42517770295548074,
+    "config_score": 1.9167760903166975
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9153268952648332
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9153268952648332
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9153268952648332
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.911962315169398
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.911962315169398
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.911962315169398
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.911801366981095
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.911801366981095
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.911801366981095
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9111048801874735
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9111048801874735
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9111048801874735
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.4,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9085134121928289
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.4,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9085134121928289
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.4,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9085134121928289
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9075793519037352
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9075793519037352
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9075793519037352
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9067842493401468
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.1,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9067842493401468
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.2,
+      "hits": 0.2,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9067842493401468
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.906719516653876
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.906719516653876
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.906719516653876
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.4,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9049878839090906
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.4,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9049878839090906
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.3,
+      "total_bases": 0.4,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.4
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.42517770295548074,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6741575781288208,
+      "hitter_fantasy_score_LESS": 0.6915029944817846,
+      "total_bases_MORE": 0.4228337671997025,
+      "pitcher_strikeouts_MORE": 0.5569764137539074,
+      "pitcher_strikeouts_LESS": 0.6678765880217786,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.4228337671997025,
+    "config_score": 1.9049878839090906
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9024975015765166
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.1,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9024975015765166
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.0,
+      "total_bases": 0.6,
+      "hits": 0.2,
+      "pitcher_strikeouts": -0.2
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.45578428530008697,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_MORE": 0.39481865284974094,
+      "hitter_fantasy_score_LESS": 0.6886181292669556,
+      "total_bases_LESS": 0.686087289659034,
+      "pitcher_strikeouts_MORE": 0.5518945634266886,
+      "pitcher_strikeouts_LESS": 0.6892523364485982,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39481865284974094,
+    "config_score": 1.9024975015765166
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.0,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9015414508246247
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.1,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9015414508246247
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.5,
+      "total_bases": 0.0,
+      "hits": 0.2,
+      "pitcher_strikeouts": 0.0
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.40994306346340786,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6688361143806688,
+      "hitter_fantasy_score_LESS": 0.6944368094112473,
+      "pitcher_strikeouts_MORE": 0.5467164975974372,
+      "pitcher_strikeouts_LESS": 0.7067901234567902,
+      "total_bases_MORE": 0.4448818897637795,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.40994306346340786,
+    "config_score": 1.9015414508246247
+  },
+  {
+    "offsets": {
+      "hitter_fantasy_score": 0.8,
+      "total_bases": 0.2,
+      "hits": 0.0,
+      "pitcher_strikeouts": -0.58
+    },
+    "accuracies": {
+      "hitter_fantasy_score_MORE": 0.39017974572555897,
+      "hits_LESS": 0.7984442761753975,
+      "total_bases_LESS": 0.6703910614525139,
+      "hitter_fantasy_score_LESS": 0.7010690533905153,
+      "pitcher_strikeouts_MORE": 0.5605019420376457,
+      "total_bases_MORE": 0.45012468827930174,
+      "pitcher_strikeouts_LESS": 0.6307053941908713,
+      "hits_MORE": 0.5
+    },
+    "min_accuracy": 0.39017974572555897,
+    "config_score": 1.9008063760425062
+  }
+]
