@@ -26,10 +26,19 @@ def load_backtest():
         data = json.load(f)
     print(f"Loaded {len(data):,} backtest records")
 
-    # Filter non-plays (actual=0) which artificially inflate LESS and deflate MORE
-    nonplays = [r for r in data if r.get('actual', 0) == 0]
-    plays = [r for r in data if r.get('actual', 0) > 0]
-    print(f"  Non-plays (actual=0): {len(nonplays):,} ({100*len(nonplays)/len(data):.1f}%)")
+    # Filter non-plays (actual=0) which artificially inflate LESS and deflate MORE.
+    # Exception: home_runs — actual=0 means the batter played but didn't homer, which is
+    # a valid LESS result, not a non-play. Pitcher props also use 0 as a real value.
+    BATTER_PROPS_SKIP_ZERO = {"hits", "total_bases", "hitter_fantasy_score", "stolen_bases",
+                               "hits_runs_rbis", "runs", "rbis", "batter_strikeouts"}
+
+    def is_nonplay(r):
+        prop = r.get("prop_type", "")
+        return r.get("actual", 0) == 0 and prop in BATTER_PROPS_SKIP_ZERO
+
+    nonplays = [r for r in data if is_nonplay(r)]
+    plays = [r for r in data if not is_nonplay(r)]
+    print(f"  Non-plays (actual=0, batter props only): {len(nonplays):,} ({100*len(nonplays)/len(data):.1f}%)")
     print(f"  Actual plays: {len(plays):,} ({100*len(plays)/len(data):.1f}%)\n")
 
     return plays
