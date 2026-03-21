@@ -807,6 +807,16 @@ with tab_edge:
                 p["injury_status"] = injury["status"]
                 p["injury_color"] = injury["color"]
 
+                # v018: Injury-aware filtering
+                # IL players should not appear as picks at all
+                if injury["status"] == "IL":
+                    continue
+                # Day-to-day players: reduce confidence (increased DNP risk)
+                if injury["status"] == "day-to-day":
+                    p["confidence"] = max(p.get("confidence", 0.5) * 0.85, 0)
+                    if p.get("rating") in ("A", "A+"):
+                        p["rating"] = "B"  # Downgrade — can't trust DTD player
+
                 p["team"] = team
                 p["stat_internal"] = stat_int
                 preds.append(p)
@@ -958,7 +968,20 @@ with tab_edge:
                 slip_candidates = filtered.head(40).reset_index(drop=True)
                 selected_picks = []
 
+                # Group by prop type for easier scanning
+                if not slip_candidates.empty:
+                    slip_candidates = slip_candidates.sort_values(
+                        ["stat_type", "confidence"], ascending=[True, False]
+                    ).reset_index(drop=True)
+
+                _prev_stat_type = None
                 for pick_idx, (_, pick_row) in enumerate(slip_candidates.iterrows()):
+                    # Visual separator between prop type groups
+                    if pick_row["stat_type"] != _prev_stat_type:
+                        if _prev_stat_type is not None:
+                            st.markdown('<hr style="margin:0.3rem 0;border:none;border-top:1px solid rgba(255,255,255,0.08);">', unsafe_allow_html=True)
+                        st.markdown(f'<div style="font-size:0.7rem;color:rgba(232,236,241,0.4);letter-spacing:1px;text-transform:uppercase;padding:0.3rem 0 0.1rem 0;">{pick_row["stat_type"]}</div>', unsafe_allow_html=True)
+                        _prev_stat_type = pick_row["stat_type"]
                     if pick_idx >= 40:
                         break
                     health_icon = {"IL": "🔴 IL", "day-to-day": "🟡 DTD", "active": "🟢"}.get(pick_row.get("injury_status", "active"), "🟢")

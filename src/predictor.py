@@ -30,6 +30,7 @@ WEIGHTING PHILOSOPHY (from research):
 import json
 import os
 import numpy as np
+from datetime import date, datetime
 from scipy import stats as sp_stats
 from scipy.stats import poisson, nbinom, norm, gamma
 from typing import Optional
@@ -299,6 +300,56 @@ def _ensure_pct(val, lg_default=None):
 # PITCHER PROJECTIONS
 # ═══════════════════════════════════════════════════════
 
+
+def _early_season_ip_discount(game_date: date = None) -> float:
+    """
+    Early-season workload discount for pitcher IP projections.
+
+    Teams limit starter pitch counts in the first few weeks of the season,
+    typically capping at 75-85 pitches on Opening Day and ramping up over
+    the first ~5 weeks. This creates a systematic bias where full-season
+    IP/start projections overshoot actual early-season outings.
+
+    Research-based ramp-up schedule (approximate):
+      Opening Day (week 0):   ~80 pitches → ~4.5-5.0 IP → discount 15%
+      Week 1-2:               ~85-90 pitches → ~5.0-5.5 IP → discount 10%
+      Week 3-4:               ~90-95 pitches → ~5.5-6.0 IP → discount 5%
+      Week 5+:                Full workload → no discount
+
+    Returns a multiplier (0.85 to 1.0) to apply to projected IP/outs.
+    """
+    if game_date is None:
+        game_date = date.today()
+
+    # MLB Opening Day is typically late March / early April.
+    # Use April 1 as a rough anchor — actual opening day varies by year.
+    year = game_date.year
+    # Season start: use March 20 as earliest possible (2026 is March 26)
+    season_start = date(year, 3, 20)
+
+    if game_date < season_start:
+        # Spring Training or pre-season: heavy discount
+        return 0.82
+
+    days_into_season = (game_date - season_start).days
+
+    if days_into_season <= 7:
+        # Opening week: ~15% discount
+        return 0.85
+    elif days_into_season <= 14:
+        # Week 2: ~10% discount
+        return 0.90
+    elif days_into_season <= 21:
+        # Week 3: ~7% discount
+        return 0.93
+    elif days_into_season <= 35:
+        # Week 4-5: ~4% discount, almost ramped up
+        return 0.96
+    else:
+        # Week 6+: full workload
+        return 1.0
+
+
 def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
                                 opp_k_rate=None, park=None, wx=None,
                                 expected_ip=None):
@@ -346,6 +397,8 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         starts = max(p.get("gs", ip / 5.5), 1) if ip > 10 else 1
         expected_ip = min(ip / starts, 7.0) if ip > 10 else LG["avg_ip_starter"]
         expected_ip = max(4.5, min(6.5, expected_ip))  # BUGFIX: 7.5 was too high for K projections
+    # v018: Early-season workload discount — teams limit pitch counts in first weeks
+    expected_ip *= _early_season_ip_discount()
     exp_bf = expected_ip * LG["bf_per_ip"]
 
     # Raw projection
@@ -402,6 +455,8 @@ def project_pitcher_outs(p, park=None, wx=None):
     bb_adj = 1.0 - (reg_bb - LG["bb_pct_p"]) / LG["bb_pct_p"] * 0.15
 
     proj_ip = avg_ip * bb_adj
+    # v018: Early-season workload discount — teams limit pitch counts in first weeks
+    proj_ip *= _early_season_ip_discount()
     proj_outs = proj_ip * 3
 
     if park: proj_outs *= (1 + (_park(park, PARK) - 1) * -0.1)  # Hitter parks = fewer outs
@@ -434,6 +489,8 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
     # Expected IP
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
     avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for ER projections
+    # v018: Early-season workload discount — teams limit pitch counts in first weeks
+    avg_ip *= _early_season_ip_discount()
 
     # ER projection = (rate / 9) * expected IP
     proj_er = (reg_rate / 9.0) * avg_ip
