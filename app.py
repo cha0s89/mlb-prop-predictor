@@ -822,12 +822,20 @@ with tab_edge:
                     weather=wx,
                 )
 
+                # Props that are count-based (safe to apply multipliers to)
+                # home_runs returns a PROBABILITY (0-1), not a count — never multiply it
+                _COUNT_PROPS = {"hits", "total_bases", "rbis", "runs", "stolen_bases",
+                                "hits_runs_rbis", "batter_strikeouts", "walks", "singles", "doubles",
+                                "pitcher_strikeouts", "pitching_outs", "earned_runs",
+                                "walks_allowed", "hits_allowed", "hitter_fantasy_score"}
+                _is_count_prop = stat_int in _COUNT_PROPS
+
                 # v018: Stat-specific weather adjustment (research-backed)
+                # SKIP: weather is already applied inside projection functions.
+                # Applying it again here would double-count. Only record it for display.
                 if wx:
                     wx_mult = get_stat_specific_weather_adjustment(wx, stat_int)
-                    if wx_mult != 1.0:
-                        p["projection"] = round(p["projection"] * wx_mult, 2)
-                        p["weather_mult"] = wx_mult
+                    p["weather_mult"] = wx_mult  # For display only, NOT applied to projection
 
                 prior_slg = 0.400
                 prior_avg = 0.250
@@ -843,14 +851,18 @@ with tab_edge:
                     st_stats=st_stats,
                 )
                 spring_mult = spring["spring_mult"]
-                p["projection"] = round(p["projection"] * spring_mult, 2)
+                # Only apply spring multiplier to count-based props (not probabilities)
+                if _is_count_prop:
+                    p["projection"] = round(p["projection"] * spring_mult, 2)
                 p["spring_mult"] = spring_mult
                 p["spring_badge"] = spring["badge"]
 
                 trend = get_batter_trend(0)
                 trend_mult = trend.get("trend_multiplier", 1.0)
                 trend_mult = max(0.92, min(1.08, trend_mult))
-                p["projection"] = round(p["projection"] * trend_mult, 2)
+                # Only apply trend multiplier to count-based props
+                if _is_count_prop:
+                    p["projection"] = round(p["projection"] * trend_mult, 2)
                 p["trend_mult"] = trend_mult
                 if trend_mult >= 1.03:
                     p["trend_badge"] = "hot"
@@ -869,7 +881,9 @@ with tab_edge:
                     is_cold = trend_mult < 0.97 or spring_mult < 0.97
                     if is_elite and is_cold:
                         p["buy_low"] = True
-                        p["projection"] = round(p["projection"] * 1.04, 2)
+                        # Only apply buy_low to count props
+                        if _is_count_prop:
+                            p["projection"] = round(p["projection"] * 1.04, 2)
 
                 injury = get_player_injury_status(
                     player_name=row["player_name"],
