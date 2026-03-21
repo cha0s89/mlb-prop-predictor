@@ -47,42 +47,163 @@ st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", i
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
-    .stApp { font-family: 'Outfit', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+    /* === BASE === */
+    .stApp { font-family: 'Outfit', sans-serif; background: #070d1a; }
     #MainMenu, footer, header { visibility: hidden; }
-    .hero { background: linear-gradient(135deg, #0f1923 0%, #1a2940 50%, #0d2818 100%); border: 1px solid rgba(0,200,83,0.15); border-radius: 16px; padding: 1.8rem 2rem; margin-bottom: 1.2rem; }
-    .hero h1 { font-family: 'Outfit'; font-weight: 800; font-size: 2rem; color: #E8ECF1; margin: 0 0 0.2rem 0; }
-    .hero .sub { font-weight: 300; font-size: 0.9rem; color: rgba(232,236,241,0.45); margin: 0; }
-    .hero .accent { color: #00C853; }
-    .card { background: linear-gradient(145deg, #121929, #0f1520); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 1rem 1.2rem; text-align: center; }
-    .card .lbl { font-size: 0.7rem; color: rgba(232,236,241,0.4); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 0.3rem; }
-    .card .val { font-family: 'JetBrains Mono'; font-weight: 700; font-size: 1.6rem; color: #E8ECF1; line-height: 1; }
-    .card .val.g { color: #00C853; } .card .val.y { color: #FFB300; } .card .val.r { color: #FF5252; }
-    .badge { display: inline-block; font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 5px; letter-spacing: 1px; }
-    .badge-a { background: rgba(0,200,83,0.15); color: #00C853; } .badge-b { background: rgba(0,230,118,0.12); color: #00E676; }
-    .badge-c { background: rgba(255,179,0,0.12); color: #FFB300; } .badge-d { background: rgba(255,82,82,0.10); color: #FF5252; }
-    .more { color: #00C853; font-family: 'JetBrains Mono'; font-weight: 700; }
-    .less { color: #FF5252; font-family: 'JetBrains Mono'; font-weight: 700; }
-    .info-strip { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 0.6rem 1rem; font-size: 0.82rem; color: rgba(232,236,241,0.6); margin-bottom: 0.8rem; }
-    .info-strip .hl { color: #E8ECF1; font-weight: 600; font-family: 'JetBrains Mono'; }
-    .section-hdr { font-weight: 600; font-size: 1.05rem; color: rgba(232,236,241,0.8); margin: 1.2rem 0 0.6rem 0; padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
-    [data-testid="stMetricValue"] { font-family: 'JetBrains Mono'; font-weight: 700; }
-    .best-play { background: linear-gradient(145deg, #121929, #0f1520); border: 1px solid rgba(0,200,83,0.18); border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 0.6rem; }
-    .best-play .bp-name { font-weight: 700; font-size: 1rem; color: #E8ECF1; }
-    .best-play .bp-prop { font-size: 0.8rem; color: rgba(232,236,241,0.5); }
-    .best-play .bp-pick { font-family: 'JetBrains Mono'; font-weight: 700; font-size: 1.1rem; }
-    .best-play .bp-pick.more { color: #00C853; } .best-play .bp-pick.less { color: #FF5252; }
-    .best-play .bp-conf { font-family: 'JetBrains Mono'; font-size: 0.8rem; color: rgba(232,236,241,0.6); }
-    .factor-bar { display: flex; align-items: center; gap: 0.4rem; margin: 0.25rem 0; font-size: 0.82rem; }
-    .factor-bar .f-name { color: rgba(232,236,241,0.6); min-width: 120px; }
-    .factor-bar .f-impact { font-family: 'JetBrains Mono'; font-weight: 600; }
-    .factor-bar .f-impact.pos { color: #00C853; } .factor-bar .f-impact.neg { color: #FF5252; } .factor-bar .f-impact.neu { color: rgba(232,236,241,0.4); }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+    /* === HERO === */
+    .hero-wrapper {
+        background: linear-gradient(135deg, #070d1a 0%, #0c1828 45%, #071a10 100%);
+        border: 1px solid rgba(0,200,83,0.1);
+        border-radius: 16px;
+        padding: 1.4rem 2rem;
+        margin-bottom: 1.4rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .hero-wrapper::after {
+        content: ''; position: absolute; top: 0; right: 0;
+        width: 320px; height: 100%;
+        background: radial-gradient(ellipse at top right, rgba(0,200,83,0.05) 0%, transparent 65%);
+        pointer-events: none;
+    }
+    .hero-logo { font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.75rem; color: #E8ECF1; letter-spacing: -0.5px; line-height: 1; margin-bottom: 0.2rem; }
+    .hero-logo .accent { color: #00C853; }
+    .hero-sub { font-weight: 300; font-size: 0.8rem; color: rgba(232,236,241,0.38); letter-spacing: 0.5px; }
+    .hero-meta { display: flex; gap: 1.8rem; margin-top: 0.9rem; flex-wrap: wrap; }
+    .hero-meta-pill {
+        display: flex; align-items: center; gap: 0.45rem;
+        font-size: 0.72rem; color: rgba(232,236,241,0.4);
+    }
+    .hero-meta-pill .pip {
+        width: 6px; height: 6px; border-radius: 50%; background: #00C853;
+        box-shadow: 0 0 7px rgba(0,200,83,0.55); flex-shrink: 0;
+    }
+    .hero-meta-pill .pip.amber { background: #FFB300; box-shadow: 0 0 7px rgba(255,179,0,0.45); }
+    .hero-meta-pill .pip.blue { background: #4da6ff; box-shadow: 0 0 7px rgba(77,166,255,0.45); }
+    .hero-meta-pill strong { color: rgba(232,236,241,0.75); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+    /* === CARDS === */
+    .card {
+        background: linear-gradient(145deg, #0d1526, #0a1020);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 12px;
+        padding: 1rem 1.2rem;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    .card::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: transparent; }
+    .card.card-g::after { background: linear-gradient(90deg, transparent, #00C853, transparent); }
+    .card.card-r::after { background: linear-gradient(90deg, transparent, #FF4444, transparent); }
+    .card.card-y::after { background: linear-gradient(90deg, transparent, #FFB300, transparent); }
+    .card.card-b::after { background: linear-gradient(90deg, transparent, #4da6ff, transparent); }
+    .card .lbl { font-size: 0.62rem; color: rgba(232,236,241,0.32); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 0.45rem; }
+    .card .val { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 1.65rem; color: #E8ECF1; line-height: 1; }
+    .card .val.g { color: #00C853; } .card .val.y { color: #FFB300; } .card .val.r { color: #FF4444; } .card .val.b { color: #4da6ff; }
+    .card .sub { font-size: 0.68rem; color: rgba(232,236,241,0.28); margin-top: 0.3rem; }
+
+    /* === BADGES === */
+    .badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.6rem; padding: 0.18rem 0.55rem; border-radius: 5px; letter-spacing: 1px; vertical-align: middle; }
+    .badge-a { background: rgba(0,200,83,0.14); color: #00C853; border: 1px solid rgba(0,200,83,0.22); }
+    .badge-b { background: rgba(77,166,255,0.12); color: #4da6ff; border: 1px solid rgba(77,166,255,0.2); }
+    .badge-c { background: rgba(255,179,0,0.12); color: #FFB300; border: 1px solid rgba(255,179,0,0.2); }
+    .badge-d { background: rgba(255,68,68,0.1); color: #FF4444; border: 1px solid rgba(255,68,68,0.15); }
+
+    /* === DIRECTION === */
+    .more { color: #00C853; font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+    .less { color: #FF4444; font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+    .dir-chip { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.75rem; padding: 0.2rem 0.65rem; border-radius: 5px; display: inline-block; }
+    .dir-chip.more { background: rgba(0,200,83,0.12); color: #00C853; }
+    .dir-chip.less { background: rgba(255,68,68,0.12); color: #FF4444; }
+
+    /* === SECTION HEADERS === */
+    .section-hdr { font-weight: 700; font-size: 0.72rem; color: rgba(232,236,241,0.4); text-transform: uppercase; letter-spacing: 2.5px; margin: 1.6rem 0 0.9rem 0; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+    /* === INFO / WARNING STRIPS === */
+    .info-strip { background: rgba(77,166,255,0.05); border: 1px solid rgba(77,166,255,0.1); border-left: 3px solid #4da6ff; border-radius: 8px; padding: 0.65rem 1rem; font-size: 0.8rem; color: rgba(232,236,241,0.55); margin-bottom: 0.9rem; }
+    .info-strip .hl { color: #E8ECF1; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+    .warn-strip { background: rgba(255,179,0,0.05); border: 1px solid rgba(255,179,0,0.12); border-left: 3px solid #FFB300; border-radius: 8px; padding: 0.65rem 1rem; font-size: 0.8rem; color: rgba(232,236,241,0.6); margin-bottom: 0.9rem; }
+    .warn-strip strong { color: #FFB300; }
+
+    /* === BEST PLAYS === */
+    .best-play {
+        background: linear-gradient(145deg, #0d1828, #091020);
+        border: 1px solid rgba(0,200,83,0.1);
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        margin-bottom: 0.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .best-play::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(0,200,83,0.4), transparent); }
+    .bp-name { font-weight: 700; font-size: 0.95rem; color: #E8ECF1; margin-bottom: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bp-prop { font-size: 0.7rem; color: rgba(232,236,241,0.38); margin-bottom: 0.45rem; }
+    .bp-pick { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 1.15rem; }
+    .bp-pick.more { color: #00C853; } .bp-pick.less { color: #FF4444; }
+    .bp-conf { font-size: 0.68rem; color: rgba(232,236,241,0.35); font-family: 'JetBrains Mono', monospace; margin-top: 0.2rem; }
+
+    /* === CONFIDENCE BAR === */
+    .conf-track { background: rgba(255,255,255,0.06); border-radius: 3px; height: 4px; margin-top: 0.5rem; overflow: hidden; }
+    .conf-fill { height: 100%; border-radius: 3px; }
+    .conf-fill.high { background: linear-gradient(90deg, #00963e, #00C853); }
+    .conf-fill.med { background: linear-gradient(90deg, #b37d00, #FFB300); }
+    .conf-fill.low { background: linear-gradient(90deg, #aa2200, #FF4444); }
+
+    /* === PICK ROW EXPANDERS === */
+    [data-testid="stExpander"] { background: rgba(13,21,38,0.6) !important; border: 1px solid rgba(255,255,255,0.06) !important; border-radius: 10px !important; margin-bottom: 0.35rem !important; }
+    [data-testid="stExpander"]:hover { border-color: rgba(255,255,255,0.1) !important; }
+
+    /* === SLIP CARDS === */
+    .slip-win { border-left: 3px solid #00C853 !important; }
+    .slip-loss { border-left: 3px solid #FF4444 !important; }
+    .slip-pending { border-left: 3px solid rgba(255,255,255,0.15) !important; }
+
+    /* === FACTOR BARS === */
+    .factor-bar { display: flex; align-items: center; gap: 0.5rem; margin: 0.22rem 0; font-size: 0.8rem; }
+    .factor-bar .f-name { color: rgba(232,236,241,0.5); min-width: 130px; }
+    .factor-bar .f-impact { font-family: 'JetBrains Mono', monospace; font-weight: 600; min-width: 55px; }
+    .factor-bar .f-impact.pos { color: #00C853; } .factor-bar .f-impact.neg { color: #FF4444; } .factor-bar .f-impact.neu { color: rgba(232,236,241,0.3); }
+
+    /* === ACCURACY DISPLAY === */
+    .acc-big { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 3rem; line-height: 1; }
+    .acc-big.good { color: #00C853; } .acc-big.ok { color: #FFB300; } .acc-big.bad { color: #FF4444; }
+    .acc-label { font-size: 0.65rem; color: rgba(232,236,241,0.3); text-transform: uppercase; letter-spacing: 2px; margin-top: 0.2rem; }
+
+    /* === GRADE FEED === */
+    .grade-feed-row { display: flex; align-items: center; gap: 1rem; padding: 0.7rem 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.85rem; }
+    .grade-feed-row:last-child { border-bottom: none; }
+    .gfr-player { flex: 1; font-weight: 600; color: #E8ECF1; }
+    .gfr-prop { color: rgba(232,236,241,0.45); font-size: 0.78rem; }
+    .gfr-result { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.9rem; }
+    .gfr-result.w { color: #00C853; } .gfr-result.l { color: #FF4444; } .gfr-result.p { color: rgba(232,236,241,0.4); }
+
+    /* === STREAMLIT OVERRIDES === */
+    [data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+    [data-testid="stMetricLabel"] { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1.2px; }
+    [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #00963e, #00C853) !important;
+        border: none !important;
+        font-family: 'Outfit', sans-serif !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 14px rgba(0,200,83,0.2) !important;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.82rem; }
+
+    /* === MOBILE === */
     @media (max-width: 768px) {
-        .stApp [data-testid="stDataFrame"] { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+        .stApp [data-testid="stDataFrame"] { overflow-x: auto !important; }
         .stApp [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
-        .hero h1 { font-size: 1.4rem; } .hero .sub { font-size: 0.75rem; }
-        .card .val { font-size: 1.2rem; } .card .lbl { font-size: 0.6rem; }
-        .stApp button[kind="secondary"], .stApp [data-testid="stTab"] { min-height: 44px; font-size: 0.9rem; padding: 0.5rem 0.8rem; }
+        .hero-logo { font-size: 1.35rem; }
+        .card .val { font-size: 1.25rem; }
+        .stApp button[kind="secondary"], .stApp [data-testid="stTab"] { min-height: 44px; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -317,7 +438,31 @@ def get_bankroll_history() -> list[dict]:
 init_db()
 init_slips_table()
 
-st.markdown("""<div class="hero"><h1>⚾ MLB Prop <span class="accent">Edge</span></h1><p class="sub">Sharp book devigging × PrizePicks line comparison × Statcast confirmation</p></div>""", unsafe_allow_html=True)
+# Load model version for header
+try:
+    _wts = load_current_weights()
+    _model_ver = _wts.get("version", "v1") if isinstance(_wts, dict) else "v1"
+except Exception:
+    _model_ver = "v1"
+_freshness_str = datetime.now().strftime("%I:%M %p").lstrip("0")
+
+st.markdown(f"""<div class="hero-wrapper">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <div class="hero-logo">⚾ MLB Prop <span class="accent">Edge</span></div>
+      <div class="hero-sub">Sharp-Based Prop Predictions &nbsp;·&nbsp; Statcast Confirmed &nbsp;·&nbsp; Self-Learning Model</div>
+      <div class="hero-meta">
+        <div class="hero-meta-pill"><span class="pip"></span>Model <strong>{_model_ver}</strong> active</div>
+        <div class="hero-meta-pill"><span class="pip amber"></span>Refreshed <strong>{_freshness_str}</strong></div>
+        <div class="hero-meta-pill"><span class="pip blue"></span>FanDuel · Pinnacle · DraftKings</div>
+      </div>
+    </div>
+    <div style="text-align:right;padding-top:0.2rem;">
+      <div style="font-size:0.6rem;color:rgba(232,236,241,0.2);letter-spacing:2px;text-transform:uppercase;">Season 2026</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:1rem;color:rgba(232,236,241,0.5);font-weight:600;margin-top:0.2rem;">+EV FINDER</div>
+    </div>
+  </div>
+</div>""", unsafe_allow_html=True)
 
 tab_edge, tab_slips, tab_picks, tab_dash, tab_grade, tab_setup = st.tabs(["🎯 FIND EDGES", "🎫 MY SLIPS", "📋 ALL LINES", "📊 DASHBOARD", "✅ GRADE", "⚙️ SETUP"])
 
@@ -329,7 +474,7 @@ with tab_edge:
         st.info("Free key at [the-odds-api.com](https://the-odds-api.com) — 500 req/month, no credit card.")
     else:
         usage = get_api_usage(api_key)
-        st.markdown(f'<div class="info-strip">🔑 API active · <span class="hl">{usage.get("remaining","?")}</span> credits left · Sharp books: FanDuel (1.24x), Pinnacle, DraftKings</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="info-strip">🔑 Odds API active &nbsp;·&nbsp; <span class="hl">{usage.get("remaining","?")}</span> credits remaining &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
 
     with st.spinner("Pulling PrizePicks MLB lines..."):
         try: pp_lines = fetch_prizepicks_mlb_lines()
@@ -362,13 +507,17 @@ with tab_edge:
             a_n = sum(1 for e in all_edges if e["rating"]=="A")
             b_n = sum(1 for e in all_edges if e["rating"]=="B")
             avg_e = np.mean([e["edge_pct"] for e in all_edges])
+            best_e = max(e["edge_pct"] for e in all_edges)
             c1,c2,c3,c4 = st.columns(4)
-            with c1: st.markdown(f'<div class="card"><div class="lbl">A-GRADE</div><div class="val g">{a_n}</div></div>', unsafe_allow_html=True)
-            with c2: st.markdown(f'<div class="card"><div class="lbl">B-GRADE</div><div class="val">{b_n}</div></div>', unsafe_allow_html=True)
+            with c1: st.markdown(f'<div class="card card-g"><div class="lbl">A-Grade Edges</div><div class="val g">{a_n}</div><div class="sub">Highest confidence</div></div>', unsafe_allow_html=True)
+            with c2: st.markdown(f'<div class="card card-b"><div class="lbl">B-Grade Edges</div><div class="val b">{b_n}</div><div class="sub">Strong signal</div></div>', unsafe_allow_html=True)
             with c3:
                 cls = "g" if avg_e>5 else ("y" if avg_e>3 else "r")
-                st.markdown(f'<div class="card"><div class="lbl">AVG EDGE</div><div class="val {cls}">{avg_e:.1f}%</div></div>', unsafe_allow_html=True)
-            with c4: st.markdown(f'<div class="card"><div class="lbl">TOTAL EDGES</div><div class="val">{len(all_edges)}</div></div>', unsafe_allow_html=True)
+                ccard = "card-g" if avg_e>5 else ("card-y" if avg_e>3 else "card-r")
+                st.markdown(f'<div class="card {ccard}"><div class="lbl">Avg Edge</div><div class="val {cls}">{avg_e:.1f}%</div><div class="sub">vs PrizePicks line</div></div>', unsafe_allow_html=True)
+            with c4:
+                bcls = "g" if best_e>8 else ("y" if best_e>5 else "")
+                st.markdown(f'<div class="card"><div class="lbl">Best Edge</div><div class="val {bcls}">+{best_e:.1f}%</div><div class="sub">{len(all_edges)} total edges</div></div>', unsafe_allow_html=True)
 
             f1,f2 = st.columns(2)
             with f1: min_grade = st.selectbox("Min grade", ["A only","A + B","A + B + C","All"], index=1)
@@ -377,11 +526,16 @@ with tab_edge:
             filt = [e for e in all_edges if e["rating"] in gm[min_grade]]
             if prop_f=="Pitcher Ks": filt=[e for e in filt if "strikeout" in e.get("market","").lower() and "batter" not in e.get("market","").lower()]
             elif prop_f=="Batter Hits": filt=[e for e in filt if "hits" in e.get("market","").lower()]
-            elif prop_f=="Total Bases": filt=[e for e in filt if "total_bases" in e.get("market","").lower()]
+            elif prop_f=="Total Bases":
+                filt=[e for e in filt if "total_bases" in e.get("market","").lower()]
+                # Warning: TB LESS historically underperforms
+                less_tb = [e for e in filt if e.get("pick") == "LESS"]
+                if less_tb:
+                    st.markdown('<div class="warn-strip">⚠️ <strong>TB LESS Warning:</strong> Total Bases LESS picks historically underperform — trade with extra caution</div>', unsafe_allow_html=True)
             elif prop_f=="Home Runs": filt=[e for e in filt if "home_run" in e.get("market","").lower()]
 
             if filt:
-                st.markdown(f'<div class="section-hdr">🎯 {len(filt)} Edges — Best First</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="section-hdr">Sharp Edges — {len(filt)} found · ranked by edge %</div>', unsafe_allow_html=True)
                 edf = pd.DataFrame(filt)
                 disp = edf[["player_name","team","stat_type","pp_line","pick","edge_pct","fair_prob","rating","num_books"]].copy()
                 disp.columns = ["Player","Team","Prop","Line","Pick","Edge %","Fair Prob","Grade","Books"]
@@ -565,14 +719,20 @@ with tab_edge:
                 scored_all = score_picks(all_edges, preds)
                 ab_combined = [s for s in scored_all if s["combined_grade"] in ("A+", "A", "B")]
                 confirmed_count = sum(1 for s in ab_combined if s["signal"] == SIGNAL_CONFIRMED)
-                with st.expander("📋 Quick Summary"):
-                    st.markdown(f"**{len(pp_lines)}** props available · **{len(all_edges)}** sharp edges found · **{len(ab_combined)}** A/B combined picks")
-                    if all_edges and confirmed_count:
-                        st.markdown(f"**{len(ab_combined)} strong picks today — {confirmed_count} confirmed by sharp books**")
-                    elif all_edges:
-                        st.markdown(f"**{len(ab_combined)} strong picks today** — sharp lines available but no confirmed overlaps")
-                    else:
-                        st.markdown("**No sharp lines yet** — showing projection-only analysis")
+                # Summary stat cards
+                a_proj = sum(1 for p in preds if p.get("rating") == "A")
+                ab_proj = sum(1 for p in preds if p.get("rating") in ("A","B"))
+                qs1, qs2, qs3, qs4 = st.columns(4)
+                with qs1: st.markdown(f'<div class="card card-b"><div class="lbl">Props Available</div><div class="val b">{len(pp_lines)}</div><div class="sub">On PrizePicks</div></div>', unsafe_allow_html=True)
+                with qs2: st.markdown(f'<div class="card card-g"><div class="lbl">A-Grade Picks</div><div class="val g">{a_proj}</div><div class="sub">Highest confidence</div></div>', unsafe_allow_html=True)
+                with qs3: st.markdown(f'<div class="card"><div class="lbl">A+B Picks</div><div class="val">{ab_proj}</div><div class="sub">Strong signal</div></div>', unsafe_allow_html=True)
+                with qs4:
+                    confirmed_str = str(confirmed_count) if confirmed_count else "—"
+                    st.markdown(f'<div class="card {"card-g" if confirmed_count else ""}"><div class="lbl">Sharp Confirmed</div><div class="val {"g" if confirmed_count else ""}">{confirmed_str}</div><div class="sub">Both sources agree</div></div>', unsafe_allow_html=True)
+                if all_edges and confirmed_count:
+                    st.markdown(f'<div class="info-strip">✅ <span class="hl">{confirmed_count}</span> picks confirmed by both sharp books and projection model</div>', unsafe_allow_html=True)
+                elif not all_edges:
+                    st.markdown('<div class="warn-strip">⚠️ <strong>No sharp lines</strong> — showing projection-only analysis. Add Odds API key for full edge detection.</div>', unsafe_allow_html=True)
 
                 # ── Today's Best Plays ──
                 # Use combined scoring when sharp edges exist, fall back to projection ranking
@@ -596,32 +756,36 @@ with tab_edge:
 
                 if top_plays:
                     st.markdown('<div class="section-hdr">Today\'s Best Plays</div>', unsafe_allow_html=True)
-                    _bp_grade_emoji = {"A+": "💎", "A": "🟢", "B": "🔵", "C": "🟡", "D": "🔴"}
-                    _bp_signal_short = {SIGNAL_CONFIRMED: "✅", SIGNAL_SHARP_ONLY: "📊", SIGNAL_PROJECTION_ONLY: "🔮"}
+                    _bp_grade_emoji = {"A+": "💎", "A": "⬆", "B": "▲", "C": "◆", "D": "▽"}
+                    _bp_signal_labels = {SIGNAL_CONFIRMED: ("confirmed", "✓ CONFIRMED"), SIGNAL_SHARP_ONLY: ("sharp", "📊 SHARP"), SIGNAL_PROJECTION_ONLY: ("proj", "🔮 PROJ")}
                     bp_cols = st.columns(min(len(top_plays), 5))
                     for idx, tp in enumerate(top_plays[:5]):
                         pick_cls = "more" if tp["pick"] == "MORE" else "less"
-                        sig_icon = _bp_signal_short.get(tp.get("signal", ""), "")
+                        sig_key, sig_label = _bp_signal_labels.get(tp.get("signal", ""), ("proj", ""))
                         grade_icon = _bp_grade_emoji.get(tp.get("combined_grade", ""), "")
                         conf_val = tp.get("proj_confidence", 0) or 0
+                        conf_pct = int(conf_val * 100)
+                        conf_cls = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
                         with bp_cols[idx]:
                             st.markdown(f'''<div class="best-play">
-                                <div class="bp-name">{grade_icon} {tp["player_name"]} {sig_icon}</div>
-                                <div class="bp-prop">{tp["stat_type"]} · Line {tp["line"]}</div>
+                                <div class="bp-name">{tp["player_name"]}</div>
+                                <div class="bp-prop">{tp["stat_type"]} &nbsp;·&nbsp; Line {tp["line"]}</div>
                                 <div class="bp-pick {pick_cls}">{tp["pick"]}</div>
-                                <div class="bp-conf">Score: {tp["combined_score"]:.3f} · {tp["combined_grade"]}</div>
+                                <div class="conf-track"><div class="conf-fill {conf_cls}" style="width:{min(conf_pct,100)}%"></div></div>
+                                <div class="bp-conf">{grade_icon} {tp.get("combined_grade","?")} &nbsp;·&nbsp; {conf_pct}% conf &nbsp;·&nbsp; {sig_label}</div>
                             </div>''', unsafe_allow_html=True)
 
                 # ── Filters ──
-                f1, f2 = st.columns(2)
+                st.markdown('<div class="section-hdr">Filter Picks</div>', unsafe_allow_html=True)
                 prop_types_available = sorted(pdf["stat_type"].unique().tolist())
+                f1, f2 = st.columns([3, 2])
                 with f1:
-                    proj_prop_filter = st.selectbox("Prop Type", ["All"] + prop_types_available, key="proj_prop_f")
+                    proj_prop_filter = st.radio("Prop Type", ["All"] + prop_types_available[:6], horizontal=True, key="proj_prop_f")
                 with f2:
-                    proj_grade_filter = st.selectbox("Min Grade", ["A only", "A + B", "A + B + C", "All"], index=1, key="proj_grade_f")
+                    proj_grade_filter = st.radio("Min Grade", ["A only", "A+B", "A+B+C", "All"], index=1, key="proj_grade_f")
+                _grade_map_radio = {"A only": ["A"], "A+B": ["A","B"], "A+B+C": ["A","B","C"], "All": ["A","B","C","D"]}
 
-                grade_map = {"A only": ["A"], "A + B": ["A", "B"], "A + B + C": ["A", "B", "C"], "All": ["A", "B", "C", "D"]}
-                filtered = pdf[pdf["rating"].isin(grade_map[proj_grade_filter])].copy()
+                filtered = pdf[pdf["rating"].isin(_grade_map_radio[proj_grade_filter])].copy()
                 if proj_prop_filter != "All":
                     filtered = filtered[filtered["stat_type"] == proj_prop_filter]
 
@@ -642,14 +806,18 @@ with tab_edge:
                     with chk_col:
                         checked = st.checkbox("", key=f"proj_pick_{pick_idx}", label_visibility="collapsed")
                     with info_col:
-                        conf_pct = f"{pick_row['confidence']*100:.1f}%"
-                        edge_pct = f"{pick_row['edge']*100:.1f}%"
+                        conf_val = pick_row['confidence']
+                        conf_pct = f"{conf_val*100:.1f}%"
+                        edge_val = pick_row['edge']*100
+                        edge_pct = f"{edge_val:.1f}%"
+                        _dir_arrow = "▲" if pick_row['pick'] == "MORE" else "▼"
+                        _dir_color = "#00C853" if pick_row['pick'] == "MORE" else "#FF4444"
                         with st.expander(
-                            f"{grade_label(pick_row['rating'])} **{pick_row['player_name']}** · {pick_row.get('team','')} · "
+                            f"{badge(pick_row['rating'])}  **{pick_row['player_name']}**  {pick_row.get('team','')} · "
                             f"{pick_row['stat_type']} {pick_row['line']} → "
                             f"**{pick_row['pick']}** {pick_row['projection']} · "
-                            f"{trend_icon} · Conf {conf_pct} · Edge {edge_pct} · "
-                            f"{health_icon} {spring_icon}{buy_tag}",
+                            f"Conf {conf_pct} · +{edge_pct} · "
+                            f"{trend_icon} {health_icon} {spring_icon}{buy_tag}",
                         ):
                             # Factor breakdown
                             fc1, fc2 = st.columns(2)
@@ -689,11 +857,17 @@ with tab_edge:
                                     st.caption("Base projection (no major adjustments)")
                             with fc2:
                                 st.markdown("**Key Stats**")
-                                st.caption(f"Projection: {pick_row['projection']} vs Line: {pick_row['line']}")
-                                st.caption(f"Confidence: {conf_pct} · Edge: {edge_pct}")
+                                proj_v = pick_row['projection']
+                                line_v = pick_row['line']
+                                diff = proj_v - line_v
+                                diff_str = f"+{diff:.2f}" if diff >= 0 else f"{diff:.2f}"
+                                st.markdown(f'<div style="font-family:JetBrains Mono,monospace;font-size:1.1rem;font-weight:700;color:{"#00C853" if diff>=0 else "#FF4444"}">{proj_v} <span style="font-size:0.7rem;color:rgba(232,236,241,0.4)">proj ({diff_str} vs {line_v} line)</span></div>', unsafe_allow_html=True)
+                                conf_cls2 = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
+                                st.markdown(f'<div class="conf-track" style="margin:0.5rem 0"><div class="conf-fill {conf_cls2}" style="width:{min(int(conf_val*100),100)}%"></div></div>', unsafe_allow_html=True)
+                                st.caption(f"Confidence: {conf_pct} · Edge: +{edge_pct}")
                                 st.caption(f"Health: {health_icon} · Spring: {spring_icon} · Trend: {trend_icon}")
                                 if pick_row.get("buy_low"):
-                                    st.success("🎯 BUY LOW — Elite player in cold streak, regression expected")
+                                    st.markdown('<div class="warn-strip" style="margin-top:0.5rem">🎯 <strong>BUY LOW</strong> — Elite player in cold streak, regression expected</div>', unsafe_allow_html=True)
 
                     if checked:
                         selected_picks.append({
@@ -724,7 +898,17 @@ with tab_edge:
                 # ── Slip builder ──
                 if selected_picks:
                     st.markdown('<div class="section-hdr">Build Slip</div>', unsafe_allow_html=True)
-                    st.success(f"{len(selected_picks)} pick(s) selected")
+                    # Show selected picks as chips
+                    def _pick_chip(p):
+                        c = "#00C853" if p["pick"] == "MORE" else "#FF4444"
+                        return (
+                            f'<span style="display:inline-block;background:rgba(0,200,83,0.1);border:1px solid rgba(0,200,83,0.2);'
+                            f'border-radius:20px;padding:0.2rem 0.75rem;font-size:0.78rem;color:#E8ECF1;margin:0.2rem;">'
+                            f'<span style="color:{c};font-weight:700;">{p["pick"]}</span>'
+                            f' {p["player_name"]} &middot; {p["stat_type"]} {p["line"]}</span>'
+                        )
+                    chips_html = " ".join(_pick_chip(p) for p in selected_picks)
+                    st.markdown(f'<div style="margin-bottom:0.8rem;line-height:2.2">{chips_html}</div>', unsafe_allow_html=True)
                     # Slip correlation warnings
                     slip_warns = analyze_slip_correlation(selected_picks)
                     if any(w["severity"] == "high" for w in slip_warns):
@@ -770,16 +954,21 @@ with tab_edge:
                             st.warning(f"Select exactly {num_needed} picks for a {proj_slip_type}.")
 
 with tab_slips:
-    st.markdown('<div class="section-hdr">PrizePicks Slip Tracker</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-hdr">Slip Tracker &amp; P&amp;L</div>', unsafe_allow_html=True)
     # P&L Summary
     pnl = get_slip_pnl(30)
     if pnl["slips_total"] > 0:
         c1,c2,c3,c4 = st.columns(4)
-        cls = "g" if pnl["net_profit"] >= 0 else "r"
-        with c1: st.markdown(f'<div class="card"><div class="lbl">NET P&L</div><div class="val {cls}">${pnl["net_profit"]:+.2f}</div></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="card"><div class="lbl">ROI</div><div class="val {cls}">{pnl["roi"]:+.1f}%</div></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="card"><div class="lbl">WAGERED</div><div class="val">${pnl["total_wagered"]:.0f}</div></div>', unsafe_allow_html=True)
-        with c4: st.markdown(f'<div class="card"><div class="lbl">RECORD</div><div class="val">{pnl["slips_won"]}W-{pnl["slips_lost"]}L</div></div>', unsafe_allow_html=True)
+        pnl_pos = pnl["net_profit"] >= 0
+        cls = "g" if pnl_pos else "r"
+        ccard = "card-g" if pnl_pos else "card-r"
+        with c1: st.markdown(f'<div class="card {ccard}"><div class="lbl">Net P&amp;L</div><div class="val {cls}">${pnl["net_profit"]:+.2f}</div><div class="sub">Last 30 days</div></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="card {ccard}"><div class="lbl">ROI</div><div class="val {cls}">{pnl["roi"]:+.1f}%</div><div class="sub">Return on entry</div></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="card"><div class="lbl">Wagered</div><div class="val">${pnl["total_wagered"]:.0f}</div><div class="sub">{pnl["slips_total"]} slips</div></div>', unsafe_allow_html=True)
+        with c4:
+            win_rate = pnl["slips_won"] / pnl["slips_total"] if pnl["slips_total"] else 0
+            wr_cls = "g" if win_rate >= 0.5 else "r"
+            st.markdown(f'<div class="card"><div class="lbl">Record</div><div class="val {wr_cls}">{pnl["slips_won"]}W-{pnl["slips_lost"]}L</div><div class="sub">{win_rate*100:.0f}% win rate</div></div>', unsafe_allow_html=True)
 
         # Bankroll chart
         br_history = get_bankroll_history()
@@ -835,8 +1024,14 @@ with tab_slips:
     if not slips_df.empty:
         st.markdown('<div class="section-hdr">Recent Slips</div>', unsafe_allow_html=True)
         for _, slip in slips_df.iterrows():
-            status_icon = {"win": "🟢", "loss": "🔴", "partial": "🟡", "push": "⚪", "pending": "⏳"}.get(slip["status"], "⏳")
-            with st.expander(f"{status_icon} Slip #{slip['id']} — {slip['entry_type']} · ${slip['entry_amount']:.0f} · {slip['game_date']} · {slip['status'].upper()}"):
+            _slip_status = slip["status"]
+            status_icon = {"win": "✅", "loss": "❌", "partial": "🟡", "push": "➖", "pending": "⏳"}.get(_slip_status, "⏳")
+            _slip_pnl_str = ""
+            if _slip_status == "win":
+                _slip_pnl_str = f" · +${slip.get('net_profit', 0):.2f}"
+            elif _slip_status == "loss":
+                _slip_pnl_str = f" · -${abs(slip.get('net_profit', slip.get('entry_amount', 0))):.2f}"
+            with st.expander(f"{status_icon} **Slip #{slip['id']}** — {slip['entry_type']} · ${slip['entry_amount']:.0f} entry · {slip['game_date']}{_slip_pnl_str}"):
                 sp = get_slip_picks(slip["id"])
                 if not sp.empty:
                     for _, p in sp.iterrows():
@@ -849,10 +1044,12 @@ with tab_slips:
 
 with tab_picks:
     st.markdown('<div class="section-hdr">All PrizePicks MLB Lines</div>', unsafe_allow_html=True)
-    if pp_lines.empty: st.info("No lines available.")
+    if pp_lines.empty:
+        st.info("No lines available right now. Lines usually post by 10 AM ET.")
     else:
-        s = st.text_input("Search player", "", key="s2")
-        sf = st.multiselect("Props", get_available_stat_types(pp_lines), default=get_available_stat_types(pp_lines), key="sf2")
+        st.markdown(f'<div class="info-strip">📋 <span class="hl">{len(pp_lines)}</span> props on the board today</div>', unsafe_allow_html=True)
+        s = st.text_input("🔍 Search player", "", key="s2", placeholder="Type player name...")
+        sf = st.multiselect("Filter prop types", get_available_stat_types(pp_lines), default=get_available_stat_types(pp_lines), key="sf2")
         fa = pp_lines.copy()
         if s: fa = fa[fa["player_name"].str.contains(s, case=False, na=False)]
         if sf: fa = fa[fa["stat_type"].isin(sf)]
@@ -862,31 +1059,60 @@ with tab_picks:
         st.dataframe(da, hide_index=True, use_container_width=True)
 
 with tab_dash:
-    st.markdown('<div class="section-hdr">Accuracy Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-hdr">Performance Dashboard</div>', unsafe_allow_html=True)
     stats = get_accuracy_stats()
-    if stats["total"]==0: st.info("No graded picks yet. Grade results in the Grade tab.")
+    if stats["total"]==0:
+        st.info("No graded picks yet. Use the Grade tab to log results after games.")
     else:
         acc=stats["accuracy"]
-        c1,c2,c3,c4=st.columns(4)
-        cls="g" if acc>=0.55 else ("y" if acc>=0.50 else "r")
-        with c1: st.markdown(f'<div class="card"><div class="lbl">ACCURACY</div><div class="val {cls}">{pct(acc)}</div></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="card"><div class="lbl">RECORD</div><div class="val">{stats["wins"]}W-{stats["losses"]}L</div></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="card"><div class="lbl">GRADED</div><div class="val">{stats["total"]}</div></div>', unsafe_allow_html=True)
-        with c4:
-            t = "✅ ABOVE" if acc>=0.542 else "❌ BELOW"
-            st.markdown(f'<div class="card"><div class="lbl">VS TARGET</div><div class="val {"g" if acc>=0.542 else "r"}">{t}</div></div>', unsafe_allow_html=True)
-        r1,r2=st.columns(2)
-        with r1:
-            st.markdown("**By Grade**")
-            rows=[{"Grade":r,"W-L":f"{stats.get('by_rating',{}).get(r,{}).get('wins',0)}-{stats.get('by_rating',{}).get(r,{}).get('total',0)-stats.get('by_rating',{}).get(r,{}).get('wins',0)}","Acc":pct(stats.get('by_rating',{}).get(r,{}).get('accuracy',0))} for r in "ABCD"]
-            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-        with r2:
-            st.markdown("**By Direction**")
-            rows=[{"Pick":d,"W-L":f"{stats.get('by_direction',{}).get(d,{}).get('wins',0)}-{stats.get('by_direction',{}).get(d,{}).get('total',0)-stats.get('by_direction',{}).get(d,{}).get('wins',0)}","Acc":pct(stats.get('by_direction',{}).get(d,{}).get('accuracy',0))} for d in ["MORE","LESS"]]
-            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        acc_cls = "good" if acc>=0.55 else ("ok" if acc>=0.50 else "bad")
+        target_hit = acc >= 0.542
+        # Large accuracy display
+        da1, da2 = st.columns([1, 2])
+        with da1:
+            st.markdown(f'''<div style="text-align:center;padding:1.5rem 1rem;background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:14px;">
+                <div class="acc-big {acc_cls}">{pct(acc)}</div>
+                <div class="acc-label">Overall Accuracy</div>
+                <div style="margin-top:0.8rem;font-size:0.75rem;color:rgba(232,236,241,0.4);">{stats["wins"]}W · {stats["losses"]}L · {stats["total"]} graded</div>
+                <div style="margin-top:0.5rem;">
+                    <span style="font-size:0.72rem;padding:0.2rem 0.6rem;border-radius:20px;{"background:rgba(0,200,83,0.12);color:#00C853" if target_hit else "background:rgba(255,68,68,0.1);color:#FF4444"}">
+                        {"✓ Above 54.2% target" if target_hit else "✗ Below 54.2% target"}
+                    </span>
+                </div>
+            </div>''', unsafe_allow_html=True)
+        with da2:
+            # Grade breakdown with inline bars
+            st.markdown("**Accuracy by Grade**")
+            grade_rows = []
+            for r in "ABCD":
+                gr = stats.get('by_rating', {}).get(r, {})
+                gr_acc = gr.get('accuracy', 0)
+                gr_w = gr.get('wins', 0)
+                gr_t = gr.get('total', 0)
+                gr_l = gr_t - gr_w
+                bar_w = int(gr_acc * 100)
+                bar_cls = "high" if gr_acc > 0.55 else ("med" if gr_acc > 0.50 else "low")
+                grade_rows.append(f'''<div style="display:flex;align-items:center;gap:0.8rem;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+                    <span class="badge badge-{r.lower()}" style="width:20px;text-align:center">{r}</span>
+                    <div style="flex:1"><div class="conf-track"><div class="conf-fill {bar_cls}" style="width:{bar_w}%"></div></div></div>
+                    <span style="font-family:JetBrains Mono,monospace;font-size:0.8rem;color:#E8ECF1;min-width:45px">{pct(gr_acc)}</span>
+                    <span style="font-size:0.72rem;color:rgba(232,236,241,0.35);min-width:55px">{gr_w}W-{gr_l}L</span>
+                </div>''')
+            st.markdown("".join(grade_rows), unsafe_allow_html=True)
+
+            st.markdown("**More vs Less**", help="Direction bias analysis")
+            dir_cols = st.columns(2)
+            for i, d in enumerate(["MORE", "LESS"]):
+                dv = stats.get('by_direction', {}).get(d, {})
+                d_acc = dv.get('accuracy', 0)
+                d_w = dv.get('wins', 0)
+                d_t = dv.get('total', 0)
+                d_color = "#00C853" if d == "MORE" else "#FF4444"
+                with dir_cols[i]:
+                    st.markdown(f'<div class="card"><div class="lbl">{d}</div><div class="val" style="color:{d_color}">{pct(d_acc)}</div><div class="sub">{d_w}W-{d_t-d_w}L</div></div>', unsafe_allow_html=True)
 
     # Model Tuning Section
-    st.markdown('<div class="section-hdr">Model Tuning</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-hdr">Model Tuning &amp; Weight History</div>', unsafe_allow_html=True)
     tune_col1, tune_col2 = st.columns(2)
     with tune_col1:
         if st.button("Run Model Tuning", type="secondary"):
@@ -913,12 +1139,15 @@ with tab_dash:
             st.caption("No adjustment history yet")
 
 with tab_grade:
-    st.markdown('<div class="section-hdr">Grade Past Picks</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-hdr">Grade Results</div>', unsafe_allow_html=True)
+
+    # Auto-grade banner
+    st.markdown('<div class="info-strip">⚡ Auto-Grade pulls actual results from the MLB Stats API and grades all pending picks automatically.</div>', unsafe_allow_html=True)
 
     # Auto-grade button
     ag_col1, ag_col2 = st.columns([1, 3])
     with ag_col1:
-        if st.button("Auto-Grade Yesterday", type="primary"):
+        if st.button("⚡ Auto-Grade Yesterday", type="primary"):
             with st.spinner("Pulling box scores and grading..."):
                 try:
                     result = auto_grade_yesterday()
@@ -951,68 +1180,121 @@ with tab_grade:
                 except Exception as e:
                     st.error(f"Failed: {e}")
 
-    st.markdown("---")
-    st.markdown("**Manual Grading**")
-    gd = st.date_input("Date", value=date.today()-timedelta(days=1))
+    st.markdown('<div class="section-hdr">Manual Grading</div>', unsafe_allow_html=True)
+    gd = st.date_input("Select date to grade", value=date.today()-timedelta(days=1))
     ug = get_ungraded_predictions(gd.isoformat())
-    if ug.empty: st.info(f"Nothing to grade for {gd}.")
+    if ug.empty:
+        st.info(f"No pending picks for {gd}. All caught up!")
     else:
-        st.markdown(f"**{len(ug)} ungraded**")
+        st.markdown(f'<div style="font-size:0.8rem;color:rgba(232,236,241,0.4);margin-bottom:0.8rem;">{len(ug)} picks waiting for results</div>', unsafe_allow_html=True)
         for _,row in ug.iterrows():
+            pick_dir_color = "#00C853" if row['pick'] == "MORE" else "#FF4444"
             ci,cinp,cb=st.columns([3,1,1])
-            with ci: st.markdown(f"**{row['player_name']}** — {row['stat_type']} · Line: `{row['line']}` · Pick: **{row['pick']}**")
-            with cinp: a=st.number_input("Actual",min_value=0.0,step=0.5,key=f"a_{row['id']}",label_visibility="collapsed")
+            with ci:
+                st.markdown(
+                    f'<div style="padding:0.3rem 0">'
+                    f'<span style="font-weight:600;color:#E8ECF1">{row["player_name"]}</span> '
+                    f'<span style="color:rgba(232,236,241,0.4);font-size:0.8rem">· {row["stat_type"]} · Line {row["line"]} · </span>'
+                    f'<span style="color:{pick_dir_color};font-weight:700;font-family:JetBrains Mono,monospace">{row["pick"]}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            with cinp:
+                a=st.number_input("Actual",min_value=0.0,step=0.5,key=f"a_{row['id']}",label_visibility="collapsed")
             with cb:
                 if st.button("Grade",key=f"g_{row['id']}"):
                     r=grade_prediction(row["id"],a)
                     st.success("✅ W" if r=="W" else ("❌ L" if r=="L" else "➖ Push"))
                     st.rerun()
+
     rg=get_graded_predictions(30)
     if not rg.empty:
-        st.markdown('<div class="section-hdr">Recent</div>', unsafe_allow_html=True)
-        d=rg[["game_date","player_name","stat_type","line","pick","actual_result","result"]].copy()
-        d.columns=["Date","Player","Prop","Line","Pick","Actual","Result"]
-        st.dataframe(d,hide_index=True,use_container_width=True)
+        st.markdown('<div class="section-hdr">Recent Results</div>', unsafe_allow_html=True)
+        # Build styled feed
+        feed_rows = []
+        for _, gr in rg.iterrows():
+            res = gr.get("result", "")
+            res_icon = "✅" if res == "W" else ("❌" if res == "L" else "➖")
+            res_cls = "w" if res == "W" else ("l" if res == "L" else "p")
+            pick_color = "#00C853" if gr["pick"] == "MORE" else "#FF4444"
+            feed_rows.append(
+                f'<div class="grade-feed-row">'
+                f'<span style="font-size:1rem">{res_icon}</span>'
+                f'<span class="gfr-player">{gr["player_name"]}</span>'
+                f'<span class="gfr-prop">{gr["stat_type"]} · Line {gr["line"]}</span>'
+                f'<span style="color:{pick_color};font-family:JetBrains Mono,monospace;font-size:0.8rem;font-weight:700">{gr["pick"]}</span>'
+                f'<span style="font-family:JetBrains Mono,monospace;font-size:0.8rem;color:rgba(232,236,241,0.4)">→ {gr.get("actual_result","?")}</span>'
+                f'<span class="gfr-result {res_cls}">{res}</span>'
+                f'<span style="font-size:0.7rem;color:rgba(232,236,241,0.25)">{gr["game_date"]}</span>'
+                f'</div>'
+            )
+        st.markdown(
+            f'<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:0.5rem 0.8rem;overflow:hidden">{"".join(feed_rows[:20])}</div>',
+            unsafe_allow_html=True
+        )
 
 with tab_setup:
-    st.markdown('<div class="section-hdr">Setup</div>', unsafe_allow_html=True)
-    st.markdown("""
-**Step 1:** Get free API key at [the-odds-api.com](https://the-odds-api.com) (500 req/month, no card)
+    st.markdown('<div class="section-hdr">Configuration</div>', unsafe_allow_html=True)
 
-**Step 2:** For Streamlit Cloud, add in Settings → Secrets:
+    setup_c1, setup_c2 = st.columns(2)
+    with setup_c1:
+        st.markdown("""
+**Step 1 — Get API Key**
+
+Free at [the-odds-api.com](https://the-odds-api.com) · 500 req/month · No credit card required
+
+**Step 2 — Add to Streamlit Secrets**
 ```
 ODDS_API_KEY = "your_key_here"
 ```
 
-**Step 3: Daily Workflow**
-1. Open app **before 10 AM ET** (best edge window)
-2. **Find Edges** tab auto-pulls PrizePicks + sharp lines
-3. Focus on **A + B grades**, especially pitcher K props
-4. Build **5 or 6 pick Flex** entry on PrizePicks
+**Step 3 — Daily Workflow**
+1. Open app **before 10 AM ET** — best edge window
+2. Go to **Find Edges** — lines auto-load
+3. Focus on **A + B grades**, pitcher K props first
+4. Build a **5 or 6 pick Flex** on PrizePicks
 5. After games → **Grade** tab to log results
-6. **Dashboard** tracks accuracy over time
-
----
-
-**Why this beats Rotowire:**
-
-Rotowire = projection-based (tries to out-predict the market)
-
-This tool = market-based (catches when PrizePicks lags behind sharp books)
-
-The projection engine is still here for confirmation, but the core edge comes from FanDuel devigged lines disagreeing with PrizePicks. You're not trying to be smarter than Vegas — you're being faster.
-
----
-
-**Entry Type Cheat Sheet:**
-
-| Type | Break-even | Verdict |
-|:-----|:----------|:--------|
-| 5-pick Flex | ~54.2% | ✅ Use this |
-| 6-pick Flex | ~52.9% | ✅ Best value |
-| 3-pick Power | ~59.8% | ❌ Never |
-| 2-pick Power | ~57.7% | ❌ Avoid |
+6. **Dashboard** tracks your edge over time
 """)
+
+    with setup_c2:
+        st.markdown("**Entry Type Cheat Sheet**")
+        st.markdown("""
+<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+<thead><tr>
+  <th style="text-align:left;padding:0.5rem 0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);color:rgba(232,236,241,0.4);font-weight:600;text-transform:uppercase;font-size:0.65rem;letter-spacing:1.5px">Entry Type</th>
+  <th style="text-align:center;padding:0.5rem 0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);color:rgba(232,236,241,0.4);font-weight:600;text-transform:uppercase;font-size:0.65rem;letter-spacing:1.5px">Break-even</th>
+  <th style="text-align:center;padding:0.5rem 0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);color:rgba(232,236,241,0.4);font-weight:600;text-transform:uppercase;font-size:0.65rem;letter-spacing:1.5px">Verdict</th>
+</tr></thead>
+<tbody>
+<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
+  <td style="padding:0.55rem 0.8rem;color:#E8ECF1;font-weight:500">6-Pick Flex</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:#E8ECF1">52.9%</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;color:#00C853;font-weight:700">✓ Best Value</td>
+</tr>
+<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
+  <td style="padding:0.55rem 0.8rem;color:#E8ECF1;font-weight:500">5-Pick Flex</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:#E8ECF1">54.2%</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;color:#00C853;font-weight:700">✓ Use This</td>
+</tr>
+<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
+  <td style="padding:0.55rem 0.8rem;color:rgba(232,236,241,0.5)">2-Pick Power</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:rgba(232,236,241,0.5)">57.7%</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;color:#FF4444">✗ Avoid</td>
+</tr>
+<tr>
+  <td style="padding:0.55rem 0.8rem;color:rgba(232,236,241,0.5)">3-Pick Power</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:rgba(232,236,241,0.5)">59.8%</td>
+  <td style="padding:0.55rem 0.8rem;text-align:center;color:#FF4444">✗ Never</td>
+</tr>
+</tbody></table>
+
+<div style="margin-top:1rem;padding:0.8rem 1rem;background:rgba(0,200,83,0.05);border:1px solid rgba(0,200,83,0.1);border-radius:8px;font-size:0.8rem;color:rgba(232,236,241,0.6);">
+  <strong style="color:#00C853">Why this beats Rotowire:</strong><br>
+  Rotowire tries to out-predict the market. This tool catches when PrizePicks lags behind sharp books. You're not smarter than Vegas — you're <em>faster</em>.
+</div>
+""", unsafe_allow_html=True)
+
     st.markdown('<div class="section-hdr">Bankroll</div>', unsafe_allow_html=True)
     br_val = st.number_input("Starting bankroll ($)", min_value=1.0, value=st.session_state.get("starting_bankroll", 100.0), step=10.0, key="br_input")
     if br_val != st.session_state.get("starting_bankroll", 100.0):
