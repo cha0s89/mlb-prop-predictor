@@ -234,14 +234,18 @@ PP_TRADEABLE: dict = {
 }
 
 PP_NEVER_SHOW: set = {
+    ("home_runs", "MORE"),
     ("home_runs", "LESS"),
+    ("stolen_bases", "MORE"),
     ("stolen_bases", "LESS"),
     ("total_bases", "LESS"),
-    ("hitter_fantasy_score", "MORE"),  # 53.1% in v012 backtest — below 54.2% threshold
+    ("hitter_fantasy_score", "MORE"),  # 59.9% in v017 but low volume — keep filtered for PrizePicks tradability
 }
 
 _PP_FILTERED_LABELS = {
+    ("home_runs", "MORE"): "HR MORE",
     ("home_runs", "LESS"): "HR LESS",
+    ("stolen_bases", "MORE"): "SB MORE",
     ("stolen_bases", "LESS"): "SB LESS",
     ("total_bases", "LESS"): "TB LESS",
 }
@@ -249,11 +253,13 @@ _PP_FILTERED_LABELS = {
 
 def is_tradeable_pick(stat_internal: str, direction: str) -> bool:
     """Return False if this (stat_internal, direction) is not tradeable on PrizePicks."""
+    if not stat_internal or not direction:
+        return False  # Missing data — don't show
     if (stat_internal, direction) in PP_NEVER_SHOW:
         return False
     cfg = PP_TRADEABLE.get(stat_internal)
     if cfg is None:
-        return True  # Unknown prop type: pass through rather than hide
+        return False  # Unknown prop type: hide rather than show garbage
     return direction in cfg["directions"]
 
 
@@ -618,15 +624,16 @@ with tab_edge:
             with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
                 _brc1, _brc2 = st.columns(2)
                 with _brc1:
-                    st.markdown("**✅ BET THESE PROPS** *(v012 backtest)*")
+                    st.markdown("**✅ BET THESE PROPS** *(v017 backtest — 71.7% combined)*")
                     st.markdown(
-                        "- Hits LESS 1.5 — **64.3%** (15,805W / 24,593)\n"
-                        "- Total Bases MORE 1.5 — **62.9%** (3,995W / 6,354)\n"
-                        "- Pitcher Ks MORE 4.5 — **61.7%** (1,230W / 1,994)\n"
-                        "- FS LESS 7.5 — **55.8%** (15,662W / 28,075)\n"
-                        "- ⚠️ Pitcher Ks LESS 4.5 — **54.2%** borderline"
+                        "- Hits LESS 1.5 — **72.5%** (19,494W / 26,875)\n"
+                        "- Pitcher Ks MORE 4.5 — **69.6%** (353W / 507)\n"
+                        "- Pitcher Ks LESS 4.5 — **69.2%** (297W / 429)\n"
+                        "- TB LESS 1.5 — **65.8%** (185W / 281)\n"
+                        "- FS LESS 7.5 — **61.7%** (1,058W / 1,715)\n"
+                        "- FS MORE 7.5 — **59.9%** (139W / 232)"
                     )
-                    st.markdown("**❌ AVOID:** FS MORE (53.1%), TB LESS (43.6%), HR LESS (eval bug), SB LESS")
+                    st.markdown("**❌ AVOID:** Hits MORE, TB MORE (disabled by floors), HR LESS, SB LESS")
                 with _brc2:
                     st.markdown("**🎫 SLIP RULES:** Mix MORE+LESS, max 2 picks/team, min B grade, 5–6 Pick Flex")
                     st.markdown("**💰 BANKROLL:** 1–2% per slip, max 5 slips/day, stop if down 10%")
@@ -882,7 +889,8 @@ with tab_edge:
                 if scored_all:
                     top_plays = [s for s in scored_all
                                  if s["combined_grade"] in ("A+", "A")
-                                 and is_tradeable_pick(s.get("stat_internal", s.get("stat_type", "")), s.get("pick", ""))][:5]
+                                 and is_tradeable_pick(s.get("stat_internal", s.get("stat_type", "")), s.get("pick", ""))
+                                 and not _is_trivial(s)][:5]
                 else:
                     top_plays = []
                 if not top_plays:
@@ -1356,19 +1364,20 @@ with tab_dash:
         except Exception:
             st.caption("No adjustment history yet")
 
-    # ── Backtest Accuracy (v012) ───────────────────────────────────────────────
-    st.markdown('<div class="section-hdr">Backtest Accuracy — v012 (Played Games Only)</div>', unsafe_allow_html=True)
+    # ── Backtest Accuracy (v017) ───────────────────────────────────────────────
+    st.markdown('<div class="section-hdr">Backtest Accuracy — v017 (Played Games Only)</div>', unsafe_allow_html=True)
     _bt_rows = [
-        {"Prop": "Hits LESS 1.5",        "W": 15805, "Total": 24593, "Accuracy": 0.643},
-        {"Prop": "TB MORE 1.5",           "W":  3995, "Total":  6354, "Accuracy": 0.629},
-        {"Prop": "Pitcher Ks MORE 4.5",   "W":  1230, "Total":  1994, "Accuracy": 0.617},
-        {"Prop": "FS LESS 7.5",           "W": 15662, "Total": 28075, "Accuracy": 0.558},
-        {"Prop": "Pitcher Ks LESS 4.5",   "W":  1086, "Total":  2003, "Accuracy": 0.542},
+        {"Prop": "Hits LESS 1.5",        "W": 19494, "Total": 26875, "Accuracy": 0.725},
+        {"Prop": "Pitcher Ks MORE 4.5",   "W":   353, "Total":   507, "Accuracy": 0.696},
+        {"Prop": "Pitcher Ks LESS 4.5",   "W":   297, "Total":   429, "Accuracy": 0.692},
+        {"Prop": "TB LESS 1.5",           "W":   185, "Total":   281, "Accuracy": 0.658},
+        {"Prop": "FS LESS 7.5",           "W":  1058, "Total":  1715, "Accuracy": 0.617},
+        {"Prop": "FS MORE 7.5",           "W":   139, "Total":   232, "Accuracy": 0.599},
     ]
     _bt_html = []
     for _r in _bt_rows:
         _acc = _r["Accuracy"]
-        _color = "#00C853" if _acc >= 0.57 else ("#F9A825" if _acc >= 0.54 else "#FF4444")
+        _color = "#00C853" if _acc >= 0.60 else ("#F9A825" if _acc >= 0.57 else "#FF4444")
         _bar_w = int(_acc * 100)
         _bt_html.append(
             f'<div style="display:flex;align-items:center;gap:0.8rem;padding:0.45rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
@@ -1379,7 +1388,7 @@ with tab_dash:
             f'</div>'
         )
     st.markdown("".join(_bt_html), unsafe_allow_html=True)
-    st.caption("Green ≥57% · Yellow 54–57% · Red <54% · Source: 2025 full-season walk-forward backtest")
+    st.caption("Green ≥60% · Yellow 57–60% · Red <57% · Source: 2025 full-season walk-forward backtest (v017, 128K+ predictions)")
 
     # ── Daily Log (last 14 days) ──────────────────────────────────────────────
     st.markdown('<div class="section-hdr">Daily Log — Last 14 Days</div>', unsafe_allow_html=True)
