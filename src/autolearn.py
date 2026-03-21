@@ -1652,6 +1652,22 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
         "description": description,
     })
 
+    # v018: Trigger hedge-style ensemble weight update after grading
+    # This reweights sharp_odds vs projection vs recent_form based on
+    # which signal sources have been most accurate recently.
+    try:
+        from src.ensemble import update_ensemble_weights
+        ens_result = update_ensemble_weights(learning_rate=0.1, min_samples=20)
+        if ens_result.get("updated"):
+            logger.info("Ensemble weights updated: %s", ens_result.get("new_weights"))
+            result["ensemble_updated"] = True
+            result["ensemble_weights"] = ens_result.get("new_weights")
+        else:
+            result["ensemble_updated"] = False
+    except Exception as e:
+        logger.warning("Ensemble weight update failed: %s", e)
+        result["ensemble_updated"] = False
+
     logger.info(result["reason"])
     return result
 

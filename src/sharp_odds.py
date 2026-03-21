@@ -14,8 +14,8 @@ from typing import Optional
 import os
 import json
 from datetime import datetime
-from scipy.stats import poisson, nbinom, norm
 from scipy.optimize import brentq
+from src.distributions import compute_probabilities
 
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
@@ -127,58 +127,20 @@ def _prob_over_at_line(line: float, mu: float, dist_type: str,
                        vr: float = 1.5, phi: float = 25.0) -> float:
     """Compute P(X >= ceil(line)) for a given mean mu and distribution type.
 
+    Delegates to distributions.compute_probabilities() as single source of truth.
+
     Args:
         line: The threshold line value
         mu: Distribution mean
-        dist_type: One of betabinom, negbin, poisson, normal, gamma, binary
+        dist_type: One of betabinom, negbin, normal, gamma, binary
         vr: Variance ratio (for negbin/normal/gamma)
         phi: Precision parameter (for betabinom)
     """
-    threshold = int(np.ceil(line))
-    if threshold <= 0:
-        return 1.0
-    mu = max(0.01, mu)
-
-    if dist_type == "poisson":
-        return float(1 - poisson.cdf(threshold - 1, mu))
-
-    elif dist_type == "negbin":
-        variance = mu * max(1.01, vr)
-        p = mu / variance
-        n = mu * p / (1 - p)
-        n = max(0.5, n)
-        p = min(0.999, max(0.001, p))
-        return float(1 - nbinom.cdf(threshold - 1, n, p))
-
-    elif dist_type == "betabinom":
-        from scipy.stats import betabinom as bb
-        # Estimate batters faced from mu and a typical K-rate
-        k_rate = min(0.40, max(0.10, mu / 25.0))  # rough estimate
-        n_batters = max(15, int(round(mu / max(k_rate, 0.10))))
-        alpha = k_rate * phi
-        beta_param = (1 - k_rate) * phi
-        if threshold > n_batters:
-            return 0.0
-        return float(1 - bb.cdf(threshold - 1, n_batters, alpha, beta_param))
-
-    elif dist_type == "normal":
-        sigma = np.sqrt(mu * max(0.5, vr))
-        return float(1 - norm.cdf(threshold - 0.5, mu, sigma))  # continuity correction
-
-    elif dist_type == "gamma":
-        from scipy.stats import gamma as gamma_dist
-        variance = mu * max(0.5, vr)
-        shape = mu ** 2 / variance
-        scale = variance / mu
-        return float(1 - gamma_dist.cdf(threshold - 0.5, shape, scale=scale))
-
-    elif dist_type == "binary":
-        # Binary outcome (HR, etc.) — probability IS the mean
-        return min(0.99, max(0.01, mu))
-
-    else:
-        # Fallback to Poisson
-        return float(1 - poisson.cdf(threshold - 1, mu))
+    result = compute_probabilities(
+        line=line, mu=mu, dist_type=dist_type,
+        var_ratio=vr, phi=phi,
+    )
+    return result["p_over"]
 
 
 def _solve_mu_from_fair_over(fair_over: float, line: float,
@@ -235,7 +197,7 @@ def distribution_reprice(market: str, sharp_line: float, pp_line: float,
     dist_params = _load_dist_params()
     dist_key = _MARKET_TO_DIST_KEY.get(market, "")
     params = dist_params.get(dist_key, {})
-    dist_type = params.get("type", "poisson")
+    dist_type = params.get("type", "negbin")
     vr = params.get("vr", 1.5)
     phi = params.get("phi", 25.0)
 
