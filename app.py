@@ -95,6 +95,46 @@ def grade_label(r):
     return f"{icons.get(r, '⚪')} {r}"
 
 
+# ── PrizePicks tradeable prop configurations ──────────────────────────────────
+# Defines which (stat_internal, direction) combos are actually available to bet
+# on PrizePicks. HR LESS and SB LESS appear mathematically good but can't be bet.
+PP_TRADEABLE: dict = {
+    "pitcher_strikeouts":  {"directions": ["MORE", "LESS"], "lines": [3.5, 4.5, 5.5, 6.5, 7.5]},
+    "hitter_fantasy_score": {"directions": ["MORE", "LESS"], "lines": [7.5]},
+    "total_bases":         {"directions": ["MORE"], "lines": [1.5, 2.5]},
+    "hits_runs_rbis":      {"directions": ["MORE", "LESS"], "lines": [1.5, 2.5]},
+    "hits":                {"directions": ["MORE", "LESS"], "lines": [0.5, 1.5]},
+    "batter_strikeouts":   {"directions": ["MORE", "LESS"], "lines": [0.5]},
+    "walks_allowed":       {"directions": ["MORE", "LESS"], "lines": [1.5, 2.5]},
+    "earned_runs":         {"directions": ["MORE", "LESS"], "lines": [1.5, 2.5]},
+    "pitching_outs":       {"directions": ["MORE", "LESS"], "lines": [15.5, 16.5, 17.5]},
+    "runs":                {"directions": ["MORE"], "lines": [0.5]},
+    "rbis":                {"directions": ["MORE"], "lines": [0.5]},
+}
+
+PP_NEVER_SHOW: set = {
+    ("home_runs", "LESS"),
+    ("stolen_bases", "LESS"),
+    ("total_bases", "LESS"),
+}
+
+_PP_FILTERED_LABELS = {
+    ("home_runs", "LESS"): "HR LESS",
+    ("stolen_bases", "LESS"): "SB LESS",
+    ("total_bases", "LESS"): "TB LESS",
+}
+
+
+def is_tradeable_pick(stat_internal: str, direction: str) -> bool:
+    """Return False if this (stat_internal, direction) is not tradeable on PrizePicks."""
+    if (stat_internal, direction) in PP_NEVER_SHOW:
+        return False
+    cfg = PP_TRADEABLE.get(stat_internal)
+    if cfg is None:
+        return True  # Unknown prop type: pass through rather than hide
+    return direction in cfg["directions"]
+
+
 @st.cache_data(ttl=3600)
 def load_batting_stats():
     """Load batting leaders from cached CSV first, fall back to pybaseball."""
@@ -261,6 +301,38 @@ def build_pitcher_profile(stats_row) -> dict:
     }
 
 
+def get_daily_log_summary(days: int = 14) -> list[dict]:
+    """Read daily log JSON files and return summary rows for the last N days."""
+    import json as _j, os as _o
+    log_dir = _o.path.join(_o.path.dirname(__file__), "data", "daily_logs")
+    if not _o.path.exists(log_dir):
+        return []
+    rows = []
+    for i in range(days - 1, -1, -1):
+        d = (date.today() - timedelta(days=i)).isoformat()
+        path = _o.path.join(log_dir, f"{d}.json")
+        if not _o.path.exists(path):
+            continue
+        try:
+            with open(path) as _f:
+                data = _j.load(_f)
+            preds = data.get("predictions", [])
+            rows.append({
+                "Date": d,
+                "Props": len(preds),
+                "A Picks": sum(1 for p in preds if p.get("rating") == "A"),
+                "B Picks": sum(1 for p in preds if p.get("rating") == "B"),
+                "Avg Edge": (
+                    f"{sum(p.get('edge', 0) or 0 for p in preds) / len(preds) * 100:.1f}%"
+                    if preds else "—"
+                ),
+                "Sharp Edges": sum(1 for p in preds if p.get("edge", 0) and p["edge"] > 0.03),
+            })
+        except Exception:
+            pass
+    return rows
+
+
 def save_daily_log(preds_list: list, log_date: str = None):
     """Save a snapshot of today's projections to data/daily_logs/<date>.json."""
     import json, os
@@ -370,15 +442,37 @@ with tab_edge:
                 st.markdown(f'<div class="card"><div class="lbl">AVG EDGE</div><div class="val {cls}">{avg_e:.1f}%</div></div>', unsafe_allow_html=True)
             with c4: st.markdown(f'<div class="card"><div class="lbl">TOTAL EDGES</div><div class="val">{len(all_edges)}</div></div>', unsafe_allow_html=True)
 
-            f1,f2 = st.columns(2)
+            f1,f2,f3 = st.columns([2,2,2])
             with f1: min_grade = st.selectbox("Min grade", ["A only","A + B","A + B + C","All"], index=1)
             with f2: prop_f = st.selectbox("Prop type", ["All","Pitcher Ks","Batter Hits","Total Bases","Home Runs"])
+            with f3: show_all_sharp = st.checkbox("Show all picks (incl. non-tradeable)", value=False, key="show_all_sharp")
             gm = {"A only":["A"],"A + B":["A","B"],"A + B + C":["A","B","C"],"All":["A","B","C","D"]}
             filt = [e for e in all_edges if e["rating"] in gm[min_grade]]
             if prop_f=="Pitcher Ks": filt=[e for e in filt if "strikeout" in e.get("market","").lower() and "batter" not in e.get("market","").lower()]
             elif prop_f=="Batter Hits": filt=[e for e in filt if "hits" in e.get("market","").lower()]
             elif prop_f=="Total Bases": filt=[e for e in filt if "total_bases" in e.get("market","").lower()]
             elif prop_f=="Home Runs": filt=[e for e in filt if "home_run" in e.get("market","").lower()]
+            # Filter non-tradeable picks unless user opts in
+            if not show_all_sharp:
+                _hidden_sharp = [e for e in filt if not is_tradeable_pick(e.get("stat_internal", e.get("market", "")), e.get("pick", ""))]
+                filt = [e for e in filt if is_tradeable_pick(e.get("stat_internal", e.get("market", "")), e.get("pick", ""))]
+                _hidden_labels = list({_PP_FILTERED_LABELS.get((e.get("stat_internal",""), e.get("pick","")), f"{e.get('stat_type','')} {e.get('pick','')}") for e in _hidden_sharp})
+                if _hidden_labels:
+                    st.info(f"ℹ️ Showing tradeable picks only. Filtered out: {', '.join(_hidden_labels)} (not available or unprofitable on PrizePicks)")
+
+            with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
+                _brc1, _brc2 = st.columns(2)
+                with _brc1:
+                    st.markdown("**✅ BET THESE PROPS**")
+                    st.markdown(
+                        "- Pitcher Strikeouts (MORE and LESS)\n"
+                        "- Hitter Fantasy Score (MORE and LESS)\n"
+                        "- Total Bases MORE · Hits · H+R+RBI"
+                    )
+                    st.markdown("**❌ AVOID:** TB LESS, HR LESS 0.5, SB LESS 0.5")
+                with _brc2:
+                    st.markdown("**🎫 SLIP RULES:** Mix MORE+LESS, max 2 picks/team, min B grade, 5–6 Pick Flex")
+                    st.markdown("**💰 BANKROLL:** 1–2% per slip, max 5 slips/day, stop if down 10%")
 
             if filt:
                 st.markdown(f'<div class="section-hdr">🎯 {len(filt)} Edges — Best First</div>', unsafe_allow_html=True)
@@ -574,15 +668,56 @@ with tab_edge:
                     else:
                         st.markdown("**No sharp lines yet** — showing projection-only analysis")
 
+                # ── Betting Rules Card ──
+                with st.expander("📋 Betting Rules & Bankroll Guide", expanded=False):
+                    rc1, rc2 = st.columns(2)
+                    with rc1:
+                        st.markdown("**✅ BET THESE PROPS**")
+                        st.markdown(
+                            "- Pitcher Strikeouts (MORE and LESS)\n"
+                            "- Hitter Fantasy Score (MORE and LESS)\n"
+                            "- Total Bases MORE\n"
+                            "- Hits (MORE and LESS)\n"
+                            "- Hits+Runs+RBIs (H+R+RBI)\n"
+                            "- Batter Strikeouts"
+                        )
+                        st.markdown("**❌ AVOID THESE**")
+                        st.markdown(
+                            "- Total Bases LESS (44% accuracy — not worth it)\n"
+                            "- Home Runs LESS (PP rarely offers it)\n"
+                            "- SB LESS 0.5 (PP doesn't offer SB LESS)"
+                        )
+                    with rc2:
+                        st.markdown("**🎫 SLIP RULES**")
+                        st.markdown(
+                            "- Mix 2–3 MORE + 2–3 LESS per slip\n"
+                            "- Max 2 picks per team per slip\n"
+                            "- Min B grade — never take D-grade picks\n"
+                            "- Prefer 5-Pick or 6-Pick Flex\n"
+                            "- Avoid 2-Pick or 3-Pick Power Play"
+                        )
+                        st.markdown("**💰 BANKROLL**")
+                        st.markdown(
+                            "- 1–2% of bankroll per slip\n"
+                            "- Max 5 slips per day\n"
+                            "- Break-even: 5-pick Flex = 54.2%, 6-pick = 52.9%\n"
+                            "- Stop if down 10% in a day"
+                        )
+
                 # ── Today's Best Plays ──
                 # Use combined scoring when sharp edges exist, fall back to projection ranking
                 if scored_all:
-                    top_plays = [s for s in scored_all if s["combined_grade"] in ("A+", "A")][:5]
+                    top_plays = [s for s in scored_all
+                                 if s["combined_grade"] in ("A+", "A")
+                                 and is_tradeable_pick(s.get("stat_internal", s.get("stat_type", "")), s.get("pick", ""))][:5]
                 else:
                     top_plays = []
                 if not top_plays:
-                    # Fall back to top A-grade projections
-                    for _, tp in pdf[pdf["rating"] == "A"].head(5).iterrows():
+                    # Fall back to top A-grade projections (tradeable only)
+                    tradeable_a = pdf[(pdf["rating"] == "A") & pdf.apply(
+                        lambda r: is_tradeable_pick(r.get("stat_internal", ""), r.get("pick", "")), axis=1
+                    )]
+                    for _, tp in tradeable_a.head(5).iterrows():
                         top_plays.append({
                             "player_name": tp["player_name"],
                             "stat_type": tp["stat_type"],
@@ -613,17 +748,28 @@ with tab_edge:
                             </div>''', unsafe_allow_html=True)
 
                 # ── Filters ──
-                f1, f2 = st.columns(2)
+                f1, f2, f3 = st.columns([2, 2, 2])
                 prop_types_available = sorted(pdf["stat_type"].unique().tolist())
                 with f1:
                     proj_prop_filter = st.selectbox("Prop Type", ["All"] + prop_types_available, key="proj_prop_f")
                 with f2:
                     proj_grade_filter = st.selectbox("Min Grade", ["A only", "A + B", "A + B + C", "All"], index=1, key="proj_grade_f")
+                with f3:
+                    show_all_proj = st.checkbox("Show all picks (incl. non-tradeable)", value=False, key="show_all_proj")
 
                 grade_map = {"A only": ["A"], "A + B": ["A", "B"], "A + B + C": ["A", "B", "C"], "All": ["A", "B", "C", "D"]}
                 filtered = pdf[pdf["rating"].isin(grade_map[proj_grade_filter])].copy()
                 if proj_prop_filter != "All":
                     filtered = filtered[filtered["stat_type"] == proj_prop_filter]
+                # Filter non-tradeable picks unless user opts in
+                if not show_all_proj:
+                    _before_filter = len(filtered)
+                    filtered = filtered[filtered.apply(
+                        lambda r: is_tradeable_pick(r.get("stat_internal", ""), r.get("pick", "")), axis=1
+                    )].copy()
+                    _removed = _before_filter - len(filtered)
+                    if _removed > 0:
+                        st.info(f"ℹ️ Showing tradeable picks only. Filtered out {_removed} pick(s) — HR LESS, SB LESS, TB LESS (not available or unprofitable on PrizePicks)")
 
                 # ── Unified projection table with checkboxes ──
                 slip_candidates = filtered.head(40).reset_index(drop=True)
@@ -724,15 +870,23 @@ with tab_edge:
                 # ── Slip builder ──
                 if selected_picks:
                     st.markdown('<div class="section-hdr">Build Slip</div>', unsafe_allow_html=True)
-                    st.success(f"{len(selected_picks)} pick(s) selected")
+
+                    # MORE/LESS balance indicator
+                    _more_count = sum(1 for p in selected_picks if p["pick"] == "MORE")
+                    _less_count = sum(1 for p in selected_picks if p["pick"] == "LESS")
+                    _balance_note = "✅ good balance" if abs(_more_count - _less_count) <= 1 else "⚠️ consider balancing MORE/LESS"
+                    st.success(f"{len(selected_picks)} pick(s): **{_more_count} MORE / {_less_count} LESS** — {_balance_note}")
+
                     # Slip correlation warnings
                     slip_warns = analyze_slip_correlation(selected_picks)
-                    if any(w["severity"] == "high" for w in slip_warns):
-                        st.warning("⚠️ This slip has correlation risks — review warnings below")
+                    _has_high_warn = any(w["severity"] == "high" for w in slip_warns)
+                    if _has_high_warn:
+                        st.warning("⚠️ This slip has high-severity correlation risks — review warnings below")
                     for emoji, text in format_warnings_streamlit(slip_warns):
                         st.markdown(f"{emoji} {text}")
 
                     # Estimated slip strength from combined scores
+                    _avg_confidence = 0.5
                     if scored_all:
                         _scored_lookup = {
                             f"{s['player_name'].lower()}|{s['stat_type'].lower()}": s
@@ -741,13 +895,21 @@ with tab_edge:
                         slip_scores = []
                         for sp in selected_picks:
                             key = f"{sp['player_name'].lower()}|{sp['stat_type'].lower()}"
-                            matched = _scored_lookup.get(key)
-                            if matched:
-                                slip_scores.append(matched["combined_score"])
+                            _matched_score = _scored_lookup.get(key)
+                            if _matched_score:
+                                slip_scores.append(_matched_score["combined_score"])
                         if slip_scores:
                             avg_score = sum(slip_scores) / len(slip_scores)
-                            strength_pct = min(50 + avg_score * 300, 85)  # Scale to readable %
+                            strength_pct = min(50 + avg_score * 300, 85)
                             st.caption(f"Estimated slip strength: **{strength_pct:.0f}%** (avg combined score: {avg_score:.3f})")
+
+                    # Per-pick confidence for EV calculation
+                    _conf_vals = []
+                    for sp in selected_picks:
+                        _pk_row = pdf[(pdf["player_name"] == sp["player_name"]) & (pdf["stat_type"] == sp["stat_type"])]
+                        if not _pk_row.empty:
+                            _conf_vals.append(float(_pk_row.iloc[0].get("confidence", 0.5)))
+                    _avg_confidence = (sum(_conf_vals) / len(_conf_vals)) if _conf_vals else 0.5
 
                     sc1, sc2 = st.columns(2)
                     with sc1:
@@ -755,11 +917,50 @@ with tab_edge:
                         proj_slip_type = st.selectbox("Slip type", slip_type_opts, key="proj_slip_type")
                     with sc2:
                         proj_slip_amount = st.number_input("Entry ($)", min_value=1.0, value=5.0, step=1.0, key="proj_slip_amt")
-                    if st.button("Lock In Picks", type="primary", key="proj_save_slip"):
-                        num_needed = int(proj_slip_type[0])
-                        if len(selected_picks) == num_needed:
+
+                    # Auto-calculate Flex payout preview
+                    _slip_key_map = {
+                        "2-Pick Power Play": "2_power", "3-Pick Power Play": "3_power",
+                        "4-Pick Flex": "4_flex", "5-Pick Flex": "5_flex", "6-Pick Flex": "6_flex",
+                    }
+                    _slip_key = _slip_key_map.get(proj_slip_type, "5_flex")
+                    _payouts_for_type = PAYOUTS.get(_slip_key, {})
+                    if _payouts_for_type:
+                        _num_picks = int(proj_slip_type[0])
+                        _payout_rows = []
+                        for _wins, _mult in sorted(_payouts_for_type.items(), reverse=True):
+                            if _mult > 0:
+                                # EV of this outcome: C(_num_picks, _wins) * p^wins * (1-p)^(n-wins) * mult
+                                from math import comb
+                                _prob = comb(_num_picks, _wins) * (_avg_confidence ** _wins) * ((1 - _avg_confidence) ** (_num_picks - _wins))
+                                _payout_rows.append({
+                                    "Correct": f"{_wins}/{_num_picks}",
+                                    "Multiplier": f"{_mult}x",
+                                    "Payout": f"${_mult * proj_slip_amount:.2f}",
+                                    "Est. Prob": f"{_prob*100:.1f}%",
+                                })
+                        if _payout_rows:
+                            st.caption("**Payout preview** (based on avg pick confidence)")
+                            st.dataframe(pd.DataFrame(_payout_rows), hide_index=True, use_container_width=True)
+
+                        # Expected value
+                        _ev = sum(
+                            comb(_num_picks, _w) * (_avg_confidence ** _w) * ((1 - _avg_confidence) ** (_num_picks - _w)) * _m * proj_slip_amount
+                            for _w, _m in _payouts_for_type.items()
+                        ) - proj_slip_amount
+                        _ev_color = "g" if _ev >= 0 else "r"
+                        st.markdown(f'<div class="card" style="margin-top:0.4rem"><div class="lbl">EXPECTED VALUE</div><div class="val {_ev_color}">${_ev:+.2f}</div></div>', unsafe_allow_html=True)
+
+                    _num_needed = int(proj_slip_type[0])
+                    _save_disabled = len(selected_picks) < 2 or _has_high_warn
+                    if _save_disabled and len(selected_picks) < 2:
+                        st.caption("Select at least 2 picks to save a slip.")
+                    elif _save_disabled and _has_high_warn:
+                        st.caption("Resolve high-severity correlation warnings to save.")
+
+                    if st.button("Lock In Picks", type="primary", key="proj_save_slip", disabled=_save_disabled):
+                        if len(selected_picks) == _num_needed:
                             sid = create_slip(date.today().isoformat(), proj_slip_type, proj_slip_amount, selected_picks)
-                            # Save daily log snapshot
                             try:
                                 save_daily_log(preds)
                             except Exception:
@@ -767,7 +968,7 @@ with tab_edge:
                             st.success(f"Slip #{sid} saved! Daily projection log saved.")
                             st.rerun()
                         else:
-                            st.warning(f"Select exactly {num_needed} picks for a {proj_slip_type}.")
+                            st.warning(f"Select exactly {_num_needed} picks for a {proj_slip_type}.")
 
 with tab_slips:
     st.markdown('<div class="section-hdr">PrizePicks Slip Tracker</div>', unsafe_allow_html=True)
@@ -912,6 +1113,15 @@ with tab_dash:
         except Exception:
             st.caption("No adjustment history yet")
 
+    # ── Daily Log (last 14 days) ──────────────────────────────────────────────
+    st.markdown('<div class="section-hdr">Daily Log — Last 14 Days</div>', unsafe_allow_html=True)
+    _log_rows = get_daily_log_summary(14)
+    if _log_rows:
+        _log_df = pd.DataFrame(_log_rows)
+        st.dataframe(_log_df, hide_index=True, use_container_width=True)
+    else:
+        st.caption("No daily logs yet — logs are created automatically when you lock in picks.")
+
 with tab_grade:
     st.markdown('<div class="section-hdr">Grade Past Picks</div>', unsafe_allow_html=True)
 
@@ -976,6 +1186,99 @@ with tab_grade:
 
 with tab_setup:
     st.markdown('<div class="section-hdr">Setup</div>', unsafe_allow_html=True)
+
+    # ── Opening Day Readiness Checklist ──────────────────────────────────────
+    st.markdown('<div class="section-hdr">⚾ Opening Day Checklist</div>', unsafe_allow_html=True)
+    import os as _os, json as _json
+    _checks = []
+
+    # 1. Odds API key
+    _api_key = get_api_key()
+    _checks.append(("Odds API key configured", bool(_api_key), "Add ODDS_API_KEY to Streamlit Secrets or .env"))
+
+    # 2. API credits remaining
+    _credits_remaining = None
+    if _api_key:
+        try:
+            _usage = get_api_usage(_api_key)
+            _credits_remaining = _usage.get("remaining", "?")
+            _credits_ok = isinstance(_credits_remaining, int) and _credits_remaining > 50
+            _checks.append((f"API credits remaining: {_credits_remaining}", _credits_ok, "Running low — consider upgrading or rationing calls"))
+        except Exception:
+            _checks.append(("API credits remaining", False, "Could not fetch usage"))
+    else:
+        _checks.append(("API credits remaining", False, "No API key set"))
+
+    # 3. FanGraphs batting cache
+    _bat_cache = _os.path.join(_os.path.dirname(__file__), "data", "batting_stats_cache.csv")
+    if _os.path.exists(_bat_cache):
+        try:
+            _bat_df = pd.read_csv(_bat_cache)
+            _bat_count = len(_bat_df)
+            _checks.append((f"Batting cache loaded: {_bat_count} players", _bat_count >= 50, "Run cache refresh or check data/ directory"))
+        except Exception:
+            _checks.append(("Batting cache loaded", False, "Cache file exists but couldn't be read"))
+    else:
+        _checks.append(("FanGraphs batting cache", False, "No cache — run the app once with internet to build it"))
+
+    # 4. FanGraphs pitching cache
+    _pit_cache = _os.path.join(_os.path.dirname(__file__), "data", "pitching_stats_cache.csv")
+    if _os.path.exists(_pit_cache):
+        try:
+            _pit_df = pd.read_csv(_pit_cache)
+            _pit_count = len(_pit_df)
+            _checks.append((f"Pitching cache loaded: {_pit_count} pitchers", _pit_count >= 20, "Run cache refresh or check data/ directory"))
+        except Exception:
+            _checks.append(("Pitching cache loaded", False, "Cache file exists but couldn't be read"))
+    else:
+        _checks.append(("FanGraphs pitching cache", False, "No cache — run the app once with internet to build it"))
+
+    # 5. Weight version
+    _weights_path = _os.path.join(_os.path.dirname(__file__), "data", "weights", "current.json")
+    if _os.path.exists(_weights_path):
+        try:
+            with open(_weights_path) as _wf:
+                _wdata = _json.load(_wf)
+            _wver = _wdata.get("version", "unknown")
+            _checks.append((f"Model weights: {_wver}", True, ""))
+        except Exception:
+            _checks.append(("Model weights: current.json", False, "File exists but couldn't be parsed"))
+    else:
+        _checks.append(("Model weights (current.json)", False, "No weights file — using predictor defaults"))
+
+    # 6. Last backtest accuracy
+    _bt_path = _os.path.join(_os.path.dirname(__file__), "data", "backtest", "backtest_2025_report.json")
+    if _os.path.exists(_bt_path):
+        try:
+            with open(_bt_path) as _bf:
+                _bt = _json.load(_bf)
+            _bt_acc = _bt.get("overall_accuracy", _bt.get("accuracy", None))
+            _bt_label = f"Backtest accuracy: {_bt_acc*100:.1f}%" if _bt_acc else "Backtest complete (accuracy unknown)"
+            _checks.append((_bt_label, True, ""))
+        except Exception:
+            _checks.append(("Backtest report", False, "File exists but couldn't be parsed"))
+    else:
+        _checks.append(("Backtest 2025 report", False, "Not yet run — backtest in progress"))
+
+    # 7. PrizePicks API reachable
+    try:
+        _pp_test = fetch_prizepicks_mlb_lines()
+        _pp_ok = not _pp_test.empty
+        _checks.append((f"PrizePicks API reachable ({len(_pp_test)} props today)" if _pp_ok else "PrizePicks API reachable (0 props — may be early)", _pp_ok, "Check PrizePicks API or network"))
+    except Exception as _e:
+        _checks.append(("PrizePicks API reachable", False, f"Error: {_e}"))
+
+    _ready = sum(1 for _, ok, _ in _checks if ok)
+    _total_checks = len(_checks)
+    st.caption(f"**{_ready}/{_total_checks} checks passing** — Opening Day is March 27")
+    for _label, _ok, _hint in _checks:
+        _icon = "✅" if _ok else "❌"
+        if _hint and not _ok:
+            st.markdown(f"{_icon} {_label} — *{_hint}*")
+        else:
+            st.markdown(f"{_icon} {_label}")
+    st.markdown("---")
+
     st.markdown("""
 **Step 1:** Get free API key at [the-odds-api.com](https://the-odds-api.com) (500 req/month, no card)
 
