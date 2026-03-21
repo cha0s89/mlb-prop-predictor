@@ -168,3 +168,80 @@ def prob_push(line: float, n_batters: int, alpha: float, beta: float) -> float:
     if k < 0 or k > n_batters:
         return 0.0
     return float(betabinom.pmf(k, n_batters, alpha, beta))
+
+
+# === MLE FITTING FROM GAME LOGS ===
+
+def fit_betabinom_mle(strikeouts: np.ndarray, batters_faced: np.ndarray) -> tuple[float, float]:
+    """MLE fit of Beta-Binomial alpha, beta from game-by-game K data.
+
+    Args:
+        strikeouts: array of K counts per game
+        batters_faced: array of BF per game
+    Returns:
+        (alpha, beta) tuple
+    """
+    from scipy.optimize import minimize
+
+    def neg_loglik(params):
+        a, b = params
+        if a <= 0.01 or b <= 0.01:
+            return 1e10
+        try:
+            ll = betabinom.logpmf(strikeouts, batters_faced, a, b).sum()
+            return -ll if np.isfinite(ll) else 1e10
+        except Exception:
+            return 1e10
+
+    # Initial guess from method of moments
+    k_rates = strikeouts / np.maximum(batters_faced, 1)
+    p_hat = np.mean(k_rates)
+    var_hat = np.var(k_rates)
+    if var_hat > 0 and p_hat > 0:
+        s_hat = max(2.0, p_hat * (1 - p_hat) / var_hat - 1)
+    else:
+        s_hat = 20.0
+
+    result = minimize(neg_loglik, [p_hat * s_hat, (1 - p_hat) * s_hat],
+                      method='Nelder-Mead',
+                      options={'maxiter': 1000, 'xatol': 1e-6})
+
+    alpha, beta = max(0.1, result.x[0]), max(0.1, result.x[1])
+    return alpha, beta
+
+
+def fit_negbinom_mle(counts: np.ndarray) -> tuple[float, float]:
+    """MLE fit of Negative Binomial from count data (e.g., earned runs per game).
+
+    Args:
+        counts: array of count data per game
+    Returns:
+        (n, p) tuple for scipy.stats.nbinom
+    """
+    from scipy.optimize import minimize
+
+    def neg_loglik(params):
+        n, p = params
+        if n <= 0.01 or p <= 0.001 or p >= 0.999:
+            return 1e10
+        try:
+            ll = nbinom.logpmf(counts.astype(int), n, p).sum()
+            return -ll if np.isfinite(ll) else 1e10
+        except Exception:
+            return 1e10
+
+    mean = np.mean(counts)
+    var = np.var(counts)
+    if var > mean and mean > 0:
+        p_init = mean / var
+        n_init = mean * p_init / (1 - p_init)
+    else:
+        p_init = 0.5
+        n_init = mean if mean > 0 else 1.0
+
+    result = minimize(neg_loglik, [max(0.5, n_init), min(0.95, max(0.05, p_init))],
+                      method='Nelder-Mead',
+                      options={'maxiter': 1000})
+
+    n, p = max(0.1, result.x[0]), min(0.999, max(0.001, result.x[1]))
+    return n, p

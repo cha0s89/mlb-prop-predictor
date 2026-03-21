@@ -91,6 +91,30 @@ def init_projected_stats_table():
     conn.close()
 
 
+def init_clv_table():
+    """Create the CLV tracking table if it doesn't exist."""
+    conn = get_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS clv_tracking (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_date TEXT NOT NULL,
+            player_name TEXT NOT NULL,
+            stat_type TEXT NOT NULL,
+            line REAL NOT NULL,
+            pick TEXT NOT NULL,
+            opening_prob REAL,
+            closing_prob REAL,
+            our_prob REAL,
+            clv_points REAL,
+            beat_close INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_date ON clv_tracking(game_date)")
+    conn.commit()
+    conn.close()
+
+
 def log_prediction(pred: dict, game_date: str = None):
     """Save a prediction to the database."""
     conn = get_connection()
@@ -618,6 +642,105 @@ def get_calibration_data(days_back: int = 30) -> dict:
     }
 
 
+def save_clv_record(records: list):
+    """Save CLV tracking records (bulk insert).
+
+    Args:
+        records (list[dict]): List of CLV records with keys:
+            - game_date (str)
+            - player_name (str)
+            - stat_type (str)
+            - line (float)
+            - pick (str: 'MORE' or 'LESS')
+            - opening_prob (float, optional)
+            - closing_prob (float, optional)
+            - our_prob (float, optional)
+            - clv_points (float, optional)
+            - beat_close (int, optional: 0 or 1)
+    """
+    conn = get_connection()
+    for record in records:
+        conn.execute("""
+            INSERT INTO clv_tracking
+            (game_date, player_name, stat_type, line, pick, opening_prob,
+             closing_prob, our_prob, clv_points, beat_close)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            record.get("game_date"),
+            record.get("player_name"),
+            record.get("stat_type"),
+            record.get("line"),
+            record.get("pick"),
+            record.get("opening_prob"),
+            record.get("closing_prob"),
+            record.get("our_prob"),
+            record.get("clv_points"),
+            record.get("beat_close", 0),
+        ))
+    conn.commit()
+    conn.close()
+
+
+def get_clv_summary(days_back: int = 30) -> dict:
+    """Get CLV summary stats for the last N days.
+
+    Args:
+        days_back (int): Number of days to look back
+
+    Returns:
+        dict with overall CLV stats and breakdown by prop type:
+            - total_tracked (int): Number of tracked bets
+            - avg_clv (float): Average CLV points per bet
+            - beat_close_pct (float): % of bets that beat the closing line
+            - by_prop (dict): Breakdown by stat_type with avg_clv, beat_pct, count
+    """
+    conn = get_connection()
+
+    # Get CLV records from last N days
+    clv_data = pd.read_sql_query("""
+        SELECT stat_type, clv_points, beat_close FROM clv_tracking
+        WHERE game_date >= date('now', '-' || ? || ' days')
+    """, conn, params=(days_back,))
+    conn.close()
+
+    if clv_data.empty:
+        return {
+            "total_tracked": 0,
+            "avg_clv": None,
+            "beat_close_pct": None,
+            "by_prop": {}
+        }
+
+    total_tracked = len(clv_data)
+    avg_clv = float(clv_data["clv_points"].mean())
+
+    beat_close_count = len(clv_data[clv_data["beat_close"] == 1])
+    beat_close_pct = (beat_close_count / total_tracked * 100) if total_tracked > 0 else 0
+
+    # Breakdown by stat type
+    by_prop = {}
+    for stat_type in clv_data["stat_type"].unique():
+        if pd.isna(stat_type):
+            continue
+        subset = clv_data[clv_data["stat_type"] == stat_type]
+        prop_avg_clv = float(subset["clv_points"].mean())
+        prop_beat_count = len(subset[subset["beat_close"] == 1])
+        prop_beat_pct = (prop_beat_count / len(subset) * 100) if len(subset) > 0 else 0
+        by_prop[stat_type] = {
+            "avg_clv": prop_avg_clv,
+            "beat_pct": prop_beat_pct,
+            "count": int(len(subset))
+        }
+
+    return {
+        "total_tracked": total_tracked,
+        "avg_clv": avg_clv,
+        "beat_close_pct": beat_close_pct,
+        "by_prop": by_prop
+    }
+
+
 # Initialize DB on import
 init_db()
 init_projected_stats_table()
+init_clv_table()

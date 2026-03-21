@@ -16,7 +16,7 @@ from src.sharp_odds import (
     fetch_mlb_events, fetch_event_props, extract_sharp_lines,
     find_ev_edges, get_api_usage, get_api_key, PP_TO_ODDS_API,
 )
-from src.weather import fetch_game_weather, resolve_team, STADIUMS
+from src.weather import fetch_game_weather, resolve_team, STADIUMS, get_stat_specific_weather_adjustment
 from src.umpires import get_umpire_k_adjustment
 from src.predictor import (
     generate_prediction, calculate_over_under_probability,
@@ -53,6 +53,7 @@ from src.database import (
 )
 from src.kelly import half_kelly, calculate_slip_sizing
 from src.parlay_suggest import suggest_slips, score_slip_quality
+from src.drift import check_model_health
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -591,9 +592,25 @@ tab_edge, tab_slips, tab_picks, tab_dash, tab_grade, tab_setup = st.tabs(["🎯 
 with tab_edge:
     api_key = get_api_key()
     has_sharp = bool(api_key)
+    # Check if we're in preseason
+    _days_to_opening = (date(2026, 3, 27) - date.today()).days
+    _is_preseason = _days_to_opening > 0
+
     if not api_key:
-        st.warning("Add your Odds API key in the Setup tab to enable sharp line comparison.")
-        st.info("Free key at [the-odds-api.com](https://the-odds-api.com) — 500 req/month, no credit card.")
+        st.markdown(
+            '<div class="alert-strip"><strong>No Odds API key found.</strong> '
+            'Sharp book comparison is disabled. Create a <code>.env</code> file in the project folder with: '
+            '<code>ODDS_API_KEY=your_key_here</code><br>'
+            'Free key at <a href="https://the-odds-api.com" target="_blank">the-odds-api.com</a> — 500 req/month, no credit card.</div>',
+            unsafe_allow_html=True
+        )
+    if _is_preseason:
+        st.markdown(
+            f'<div class="warn-strip"><strong>Preseason:</strong> Opening Day is {_days_to_opening} day{"s" if _days_to_opening != 1 else ""} away (March 27). '
+            f'Sharp books won\'t have MLB player props until close to Opening Day. '
+            f'Projection-based analysis is still available from PrizePicks lines.</div>',
+            unsafe_allow_html=True
+        )
     else:
         usage = get_api_usage(api_key)
         st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{usage.get("remaining","?")}</span> credits remaining &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
@@ -703,7 +720,11 @@ with tab_edge:
                     log_batch_predictions(filt, date.today().isoformat())
                     st.success(f"Saved {len(filt)} predictions!")
             else: st.info("No edges match filters.")
-        elif has_sharp: st.info("Sharp book props not available for Spring Training — showing projection-based analysis below.")
+        elif has_sharp:
+            if _is_preseason:
+                st.info("Sharp book player props aren't available until Opening Day. Projection-based analysis is below.")
+            else:
+                st.info("No sharp book player prop edges found right now — odds may not be posted yet. Showing projection-based analysis below.")
 
         if not all_edges:
             st.markdown('<div class="section-hdr">Projection Analysis</div>', unsafe_allow_html=True)
@@ -799,6 +820,13 @@ with tab_edge:
                     park_team=resolve_team(team) if team else None,
                     weather=wx,
                 )
+
+                # v018: Stat-specific weather adjustment (research-backed)
+                if wx:
+                    wx_mult = get_stat_specific_weather_adjustment(wx, stat_int)
+                    if wx_mult != 1.0:
+                        p["projection"] = round(p["projection"] * wx_mult, 2)
+                        p["weather_mult"] = wx_mult
 
                 prior_slg = 0.400
                 prior_avg = 0.250
@@ -1644,6 +1672,96 @@ with tab_dash:
             st.caption("Calibration data requires 10+ graded picks. Keep grading!")
     except Exception:
         st.caption("Calibration data will appear here once enough games are graded.")
+
+    # ── Model Health — Regime Change Detection (CUSUM) ──
+    st.markdown('<div class="section-hdr">Model Health — Regime Change Detection</div>', unsafe_allow_html=True)
+    try:
+        _graded_df = get_graded_predictions(90)
+        if not _graded_df.empty and len(_graded_df) >= 20:
+            _health_preds = []
+            for _, _hr in _graded_df.iterrows():
+                _health_preds.append({
+                    "result": _hr.get("result", "L"),
+                    "confidence": float(_hr.get("confidence", 0.5)) if _hr.get("confidence") else 0.5,
+                    "stat_type": _hr.get("stat_type", "unknown"),
+                })
+            _health = check_model_health(_health_preds, min_sample=20)
+
+            _health_icon = "🟢" if _health.get("healthy") else "🔴"
+            _health_label = "Healthy" if _health.get("healthy") else "Degraded"
+            _health_color = "#00C853" if _health.get("healthy") else "#FF4444"
+
+            _h1, _h2, _h3 = st.columns(3)
+            with _h1:
+                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;text-align:center;">
+                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">System Status</div>
+                    <div style="font-size:1.8rem;">{_health_icon}</div>
+                    <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.1rem;color:{_health_color};">{_health_label}</div>
+                </div>''', unsafe_allow_html=True)
+            with _h2:
+                _ob = _health.get("overall_brier")
+                _ob_str = f"{_ob:.4f}" if _ob else "—"
+                _ob_clr = "#00C853" if _ob and _ob < 0.23 else ("#FFB300" if _ob and _ob < 0.25 else "#FF4444")
+                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;text-align:center;">
+                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">Live Brier Score</div>
+                    <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:{_ob_clr};">{_ob_str}</div>
+                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Target &lt; 0.22</div>
+                </div>''', unsafe_allow_html=True)
+            with _h3:
+                _oa = _health.get("overall_accuracy")
+                _oa_str = f"{_oa:.1%}" if _oa else "—"
+                _oa_clr = "#00C853" if _oa and _oa >= 0.55 else ("#FFB300" if _oa and _oa >= 0.50 else "#FF4444")
+                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;text-align:center;">
+                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">Live Accuracy (90d)</div>
+                    <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:{_oa_clr};">{_oa_str}</div>
+                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Target ≥ 54.2%</div>
+                </div>''', unsafe_allow_html=True)
+
+            # Show alerts
+            _alerts = _health.get("alerts", [])
+            if _alerts:
+                for _alert in _alerts:
+                    if "CRITICAL" in _alert:
+                        st.error(_alert)
+                    elif "REGIME" in _alert:
+                        st.warning(f"⚠️ {_alert}")
+                    else:
+                        st.warning(_alert)
+            else:
+                st.caption("✅ No alerts — all metrics within normal range.")
+
+            # Per-prop breakdown
+            _bp = _health.get("by_prop", {})
+            if _bp:
+                _bp_rows = []
+                for _ptype, _pinfo in sorted(_bp.items(), key=lambda x: x[1].get("accuracy", 0)):
+                    _pacc = _pinfo.get("accuracy", 0)
+                    _pclr = "#00C853" if _pacc >= 0.55 else ("#FFB300" if _pacc >= 0.50 else "#FF4444")
+                    _pw = int(_pacc * 100)
+                    _bp_rows.append(
+                        f'<div style="display:flex;align-items:center;gap:0.8rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.78rem;">'
+                        f'<span style="min-width:180px;color:#E8ECF1;">{_ptype.replace("_"," ").title()}</span>'
+                        f'<div style="flex:1"><div class="conf-track"><div class="conf-fill" style="width:{_pw}%;background:{_pclr};border-radius:4px;height:6px;"></div></div></div>'
+                        f'<span style="font-family:JetBrains Mono;font-size:0.82rem;min-width:48px;color:{_pclr};font-weight:600">{_pacc:.1%}</span>'
+                        f'<span style="font-size:0.68rem;color:rgba(232,236,241,0.25);">{_pinfo.get("total",0)} picks</span>'
+                        f'</div>'
+                    )
+                st.markdown(
+                    f'<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:0.8rem 1rem;margin-top:0.5rem;">'
+                    f'<div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Per-Prop Health</div>'
+                    f'{"".join(_bp_rows)}</div>',
+                    unsafe_allow_html=True
+                )
+
+            if _health.get("regime_change"):
+                st.markdown(f'''<div style="background:rgba(255,68,68,0.08);border:1px solid rgba(255,68,68,0.25);border-radius:10px;padding:0.8rem 1rem;margin-top:0.6rem;">
+                    <div style="font-size:0.75rem;color:#FF4444;font-weight:600;">⚠️ Regime Change Detected</div>
+                    <div style="font-size:0.72rem;color:rgba(232,236,241,0.5);margin-top:0.3rem;">CUSUM analysis detected a statistically significant shift in model performance. Consider pausing bets and running model tuning.</div>
+                </div>''', unsafe_allow_html=True)
+        else:
+            st.caption("Need 20+ graded picks for health monitoring. Keep grading!")
+    except Exception as _he:
+        st.caption(f"Health monitoring will appear here once games are graded. ({_he})")
 
     st.markdown('<div class="section-hdr">Daily Log — Last 14 Days</div>', unsafe_allow_html=True)
     _log_rows = get_daily_log_summary(14)

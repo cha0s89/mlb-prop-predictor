@@ -528,8 +528,14 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
     if wx: proj_er *= wx.get("weather_offense_mult", 1.0)
 
     mu = max(proj_er, 0.5)
+
+    # Negative Binomial distribution parameters for earned runs
+    # MLB ER overdispersion ratio ~2.0-2.5
+    nb_n, nb_p = distributions.negbinom_params(mu, overdispersion=2.2)
+
     return {"projection": round(mu, 2), "mu": mu, "blended_rate": round(reg_rate, 2),
-            "avg_ip": round(avg_ip, 1)}
+            "avg_ip": round(avg_ip, 1),
+            "nb_n": round(nb_n, 4), "nb_p": round(nb_p, 4)}
 
 
 def project_pitcher_walks(p, park=None, ump=None):
@@ -1286,7 +1292,17 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
             p_over = distributions.prob_over_betabinom(line, n_batters, alpha, beta)
             p_under = distributions.prob_under_betabinom(line, n_batters, alpha, beta)
 
-    # If Beta-Binomial wasn't used, calculate using standard distributions
+    # ── Negative Binomial distribution for earned runs ──────────────────
+    # If proj_result contains NB parameters, use Negative Binomial for earned runs
+    if (prop_type == "earned_runs" and proj_result is not None and
+        "nb_n" in proj_result and "nb_p" in proj_result):
+        nb_n = proj_result.get("nb_n")
+        nb_p = proj_result.get("nb_p")
+        if nb_n > 0 and 0 < nb_p < 1:
+            p_over = distributions.prob_over_negbinom(line, nb_n, nb_p)
+            p_under = distributions.prob_under_negbinom(line, nb_n, nb_p)
+
+    # If Beta-Binomial or Negative Binomial wasn't used, calculate using standard distributions
     if p_over is None or p_under is None:
         # NegBin/Gamma params are tunable via weights file (autolearn can adjust)
         vr = weights.get("variance_ratios", {})
@@ -1305,7 +1321,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
         }
         poisson_props = {
             "rbis", "runs", "walks",
-            "earned_runs", "walks_allowed",
+            "walks_allowed",
             "hits_allowed", "batter_strikeouts", "singles", "doubles",
         }
         gamma_props = {
@@ -1553,6 +1569,12 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         prob_result["distribution"] = "beta_binomial"
         prob_result["bb_p_over"] = prob_result.get("p_over")
         prob_result["bb_p_under"] = prob_result.get("p_under")
+
+    # Add distribution info for earned runs if available
+    if stat_internal == "earned_runs" and "nb_n" in proj_result:
+        prob_result["distribution"] = "negative_binomial"
+        prob_result["nb_p_over"] = prob_result.get("p_over")
+        prob_result["nb_p_under"] = prob_result.get("p_under")
 
     return {
         "player_name": player_name, "stat_type": stat_type,

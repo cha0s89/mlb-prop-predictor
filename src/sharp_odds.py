@@ -58,27 +58,45 @@ PP_TO_ODDS_API = {
     "Walks": "batter_walks",
 }
 
-# Book sharpness weights for MLB props (from Pikkit research)
+# Book sharpness weights for MLB PLAYER PROPS specifically
+# Source: Bettor Odds/Pikkit study (Aug 2025) — sharpness is market-dependent!
+# These differ from main-market sharpness (where Pinnacle leads).
 BOOK_WEIGHTS = {
-    "fanduel": 1.236,       # Sharpest for MLB props by far
-    "pinnacle": 0.918,
-    "draftkings": 0.859,
+    "circa": 1.278,         # #1 for MLB props (not available on Odds API, but future-proof)
+    "fanduel": 1.182,       # #2 — when FanDuel moves first, others follow
+    "propbuilder": 1.116,   # #3
+    "pinnacle": 0.962,      # #4 — drops from #1 on mains to #4 on props
+    "draftkings": 0.910,    # #5
+    "bet365": 0.888,        # #6
     "betmgm": 0.700,
     "caesars": 0.650,
-    "bet365": 0.600,
     "bovada": 0.550,
     "betrivers": 0.500,
+    "kambi": 0.400,         # Consistently softest — Kambi-powered books are targets
     "pointsbet": 0.480,
     "unibet": 0.450,
 }
 
-# Priority order for which books to trust
+# Priority order for which books to trust for MLB props
 SHARP_BOOKS = ["fanduel", "pinnacle", "draftkings", "betmgm", "caesars"]
 
 
 def get_api_key() -> str:
-    """Get The Odds API key from env var or Streamlit secrets."""
+    """Get The Odds API key from env var, .env file, or Streamlit secrets."""
     key = os.environ.get("ODDS_API_KEY", "")
+    if not key:
+        # Try loading from .env file
+        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+        if os.path.exists(env_path):
+            try:
+                with open(env_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("ODDS_API_KEY") and "=" in line:
+                            key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                            break
+            except Exception:
+                pass
     if not key:
         try:
             import streamlit as st

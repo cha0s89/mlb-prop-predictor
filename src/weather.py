@@ -200,6 +200,82 @@ def _wind_direction_label(degrees: float) -> str:
     return dirs[idx]
 
 
+def get_stat_specific_weather_adjustment(weather: dict, stat_internal: str) -> float:
+    """Return weather multiplier specific to the stat being predicted.
+
+    Research-backed adjustments:
+    - Temperature: HR/TB/SLG most affected (+1.5% per 10°F above 72°F)
+    - Wind out: HR/TB boosted (~3-5%), Hits slightly boosted (~1%)
+    - Wind in: HR/TB suppressed (~3-5%)
+    - Rain/dome: minimal effect (games get postponed or played in dome)
+
+    Args:
+        weather (dict): Weather data with temperature, wind_speed, wind_direction, dome status
+        stat_internal (str): Internal stat name (e.g., 'home_runs', 'hits', 'pitcher_strikeouts')
+
+    Returns:
+        float: Multiplier to apply to the stat (clamped to 0.85-1.15 range)
+    """
+    if not weather:
+        return 1.0
+
+    temp = weather.get("temperature") or weather.get("temp") or weather.get("temp_f")
+    wind_speed = weather.get("wind_speed", 0) or weather.get("wind_mph", 0)
+    wind_dir = weather.get("wind_direction", "").lower() or weather.get("wind_dir", "").lower()
+    is_dome = weather.get("dome", False) or weather.get("is_dome", False)
+
+    if is_dome:
+        return 1.0  # Dome = controlled environment
+
+    mult = 1.0
+
+    # Temperature effect (baseline 72°F)
+    if temp is not None:
+        try:
+            temp = float(temp)
+            temp_delta = (temp - 72) / 10  # per 10°F above 72
+
+            # Stats most affected by temperature
+            if stat_internal in ("total_bases", "home_runs"):
+                mult *= 1.0 + temp_delta * 0.015  # 1.5% per 10°F
+            elif stat_internal in ("hits", "hits_runs_rbis", "rbis", "runs"):
+                mult *= 1.0 + temp_delta * 0.008  # 0.8% per 10°F
+            elif stat_internal in ("pitcher_strikeouts",):
+                mult *= 1.0 - temp_delta * 0.003  # Slightly fewer K's in heat (more offense)
+            elif stat_internal in ("earned_runs",):
+                mult *= 1.0 + temp_delta * 0.012  # More runs in heat
+        except (ValueError, TypeError):
+            pass
+
+    # Wind effect
+    if wind_speed and wind_speed > 5:
+        try:
+            wind_speed = float(wind_speed)
+            wind_factor = min(wind_speed / 15.0, 1.0)  # Cap at 15 mph
+
+            blowing_out = any(d in wind_dir for d in ["out", "left", "right", "center"])
+            blowing_in = "in" in wind_dir
+
+            if blowing_out:
+                if stat_internal in ("total_bases", "home_runs"):
+                    mult *= 1.0 + wind_factor * 0.05  # Up to +5%
+                elif stat_internal in ("hits", "hits_runs_rbis"):
+                    mult *= 1.0 + wind_factor * 0.015
+                elif stat_internal in ("earned_runs",):
+                    mult *= 1.0 + wind_factor * 0.03
+            elif blowing_in:
+                if stat_internal in ("total_bases", "home_runs"):
+                    mult *= 1.0 - wind_factor * 0.05  # Up to -5%
+                elif stat_internal in ("earned_runs",):
+                    mult *= 1.0 - wind_factor * 0.025
+                elif stat_internal in ("pitcher_strikeouts",):
+                    mult *= 1.0 + wind_factor * 0.01  # Slight K boost when wind suppresses offense
+        except (ValueError, TypeError):
+            pass
+
+    return round(max(0.85, min(1.15, mult)), 4)  # Cap at ±15%
+
+
 def _default_weather(stadium_name: str = "Unknown") -> dict:
     return {
         "temp_f": 72.0,
