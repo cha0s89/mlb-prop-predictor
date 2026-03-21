@@ -14,6 +14,8 @@ from typing import Optional
 import os
 import json
 from datetime import datetime
+from scipy.stats import poisson, nbinom, norm
+from scipy.optimize import brentq
 
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
@@ -79,6 +81,175 @@ BOOK_WEIGHTS = {
 
 # Priority order for which books to trust for MLB props
 SHARP_BOOKS = ["fanduel", "pinnacle", "draftkings", "betmgm", "caesars"]
+
+# ── Distribution-based repricing engine ──────────────────────────────
+# Maps Odds API market keys → distribution_params keys in current.json
+_MARKET_TO_DIST_KEY = {
+    "pitcher_strikeouts": "pitcher_strikeouts",
+    "batter_hits": "hits",
+    "batter_total_bases": "total_bases",
+    "batter_home_runs": "home_runs",
+    "batter_rbis": "hits_runs_rbis",  # closest proxy
+    "batter_runs_scored": "hits_runs_rbis",
+    "batter_stolen_bases": "stolen_bases",
+    "batter_singles": "hits",
+    "batter_doubles": "hits",
+    "batter_walks": "walks_allowed",
+    "batter_strikeouts": "batter_strikeouts",
+    "pitcher_hits_allowed": "hits_allowed",
+    "pitcher_walks": "walks_allowed",
+    "pitcher_earned_runs": "earned_runs",
+    "pitcher_outs": "pitching_outs",
+}
+
+# Load distribution params from weights once
+_DIST_PARAMS_CACHE = {}
+
+
+def _load_dist_params() -> dict:
+    """Load distribution_params from current.json (cached)."""
+    if _DIST_PARAMS_CACHE:
+        return _DIST_PARAMS_CACHE
+    try:
+        weights_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "weights", "current.json"
+        )
+        with open(weights_path) as f:
+            w = json.load(f)
+        _DIST_PARAMS_CACHE.update(w.get("distribution_params", {}))
+    except Exception:
+        pass
+    return _DIST_PARAMS_CACHE
+
+
+def _prob_over_at_line(line: float, mu: float, dist_type: str,
+                       vr: float = 1.5, phi: float = 25.0) -> float:
+    """Compute P(X >= ceil(line)) for a given mean mu and distribution type.
+
+    Args:
+        line: The threshold line value
+        mu: Distribution mean
+        dist_type: One of betabinom, negbin, poisson, normal, gamma, binary
+        vr: Variance ratio (for negbin/normal/gamma)
+        phi: Precision parameter (for betabinom)
+    """
+    threshold = int(np.ceil(line))
+    if threshold <= 0:
+        return 1.0
+    mu = max(0.01, mu)
+
+    if dist_type == "poisson":
+        return float(1 - poisson.cdf(threshold - 1, mu))
+
+    elif dist_type == "negbin":
+        variance = mu * max(1.01, vr)
+        p = mu / variance
+        n = mu * p / (1 - p)
+        n = max(0.5, n)
+        p = min(0.999, max(0.001, p))
+        return float(1 - nbinom.cdf(threshold - 1, n, p))
+
+    elif dist_type == "betabinom":
+        from scipy.stats import betabinom as bb
+        # Estimate batters faced from mu and a typical K-rate
+        k_rate = min(0.40, max(0.10, mu / 25.0))  # rough estimate
+        n_batters = max(15, int(round(mu / max(k_rate, 0.10))))
+        alpha = k_rate * phi
+        beta_param = (1 - k_rate) * phi
+        if threshold > n_batters:
+            return 0.0
+        return float(1 - bb.cdf(threshold - 1, n_batters, alpha, beta_param))
+
+    elif dist_type == "normal":
+        sigma = np.sqrt(mu * max(0.5, vr))
+        return float(1 - norm.cdf(threshold - 0.5, mu, sigma))  # continuity correction
+
+    elif dist_type == "gamma":
+        from scipy.stats import gamma as gamma_dist
+        variance = mu * max(0.5, vr)
+        shape = mu ** 2 / variance
+        scale = variance / mu
+        return float(1 - gamma_dist.cdf(threshold - 0.5, shape, scale=scale))
+
+    elif dist_type == "binary":
+        # Binary outcome (HR, etc.) — probability IS the mean
+        return min(0.99, max(0.01, mu))
+
+    else:
+        # Fallback to Poisson
+        return float(1 - poisson.cdf(threshold - 1, mu))
+
+
+def _solve_mu_from_fair_over(fair_over: float, line: float,
+                              dist_type: str, vr: float = 1.5,
+                              phi: float = 25.0) -> float:
+    """Numerically solve for the distribution mean mu such that
+    P(X >= ceil(line)) = fair_over.
+
+    Returns mu, or line as fallback if solver fails.
+    """
+    if fair_over <= 0.01 or fair_over >= 0.99:
+        return max(0.1, line)
+
+    def objective(mu):
+        return _prob_over_at_line(line, mu, dist_type, vr, phi) - fair_over
+
+    try:
+        # Search range: mu from 0.1 to 3x the line
+        lo, hi = 0.1, max(line * 3, 10.0)
+        # Ensure bracketing — P(over) decreases as mu decreases
+        f_lo = objective(hi)   # high mu → high P(over) → positive
+        f_hi = objective(lo)   # low mu → low P(over) → negative
+        if f_lo * f_hi > 0:
+            # Can't bracket — fall back to line as mu
+            return max(0.1, line)
+        mu_solved = brentq(objective, lo, hi, xtol=0.001, maxiter=50)
+        return max(0.1, mu_solved)
+    except Exception:
+        return max(0.1, line)
+
+
+def distribution_reprice(market: str, sharp_line: float, pp_line: float,
+                         fair_over: float, fair_under: float) -> tuple:
+    """Replace the heuristic `* 0.08` line-difference adjustment with
+    distribution-based repricing.
+
+    Given sharp book fair probabilities at sharp_line, compute the fair
+    probabilities at pp_line using the prop's statistical distribution.
+
+    Args:
+        market: Odds API market key (e.g. "pitcher_strikeouts")
+        sharp_line: Sharp book consensus line
+        pp_line: PrizePicks line
+        fair_over: Sharp fair P(over) at sharp_line
+        fair_under: Sharp fair P(under) at sharp_line
+
+    Returns:
+        (fair_over_at_pp, fair_under_at_pp) — adjusted probabilities
+    """
+    if pp_line == sharp_line:
+        return fair_over, fair_under
+
+    # Look up distribution type for this market
+    dist_params = _load_dist_params()
+    dist_key = _MARKET_TO_DIST_KEY.get(market, "")
+    params = dist_params.get(dist_key, {})
+    dist_type = params.get("type", "poisson")
+    vr = params.get("vr", 1.5)
+    phi = params.get("phi", 25.0)
+
+    # Step 1: solve for mu from the sharp fair_over at sharp_line
+    mu = _solve_mu_from_fair_over(fair_over, sharp_line, dist_type, vr, phi)
+
+    # Step 2: compute P(over) at pp_line using that mu
+    new_fair_over = _prob_over_at_line(pp_line, mu, dist_type, vr, phi)
+
+    # Sanity bounds
+    new_fair_over = min(0.95, max(0.05, new_fair_over))
+    new_fair_under = min(0.95, max(0.05, 1.0 - new_fair_over))
+
+    return new_fair_over, new_fair_under
 
 
 def get_api_key() -> str:
@@ -420,17 +591,20 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
                     continue
             elif pp_line < sharp_line_val:
                 # PP line is lower → MORE is easier on PP
+                # Distribution-based repricing: compute exact P(over) at PP line
+                repriced_over, repriced_under = distribution_reprice(
+                    market, sharp_line_val, pp_line, fair_over, fair_under
+                )
                 pick = "MORE"
-                edge = fair_over + (sharp_line_val - pp_line) * 0.08  # rough adjustment
-                edge = min(edge, 0.85)
-                fair_prob = edge
+                fair_prob = repriced_over
                 edge = fair_prob - pp_implied
             elif pp_line > sharp_line_val:
                 # PP line is higher → LESS is easier on PP
+                repriced_over, repriced_under = distribution_reprice(
+                    market, sharp_line_val, pp_line, fair_over, fair_under
+                )
                 pick = "LESS"
-                edge = fair_under + (pp_line - sharp_line_val) * 0.08
-                edge = min(edge, 0.85)
-                fair_prob = edge
+                fair_prob = repriced_under
                 edge = fair_prob - pp_implied
             else:
                 continue

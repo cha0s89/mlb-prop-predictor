@@ -57,6 +57,8 @@ from src.parlay_suggest import suggest_slips, score_slip_quality
 from src.drift import check_model_health, compute_crps_batch, compute_ece
 from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matrix
 from src.board_logger import log_board_snapshot, mark_as_bet
+from src.line_snapshots import snapshot_pp_lines, detect_stale_lines, get_line_movement_summary
+from src.consistency import enforce_consistency, flag_inconsistencies
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 
@@ -622,6 +624,13 @@ with tab_edge:
         try: pp_lines = fetch_prizepicks_mlb_lines()
         except: pp_lines = pd.DataFrame()
 
+    # Snapshot PP lines for CLV tracking and stale-line detection
+    if not pp_lines.empty:
+        try:
+            snapshot_pp_lines(pp_lines)
+        except Exception:
+            pass
+
     if pp_lines.empty:
         st.info("No MLB lines on PrizePicks right now. Lines usually post by 10 AM ET.")
     else:
@@ -937,6 +946,13 @@ with tab_edge:
                 p["odds_type"] = row.get("odds_type", "standard")
                 preds.append(p)
             prog.empty()
+
+            # v018: Cross-prop consistency checks (TB >= Hits, etc.)
+            if preds:
+                try:
+                    preds = enforce_consistency(preds)
+                except Exception:
+                    pass
 
             if preds:
                 # v018: Save projected stats for tracking accuracy over time
