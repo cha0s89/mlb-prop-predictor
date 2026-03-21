@@ -359,7 +359,7 @@ def compute_probabilities(line: float, mu: float, dist_type: str,
         p_under = 1.0 - p_over
 
     else:
-        # Default: Poisson
+        # Default fallback: NegBin (Poisson functions used as conservative fallback)
         p_over = prob_over_poisson(line, mu)
         p_under = prob_under_poisson(line, mu)
         p_push = prob_push_poisson(line, mu)

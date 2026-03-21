@@ -1500,13 +1500,12 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     """
     P(over) and P(under) using prop-appropriate distributions.
 
-    Distribution selection:
-      Poisson: most count props (hits, Ks, walks, runs, etc.)
-      Negative binomial: overdispersed rare events (SB)
+    Distribution selection (via distributions.compute_probabilities):
+      Negative Binomial: all count props (hits, Ks, walks, runs, SB, ER, etc.)
+      Beta-Binomial: pitcher strikeouts (bounded by batters faced)
       Gamma: continuous-ish scores (fantasy score)
       Normal: high-mean continuous props (pitching outs, H+R+RBI)
-      Beta-Binomial: pitcher strikeouts (when BB params available)
-      SPECIAL: home_runs now uses binary classification (P(1+ HR))
+      Binary: home_runs (P(1+ HR))
 
     Args:
         projection: The mean projection value
@@ -1562,7 +1561,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     dist_params = weights.get("distribution_params", {})
     vr = weights.get("variance_ratios", {})
     prop_dist = dist_params.get(prop_type, {})
-    dist_type = prop_dist.get("type", "poisson")  # Default: Poisson
+    dist_type = prop_dist.get("type", "negbin")  # Default: NegBin for all count props
 
     # Override dist_type from variance_ratios if present but not in distribution_params
     # This preserves backward compatibility with existing weights files

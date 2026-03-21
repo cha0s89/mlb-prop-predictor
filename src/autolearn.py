@@ -1040,7 +1040,7 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
             failed_keys.add(sig)
 
     # 1. Direction bias correction
-    # DISABLED for v003: Poisson CDFs make LESS-heavy direction balance
+    # DISABLED for v003: NegBin CDFs make LESS-heavy direction balance
     # correct for discrete stats.
     if False:
         dir_analysis = analysis.get("direction_bias", {})
@@ -1129,7 +1129,7 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
                     })
 
     # 4. Variance ratio adjustments (general)
-    # DISABLED for v003: Poisson/NegBin props don't use variance ratios.
+    # DISABLED for v003: NegBin props already have variance ratios baked in.
     if False:
         var_analysis = analysis.get("variance_calibration", {})
         for stat_type, info in var_analysis.get("per_prop_suggestions", {}).items():
