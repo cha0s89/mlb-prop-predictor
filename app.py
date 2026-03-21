@@ -31,6 +31,7 @@ from src.stats import fetch_batting_leaders, fetch_pitching_leaders
 from src.slips import (
     init_slips_table, create_slip, get_slips, get_slip_picks,
     get_slip_pnl, grade_slip_pick, finalize_slip, PAYOUTS, BREAKEVEN,
+    GOBLIN_PAYOUTS, DEMON_PAYOUTS, get_payout_table,
 )
 from src.autograder import auto_grade_date, auto_grade_yesterday
 from src.autolearn import run_adjustment_cycle, load_current_weights, get_weight_history
@@ -930,6 +931,9 @@ with tab_edge:
 
                 p["team"] = team
                 p["stat_internal"] = stat_int
+                # v018: Pass through PrizePicks line type (standard/promo/goblin/demon)
+                p["line_type"] = row.get("line_type", "standard")
+                p["odds_type"] = row.get("odds_type", "standard")
                 preds.append(p)
             prog.empty()
 
@@ -1125,6 +1129,8 @@ with tab_edge:
                     spring_icon = {"hot": "🔥", "cold": "❄️", "neutral": "—"}.get(pick_row.get("spring_badge", "neutral"), "—")
                     trend_icon = {"hot": "🔥", "cold": "❄️", "neutral": "—"}.get(pick_row.get("trend_badge", "neutral"), "—")
                     buy_tag = " 🎯" if pick_row.get("buy_low") else ""
+                    _lt = pick_row.get("line_type", "standard")
+                    promo_tag = " 👺" if _lt == "promo" else (" 💰" if _lt in ("discounted", "flash_sale") else "")
                     pick_cls = "more-pick" if pick_row["pick"] == "MORE" else "less-pick"
 
                     chk_col, info_col = st.columns([0.06, 0.94])
@@ -1140,7 +1146,7 @@ with tab_edge:
                         pick_card_html = f'''<div class="pick-card {pick_cls}">
                             <div class="pick-card-header">
                                 <span class="badge badge-{pick_row['rating'].lower()}">{pick_row['rating']}</span>
-                                <span class="pick-card-player">{pick_row['player_name']}</span>
+                                <span class="pick-card-player">{pick_row['player_name']}{promo_tag}</span>
                                 <span class="pick-card-team">{pick_row.get('team', '')}</span>
                                 <span class="dir-chip {"more" if pick_row["pick"]=="MORE" else "less"}">{pick_row["pick"]}</span>
                             </div>
@@ -1256,6 +1262,25 @@ with tab_edge:
                                             unsafe_allow_html=True
                                         )
 
+                                    # v018: Monte Carlo EV for suggested slip
+                                    try:
+                                        _sg_probs = [sp.get("confidence", 0.55) for sp in _sg["picks"]]
+                                        _sg_ev = quick_slip_ev(_sg_probs, entry_type=f"{_slip_size}_flex")
+                                        _sg_ev_pct = _sg_ev["ev_profit_pct"]
+                                        _sg_ev_color = "#00C853" if _sg_ev_pct > 0 else ("#FFB300" if _sg_ev_pct > -10 else "#FF4444")
+                                        _sg_ev_label = f"{_sg_ev_pct:+.1f}%"
+                                        st.markdown(
+                                            f'<div style="margin-top:0.4rem;padding:0.4rem 0.6rem;background:rgba(0,100,200,0.04);border:1px solid rgba(0,100,200,0.08);border-radius:8px;font-size:0.72rem;">'
+                                            f'<span style="color:rgba(232,236,241,0.4);">EV:</span> '
+                                            f'<span style="font-family:JetBrains Mono;font-weight:700;color:{_sg_ev_color};">{_sg_ev_label}</span>'
+                                            f' · <span style="color:rgba(232,236,241,0.4);">Perfect:</span> '
+                                            f'<span style="font-family:JetBrains Mono;font-size:0.7rem;color:rgba(232,236,241,0.5);">{_sg_ev["prob_perfect"]*100:.1f}%</span>'
+                                            f'</div>',
+                                            unsafe_allow_html=True
+                                        )
+                                    except Exception:
+                                        pass
+
                                     # Kelly sizing display
                                     _rec_wager = _sg_kelly.get("recommended_wager", 1.0)
                                     _edge = _sg_kelly.get("edge_pct", 0)
@@ -1343,6 +1368,76 @@ with tab_edge:
                             )
                         except Exception:
                             pass
+
+                    # v018: Monte Carlo EV simulation for selected slip
+                    if len(selected_picks) >= 2:
+                        try:
+                            _mc_legs = []
+                            _has_promo = False
+                            for _, _sp in slip_df.iterrows():
+                                _mc_legs.append({
+                                    "win_prob": _sp.get("confidence", 0.55),
+                                    "stat_type": _sp.get("stat_internal", _sp.get("stat_type", "")),
+                                    "line": _sp.get("line", 0.5),
+                                    "team": _sp.get("team", ""),
+                                    "pick": _sp.get("pick", "MORE"),
+                                })
+                                if _sp.get("line_type", "standard") != "standard":
+                                    _has_promo = True
+
+                            # Build correlation matrix and run full MC sim
+                            _mc_corr = build_correlation_matrix(_mc_legs)
+                            _mc_result = simulate_slip_ev(
+                                _mc_legs, entry_type=slip_type,
+                                n_sims=50_000, correlation_matrix=_mc_corr,
+                            )
+                            # Also get quick analytical EV for comparison
+                            _qa_result = quick_slip_ev(
+                                [l["win_prob"] for l in _mc_legs],
+                                entry_type=slip_type,
+                            )
+
+                            _mc_ev = _mc_result["ev_profit_pct"]
+                            _mc_color = "#00C853" if _mc_ev > 0 else ("#FFB300" if _mc_ev > -15 else "#FF4444")
+                            _mc_wr = _mc_result["win_rate"] * 100
+                            _mc_sharpe = _mc_result["sharpe_ratio"]
+
+                            st.markdown(
+                                f'<div style="margin-top:0.6rem;padding:0.7rem 1rem;background:linear-gradient(145deg,rgba(0,100,200,0.06),rgba(0,200,83,0.03));border:1px solid rgba(0,150,255,0.12);border-radius:10px;">'
+                                f'<div style="font-size:0.7rem;color:rgba(232,236,241,0.4);letter-spacing:1px;text-transform:uppercase;margin-bottom:0.4rem;">Monte Carlo EV Simulation (50K runs)</div>'
+                                f'<div style="display:flex;gap:1.5rem;flex-wrap:wrap;">'
+                                f'<div><span style="font-size:0.72rem;color:rgba(232,236,241,0.4);">EV:</span> <span style="font-family:JetBrains Mono;font-weight:700;font-size:0.9rem;color:{_mc_color};">{_mc_ev:+.1f}%</span></div>'
+                                f'<div><span style="font-size:0.72rem;color:rgba(232,236,241,0.4);">Win Rate:</span> <span style="font-family:JetBrains Mono;font-weight:600;color:#E8ECF1;">{_mc_wr:.1f}%</span></div>'
+                                f'<div><span style="font-size:0.72rem;color:rgba(232,236,241,0.4);">Sharpe:</span> <span style="font-family:JetBrains Mono;font-weight:600;color:#E8ECF1;">{_mc_sharpe:.2f}</span></div>'
+                                f'<div><span style="font-size:0.72rem;color:rgba(232,236,241,0.4);">Tie Impact:</span> <span style="font-family:JetBrains Mono;font-size:0.8rem;color:rgba(232,236,241,0.5);">{_mc_result["tie_impact"]*100:.1f}%</span></div>'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
+
+                            # Show comparison: MC (correlated) vs Analytical (independent)
+                            _qa_ev = _qa_result["ev_profit_pct"]
+                            _ev_gap = _mc_ev - _qa_ev
+                            if abs(_ev_gap) > 0.5:
+                                _gap_label = "Correlation drag" if _ev_gap < 0 else "Correlation benefit"
+                                st.markdown(
+                                    f'<div style="padding:0 1rem 0.5rem;font-size:0.7rem;color:rgba(232,236,241,0.35);">'
+                                    f'Independent EV: {_qa_ev:+.1f}% · {_gap_label}: {_ev_gap:+.1f}pp'
+                                    f'</div>',
+                                    unsafe_allow_html=True
+                                )
+
+                            st.markdown('</div>', unsafe_allow_html=True)
+
+                            # Warn on promo/goblin lines
+                            if _has_promo:
+                                st.markdown(
+                                    '<div class="warn-strip">👺 <strong>Promo/Goblin line detected</strong> — '
+                                    'actual payouts may be lower than standard. Check PrizePicks in-app for real payout rates.</div>',
+                                    unsafe_allow_html=True
+                                )
+
+                        except Exception as _mc_err:
+                            st.caption(f"EV simulation unavailable: {_mc_err}")
 
                     if st.button("Build Slip", type="primary"):
                         if len(selected_picks) == _num_needed:

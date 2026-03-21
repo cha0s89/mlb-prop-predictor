@@ -16,7 +16,7 @@ import random
 from typing import Optional
 from scipy.stats import norm
 
-from src.slips import PAYOUTS, TIE_SPECIAL
+from src.slips import PAYOUTS, TIE_SPECIAL, GOBLIN_PAYOUTS, DEMON_PAYOUTS, get_payout_table
 
 
 # ── Push probability by prop type ──
@@ -49,12 +49,14 @@ def _push_rate_for_line(stat_type: str, line: float) -> float:
 def _apply_prizepicks_rules(
     outcomes: list[str],
     entry_type: str,
+    line_type: str = "standard",
 ) -> float:
     """Apply PrizePicks grading rules to get payout multiplier.
 
     Args:
         outcomes: list of 'W', 'L', or 'T' per leg
         entry_type: e.g. '5_flex', '3_power'
+        line_type: 'standard', 'promo'/'goblin', 'demon'
 
     Returns:
         Payout multiplier (0 = loss, >0 = some return)
@@ -67,21 +69,26 @@ def _apply_prizepicks_rules(
         # All ties or empty → refund
         return 1.0
 
-    # Check special tie cases (e.g., 2-pick Power)
-    special = TIE_SPECIAL.get(entry_type, {})
-    special_key = (wins, ties)
-    if special_key in special:
-        return special[special_key]
+    # Check special tie cases (e.g., 2-pick Power) — only for standard lines
+    if line_type == "standard":
+        special = TIE_SPECIAL.get(entry_type, {})
+        special_key = (wins, ties)
+        if special_key in special:
+            return special[special_key]
 
     # Standard tie handling: revert down one level
     effective_picks = wins + losses
     is_power = "power" in entry_type
     effective_type = f"{effective_picks}_{'power' if is_power else 'flex'}"
 
+    # Get the right payout table for this line type
+    base_payouts = get_payout_table(entry_type, line_type)
+    effective_payouts = get_payout_table(effective_type, line_type) if ties > 0 else base_payouts
+
     if ties > 0:
-        payout_table = PAYOUTS.get(effective_type, PAYOUTS.get(entry_type, {}))
+        payout_table = effective_payouts if effective_payouts else base_payouts
     else:
-        payout_table = PAYOUTS.get(entry_type, {})
+        payout_table = base_payouts
 
     return payout_table.get(wins, 0)
 
@@ -92,6 +99,7 @@ def simulate_slip_ev(
     n_sims: int = 100_000,
     correlation_matrix: Optional[list] = None,
     seed: int = 42,
+    line_type: str = "standard",
 ) -> dict:
     """Monte Carlo simulation of slip expected value.
 
@@ -105,6 +113,7 @@ def simulate_slip_ev(
         n_sims: number of simulations
         correlation_matrix: optional NxN correlation matrix for legs
         seed: random seed
+        line_type: 'standard', 'promo'/'goblin', 'demon' — affects payouts
 
     Returns:
         dict with ev_profit, ev_payout, std_dev, win_rate, partial_rate,
@@ -163,7 +172,7 @@ def simulate_slip_ev(
         if has_tie:
             tie_games += 1
 
-        mult = _apply_prizepicks_rules(outcomes, entry_type)
+        mult = _apply_prizepicks_rules(outcomes, entry_type, line_type=line_type)
         payout_sum += mult
         payout_sq_sum += mult * mult
 
@@ -314,15 +323,21 @@ def _estimate_leg_correlation(leg_a: dict, leg_b: dict) -> float:
 def quick_slip_ev(
     win_probs: list[float],
     entry_type: str = "5_flex",
+    line_type: str = "standard",
 ) -> dict:
     """Fast analytical EV calculation assuming independence and no ties.
 
     Good for quick comparisons. Use simulate_slip_ev for accuracy.
+
+    Args:
+        win_probs: per-leg win probabilities
+        entry_type: e.g. '5_flex', '3_power'
+        line_type: 'standard', 'promo'/'goblin', 'demon' — affects payouts
     """
     from scipy.special import comb
 
     n = len(win_probs)
-    payout_table = PAYOUTS.get(entry_type, {})
+    payout_table = get_payout_table(entry_type, line_type)
 
     # Compute probability of exactly k wins (product over subsets)
     # For speed with independence assumption, use convolution
