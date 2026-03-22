@@ -131,6 +131,15 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
         elif flash_sale:
             line_type = "flash_sale"
 
+        # ── FILTER: Skip non-standard lines entirely ─────────────────
+        # Goblins/Demons/promos have reduced payouts that our model doesn't
+        # account for. A 92% hit rate means nothing if the payout is 0.2x.
+        # Also skip Spring Training league props — lines are unreliable.
+        if line_type != "standard":
+            continue
+        if league_id == "43":  # Spring Training league
+            continue
+
         rows.append({
             "player_name": player_info.get("name", "Unknown"),
             "player_id": player_id,
