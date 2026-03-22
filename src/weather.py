@@ -52,6 +52,20 @@ TEAM_ALIASES = {
     "WAS": "WSH", "WSH": "WSH",
 }
 
+# Team timezone mapping for Open-Meteo API
+TEAM_TIMEZONE = {
+    "LAD": "America/Los_Angeles", "LAA": "America/Los_Angeles",
+    "SF": "America/Los_Angeles", "OAK": "America/Los_Angeles",
+    "SD": "America/Los_Angeles", "SEA": "America/Los_Angeles",
+    "ARI": "America/Phoenix",
+    "COL": "America/Denver",
+    "MIN": "America/Chicago", "MIL": "America/Chicago",
+    "CHC": "America/Chicago", "CWS": "America/Chicago",
+    "STL": "America/Chicago", "KC": "America/Chicago",
+    "TEX": "America/Chicago", "HOU": "America/Chicago",
+}
+# Default to "America/New_York" for all eastern teams
+
 
 def resolve_team(abbr: str) -> str:
     """Normalize team abbreviation."""
@@ -99,6 +113,7 @@ def fetch_game_weather(team: str, game_time: datetime = None) -> dict:
         game_time = datetime.now()
 
     try:
+        tz = TEAM_TIMEZONE.get(team, "America/New_York")
         resp = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
@@ -107,7 +122,7 @@ def fetch_game_weather(team: str, game_time: datetime = None) -> dict:
                 "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation_probability",
                 "temperature_unit": "fahrenheit",
                 "wind_speed_unit": "mph",
-                "timezone": "America/New_York",
+                "timezone": tz,
                 "forecast_days": 3,
             },
             timeout=10,

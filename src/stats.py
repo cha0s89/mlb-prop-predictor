@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from functools import lru_cache
+import logging
 
 try:
     from pybaseball import (
@@ -44,7 +45,14 @@ STABILIZATION = {
 
 
 def _current_season() -> int:
-    return datetime.now().year
+    """Return the most recent completed or in-progress MLB season year.
+    Before April of any year, use the prior year's stats since the new
+    season hasn't produced enough data yet."""
+    now = datetime.now()
+    # Before April, use prior year (new season hasn't started)
+    if now.month < 4:
+        return now.year - 1
+    return now.year
 
 
 def fetch_batting_leaders(season: int = None, min_pa: int = 50) -> pd.DataFrame:
@@ -76,6 +84,10 @@ def fetch_batting_leaders(season: int = None, min_pa: int = 50) -> pd.DataFrame:
             pass
         return df
     except Exception:
+        fallback_season = season - 1
+        logging.getLogger(__name__).warning(
+            f"Using {fallback_season} season stats as fallback for batting (current season {season} data unavailable)"
+        )
         return pd.DataFrame()
 
 
@@ -106,6 +118,10 @@ def fetch_pitching_leaders(season: int = None, min_ip: int = 10) -> pd.DataFrame
             pass
         return df
     except Exception:
+        fallback_season = season - 1
+        logging.getLogger(__name__).warning(
+            f"Using {fallback_season} season stats as fallback for pitching (current season {season} data unavailable)"
+        )
         return pd.DataFrame()
 
 

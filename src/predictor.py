@@ -1098,14 +1098,12 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
     exp_pa = pa_result["mean_pa"]
 
-    # NEW APPROACH: P(1+ HR in exp_pa) = 1 - (1 - rate)^pa
-    # Clamp rate to avoid numerical issues
+    # CORRECTED APPROACH: Expected HR count = PA × HR rate
+    # The distribution layer will handle converting this into P(over/under line)
     rate_clamped = max(min(reg_hr_rate, 0.20), 0.001)
-    p_at_least_one_hr = 1.0 - ((1.0 - rate_clamped) ** exp_pa)
+    mu = exp_pa * rate_clamped
 
-    # The projection is the probability (0-1), which directly compares to line 0.5
-    mu = p_at_least_one_hr
-    return {"projection": round(mu, 3), "mu": mu, "p_1plus_hr": round(mu, 4)}
+    return {"projection": round(mu, 3), "mu": mu, "expected_count": round(mu, 4)}
 
 
 def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
@@ -1531,53 +1529,17 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     P(over) and P(under) using prop-appropriate distributions.
 
     Distribution selection (via distributions.compute_probabilities):
-      Negative Binomial: all count props (hits, Ks, walks, runs, SB, ER, etc.)
+      Negative Binomial: all count props (hits, Ks, walks, runs, SB, ER, home_runs, etc.)
       Beta-Binomial: pitcher strikeouts (bounded by batters faced)
       Gamma: continuous-ish scores (fantasy score)
       Normal: high-mean continuous props (pitching outs, H+R+RBI)
-      Binary: home_runs (P(1+ HR))
 
     Args:
         projection: The mean projection value
         line: The prop line
         prop_type: Type of prop (e.g., "pitcher_strikeouts")
         proj_result: Optional dict with projection details (e.g., BB params for strikeouts)
-
-    Home Runs special case:
-      The projection is now P(1+ HR in game) = 0 to 1.
-      Line is 0.5. So: p_over = projection, p_under = 1 - projection
     """
-    # SPECIAL CASE: Home Runs uses binary probability
-    if prop_type == "home_runs":
-        p_over = projection  # P(1+ HR)
-        p_under = 1.0 - projection  # P(0 HR)
-        total = p_over + p_under
-        if total > 0:
-            p_over /= total
-            p_under /= total
-        else:
-            p_over = 0.5
-            p_under = 0.5
-        edge = abs(p_over - 0.5)
-        pick = "MORE" if p_over > 0.5 else "LESS"
-        confidence = max(p_over, p_under)
-        if confidence >= 0.70:
-            rating = "A"
-        elif confidence >= 0.62:
-            rating = "B"
-        elif confidence >= 0.57:
-            rating = "C"
-        else:
-            rating = "D"
-        return {
-            "p_over": round(p_over, 3),
-            "p_under": round(p_under, 3),
-            "p_push": 0.0,  # HR line is 0.5 — no push possible
-            "pick": pick,
-            "confidence": round(confidence, 3),
-            "edge": round(edge, 3),
-            "rating": rating,
-        }
 
     mu = max(projection, 0.01)
 
@@ -1612,7 +1574,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
         "doubles": ("negbin", 1.6),
         "pitching_outs": ("normal", 1.3),
         "hits_runs_rbis": ("normal", 1.5),
-        "home_runs": ("binary", 1.0),
+        "home_runs": ("negbin", 2.0),
     }
     if not prop_dist and prop_type in _DIST_DEFAULTS:
         dist_type, default_vr = _DIST_DEFAULTS[prop_type]
@@ -1622,6 +1584,10 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # Get variance ratio from weights file, falling back to defaults
     var_ratio = prop_dist.get("vr", vr.get(prop_type, default_vr))
     phi = prop_dist.get("phi", 25)
+
+    # Update dist_type for home_runs: changed from "binary" to "negbin"
+    if dist_type == "binary" and prop_type == "home_runs":
+        dist_type = "negbin"
 
     # Build distribution-specific params
     bb_alpha = None

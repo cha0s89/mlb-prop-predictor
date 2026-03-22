@@ -695,7 +695,13 @@ with st.sidebar:
         st.success("Odds API key configured")
         if st.button("Check Credits", key="sb_credits"):
             _u = get_api_usage(_sb_key)
-            st.info(f"Remaining: **{_u.get('remaining','?')}** · Used: **{_u.get('used','?')}**")
+            _remaining = _u.get('remaining', 0)
+            _used = _u.get('used', 0)
+            st.info(f"Remaining: **{_remaining}** · Used: **{_used}**")
+            if isinstance(_remaining, (int, float)) and _remaining < 100:
+                st.error(f"⚠️ Only {_remaining} API credits left! Free tier (500/mo) runs out fast with daily use. Consider upgrading.")
+            elif isinstance(_remaining, (int, float)) and _remaining < 250:
+                st.warning(f"API credits getting low ({_remaining} left). ~225 credits per full day of games.")
     else:
         st.warning("No Odds API key — add `ODDS_API_KEY` to Streamlit Secrets or `.env`")
     st.number_input("Starting Bankroll ($)", min_value=10.0, value=st.session_state.get("starting_bankroll", 100.0), step=10.0, key="sb_bankroll")
@@ -1099,11 +1105,11 @@ with tab_edge:
                 )
 
                 # Props that are count-based (safe to apply multipliers to)
-                # home_runs returns a PROBABILITY (0-1), not a count — never multiply it
+                # home_runs now returns expected count — include in COUNT_PROPS for spring/trend multipliers
                 _COUNT_PROPS = {"hits", "total_bases", "rbis", "runs", "stolen_bases",
                                 "hits_runs_rbis", "batter_strikeouts", "walks", "singles", "doubles",
                                 "pitcher_strikeouts", "pitching_outs", "earned_runs",
-                                "walks_allowed", "hits_allowed", "hitter_fantasy_score"}
+                                "walks_allowed", "hits_allowed", "hitter_fantasy_score", "home_runs"}
                 _is_count_prop = stat_int in _COUNT_PROPS
 
                 # v018: Stat-specific weather adjustment (research-backed)
