@@ -378,6 +378,23 @@ PP_NEVER_SHOW: set = {
     ("hitter_fantasy_score", "MORE"),
 }
 
+# ── Minimum realistic lines per prop type ────────────────────────────────
+# Lines below these thresholds are spring training / promo artifacts.
+# A regular-season H+R+RBI line is always >= 1.5; 0.5 is a garbage line.
+MIN_REALISTIC_LINE: dict = {
+    "hits_runs_rbis":      1.0,
+    "hitter_fantasy_score": 3.0,
+    "total_bases":         0.5,   # 0.5 is legitimate for TB
+    "pitcher_strikeouts":  2.5,
+    "pitching_outs":       10.5,
+    "earned_runs":         0.5,
+    "walks_allowed":       0.5,
+    "hits_allowed":        1.5,
+}
+
+# Maximum edge cap — any edge above this is almost certainly a data artifact
+MAX_EDGE_PCT = 0.35  # 35% — real edges are 5-15%
+
 _PP_FILTERED_LABELS = {
     ("home_runs", "LESS"): "HR LESS",
     ("stolen_bases", "LESS"): "SB LESS",
@@ -1060,6 +1077,13 @@ with tab_edge:
                 if is_pitcher_prop and r_team:
                     opp_k_rate = opp_team_k_lookup.get(r_team)
 
+                # ── LINE SANITY CHECK ────────────────────────────
+                # Skip props with unrealistically low lines (spring training / promo artifacts).
+                # These create fake massive edges when real projections are compared to garbage lines.
+                _min_line = MIN_REALISTIC_LINE.get(stat_int, 0)
+                if _min_line and float(row.get("line", 0)) < _min_line:
+                    continue
+
                 p = generate_prediction(
                     player_name=row["player_name"],
                     stat_type=row["stat_type"],
@@ -1196,6 +1220,20 @@ with tab_edge:
                 # v018: Pass through PrizePicks line type (standard/promo/goblin/demon)
                 p["line_type"] = row.get("line_type", "standard")
                 p["odds_type"] = row.get("odds_type", "standard")
+
+                # ── EDGE CAP ─────────────────────────────────────
+                # Any edge above MAX_EDGE_PCT is almost certainly a data artifact
+                # (garbage line, spring training, promo line, etc.)
+                # Cap the edge and downgrade confidence accordingly.
+                _raw_edge = abs(_safe_num(p.get("edge"), 0))
+                if _raw_edge > MAX_EDGE_PCT:
+                    # Clamp confidence to reflect that we don't trust this edge
+                    p["confidence"] = min(p.get("confidence", 0.5), 0.65)
+                    if p.get("rating") == "A":
+                        p["rating"] = "B"
+                    p["edge"] = round(MAX_EDGE_PCT if p.get("edge", 0) > 0 else -MAX_EDGE_PCT, 4)
+                    p["edge_capped"] = True
+
                 preds.append(p)
             prog.empty()
 
@@ -1329,7 +1367,7 @@ with tab_edge:
                 prop_types_available = sorted(pdf["stat_type"].unique().tolist())
                 f1, f2, f3 = st.columns([3, 2, 2])
                 with f1:
-                    proj_prop_filter = st.radio("Prop Type", ["All"] + prop_types_available[:6], horizontal=True, key="proj_prop_f")
+                    proj_prop_filter = st.radio("Prop Type", ["All"] + prop_types_available, horizontal=True, key="proj_prop_f")
                 with f2:
                     proj_grade_filter = st.radio("Min Grade", ["A only", "A+B", "A+B+C", "All"], index=1, key="proj_grade_f")
                 _grade_map_radio = {"A only": ["A"], "A+B": ["A","B"], "A+B+C": ["A","B","C"], "All": ["A","B","C","D"]}

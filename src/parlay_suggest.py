@@ -249,22 +249,31 @@ def suggest_slips(
     used_combinations = set()
 
     # Generate candidate slips by trying different direction balances
-    # Target: 2-3 MORE and 2-3 LESS for a 5-pick slip
-    target_mixes = [
-        (3, 2),  # 3 MORE, 2 LESS
-        (2, 3),  # 2 MORE, 3 LESS
-        (3, 2),  # duplicate for emphasis
-    ]
+    # Build target mixes dynamically based on what's available
+    target_mixes = []
+    if slip_size == 6:
+        candidates = [(4, 2), (3, 3), (2, 4), (5, 1), (1, 5), (6, 0), (0, 6)]
+    else:
+        candidates = [(3, 2), (2, 3), (4, 1), (1, 4), (5, 0), (0, 5)]
+
+    for m, l in candidates:
+        if m <= len(more_picks) and l <= len(less_picks) and m + l == slip_size:
+            target_mixes.append((m, l))
 
     for more_count, less_count in target_mixes:
-        if more_count > len(more_picks) or less_count > len(less_picks):
-            continue
+        # Try different combinations (cap search space to avoid blowup)
+        _more_pool = min(more_count, len(more_picks))
+        _less_pool = min(less_count, len(less_picks))
+        _combo_limit = 50  # Don't evaluate more than 50 combos per mix
 
-        # Try different combinations
-        for more_combo in combinations(range(len(more_picks)), min(more_count, len(more_picks))):
-            for less_combo in combinations(range(len(less_picks)), min(less_count, len(less_picks))):
-                if len(slips) >= num_slips:
+        _combos_tried = 0
+        for more_combo in combinations(range(min(len(more_picks), 15)), _more_pool):
+            if len(slips) >= num_slips or _combos_tried > _combo_limit:
+                break
+            for less_combo in combinations(range(min(len(less_picks), 15)), _less_pool):
+                if len(slips) >= num_slips or _combos_tried > _combo_limit:
                     break
+                _combos_tried += 1
 
                 selected_more = [more_picks[i] for i in more_combo]
                 selected_less = [less_picks[j] for j in less_combo]
@@ -437,10 +446,11 @@ def _generate_fallback_slips(
             team = pick.get('team')
             stat_type = pick.get('stat_type')
 
-            # Constraint checks
+            # Constraint checks — relaxed to allow up to 3 of same type
+            # (early season may have limited prop diversity)
             if used_teams[team] >= 2:
                 continue
-            if used_types[stat_type] >= 2:
+            if used_types[stat_type] >= 3:
                 continue
 
             selected.append(pick)
