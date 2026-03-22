@@ -39,6 +39,7 @@ from src.autolearn import run_adjustment_cycle, load_current_weights
 from src.spring import (
     get_player_injury_status, get_spring_form_multiplier,
     fetch_spring_training_stats, fetch_injuries, fetch_recent_transactions,
+    fetch_mlb_news,
 )
 from src.trends import get_batter_trend
 from src.explain import build_explanation
@@ -715,7 +716,7 @@ with st.sidebar:
         st.metric("Accuracy", f"{_sb_acc:.1f}%", delta=f"{_sb_acc - 55:.1f}% vs break-even")
         st.caption(f"{_sb_stats['wins']}W – {_sb_stats['losses']}L ({_sb_stats['total']} picks)")
 
-tab_edge, tab_slips, tab_grade = st.tabs(["🎯 FIND EDGES", "🎫 MY SLIPS", "✅ GRADE"])
+tab_edge, tab_news, tab_slips, tab_grade = st.tabs(["🎯 FIND EDGES", "📰 NEWS", "🎫 MY SLIPS", "✅ GRADE"])
 
 with tab_edge:
     api_key = get_api_key()
@@ -1401,28 +1402,6 @@ with tab_edge:
                                 <div class="bp-conf">{grade_icon} {tp.get("combined_grade","?")} · {conf_pct}% conf · {sig_label}</div>
                             </div>''', unsafe_allow_html=True)
 
-                # ── News & Transactions Feed ──
-                with st.expander("📰 Recent Transactions & News", expanded=False):
-                    try:
-                        _recent_txns = fetch_recent_transactions(days_back=3)
-                        if _recent_txns:
-                            _news_html = []
-                            for _txn in _recent_txns[:20]:
-                                _txn_date = _txn.get("date", "")[:10]
-                                _news_html.append(
-                                    f'<div style="display:flex;gap:0.6rem;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.8rem;">'
-                                    f'<span style="min-width:24px">{_txn["icon"]}</span>'
-                                    f'<span style="color:rgba(232,236,241,0.4);min-width:55px;font-family:JetBrains Mono;font-size:0.72rem;">{_txn.get("team","")}</span>'
-                                    f'<span style="color:#E8ECF1;flex:1">{_txn["description"][:120]}</span>'
-                                    f'<span style="color:rgba(232,236,241,0.25);font-size:0.7rem;min-width:70px">{_txn_date}</span>'
-                                    f'</div>'
-                                )
-                            st.markdown("".join(_news_html), unsafe_allow_html=True)
-                        else:
-                            st.caption("No recent transactions found.")
-                    except Exception:
-                        st.caption("Transaction feed unavailable.")
-
                 st.markdown('<div class="section-hdr">Filter Picks</div>', unsafe_allow_html=True)
                 prop_types_available = sorted(pdf["stat_type"].unique().tolist())
                 f1, f2, f3 = st.columns([3, 2, 2])
@@ -1806,6 +1785,120 @@ with tab_edge:
                             st.rerun()
                         else:
                             st.warning(f"Select exactly {_num_needed} picks for a {slip_type}.")
+
+# ─── 📰 NEWS TAB ─────────────────────────────────────────────────────────
+with tab_news:
+    st.markdown('<div class="section-hdr">MLB News &amp; Transactions</div>', unsafe_allow_html=True)
+
+    news_col1, news_col2 = st.columns([3, 2])
+
+    # ── MLB Headlines ──
+    with news_col1:
+        st.markdown("#### Headlines")
+        try:
+            _news_items = fetch_mlb_news(max_items=12)
+        except Exception:
+            _news_items = []
+
+        if _news_items:
+            for _art in _news_items:
+                _link = _art.get("url", "")
+                _title = _art.get("title", "Untitled")
+                _snippet = _art.get("snippet", "")
+                _date = _art.get("date", "")
+                _title_html = f'<a href="{_link}" target="_blank" style="color:#4FC3F7;text-decoration:none;font-weight:600;">{_title}</a>' if _link else f'<span style="font-weight:600;">{_title}</span>'
+                st.markdown(
+                    f'<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.08);">'
+                    f'{_title_html}'
+                    f'<div style="font-size:0.82rem;color:#aaa;margin-top:3px;">{_snippet}</div>'
+                    f'<div style="font-size:0.72rem;color:#666;margin-top:2px;">{_date}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info("No MLB news available right now. Check back closer to game time.")
+
+    # ── Transactions & Injuries ──
+    with news_col2:
+        st.markdown("#### Recent Transactions")
+        _txn_days = st.selectbox("Lookback", [3, 7, 14], index=0, key="news_txn_days", label_visibility="collapsed")
+        try:
+            _txns = fetch_recent_transactions(days_back=_txn_days)
+        except Exception:
+            _txns = []
+
+        if _txns:
+            # Group by category
+            from collections import defaultdict
+            _cat_groups = defaultdict(list)
+            for _t in _txns:
+                _cat_groups[_t.get("category", "other")].append(_t)
+
+            _cat_labels = {
+                "injury": "🏥 Injury List",
+                "activation": "✅ Activations",
+                "roster": "📋 Roster Moves",
+                "trade": "🔄 Trades",
+                "signing": "✍️ Signings",
+                "release": "❌ Releases",
+                "other": "📰 Other",
+            }
+            for _cat_key in ["injury", "activation", "roster", "trade", "signing", "release", "other"]:
+                _items = _cat_groups.get(_cat_key, [])
+                if not _items:
+                    continue
+                st.markdown(f"**{_cat_labels.get(_cat_key, _cat_key)}** ({len(_items)})")
+                for _t in _items[:8]:
+                    _desc = _t.get("description", "")
+                    if len(_desc) > 120:
+                        _desc = _desc[:117] + "..."
+                    st.markdown(
+                        f'<div style="font-size:0.82rem;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+                        f'{_t.get("icon","")} <b>{_t.get("player_name","")}</b> '
+                        f'<span style="color:#888;">({_t.get("team","")})</span><br/>'
+                        f'<span style="color:#aaa;">{_desc}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                st.markdown("")
+        else:
+            st.info("No recent transactions found.")
+
+        # ── Injury Report ──
+        st.markdown("#### Injury Report")
+        try:
+            _injuries = fetch_injuries(days_back=14)
+        except Exception:
+            _injuries = []
+
+        if _injuries:
+            _active_il = [i for i in _injuries if not i.get("is_activation")]
+            _returned = [i for i in _injuries if i.get("is_activation")]
+
+            if _active_il:
+                st.markdown(f"**Currently on IL** ({len(_active_il)})")
+                for _inj in _active_il[:15]:
+                    st.markdown(
+                        f'<div style="font-size:0.82rem;padding:3px 0;">'
+                        f'🚑 <b>{_inj["player_name"]}</b> '
+                        f'<span style="color:#888;">({_inj.get("team_abbr", _inj.get("team",""))})</span> — '
+                        f'<span style="color:#FF8A80;">{_inj.get("il_type","IL")}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            if _returned:
+                st.markdown(f"**Recently Activated** ({len(_returned)})")
+                for _inj in _returned[:10]:
+                    st.markdown(
+                        f'<div style="font-size:0.82rem;padding:3px 0;">'
+                        f'✅ <b>{_inj["player_name"]}</b> '
+                        f'<span style="color:#888;">({_inj.get("team_abbr", _inj.get("team",""))})</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.info("No injury data available.")
 
 with tab_slips:
     st.markdown('<div class="section-hdr">Slip Tracker &amp; P&amp;L</div>', unsafe_allow_html=True)

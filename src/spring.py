@@ -518,6 +518,102 @@ def fetch_recent_transactions(days_back: int = 3) -> list[dict]:
     return txns
 
 
+def fetch_mlb_news(max_items: int = 15) -> list[dict]:
+    """
+    Fetch MLB news headlines from the MLB editorial API.
+    Returns list of dicts with: title, snippet, url, date, image_url
+    Falls back gracefully if the API is unavailable.
+    """
+    import xml.etree.ElementTree as ET
+
+    news_items = []
+
+    # Try MLB RSS feed first
+    try:
+        resp = requests.get(
+            "https://www.mlb.com/feeds/news/rss.xml",
+            timeout=8,
+            headers={"User-Agent": "MLB-Prop-Predictor/1.0"},
+        )
+        if resp.status_code == 200:
+            root = ET.fromstring(resp.content)
+            for item in root.findall(".//item")[:max_items]:
+                title = item.findtext("title", "")
+                desc = item.findtext("description", "")
+                link = item.findtext("link", "")
+                pub_date = item.findtext("pubDate", "")
+
+                # Clean up description — strip HTML tags for snippet
+                snippet = re.sub(r"<[^>]+>", "", desc).strip()
+                if len(snippet) > 200:
+                    snippet = snippet[:197] + "..."
+
+                # Parse date
+                date_str = ""
+                if pub_date:
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        dt = parsedate_to_datetime(pub_date)
+                        date_str = dt.strftime("%b %d, %Y %I:%M %p")
+                    except Exception:
+                        date_str = pub_date[:16]
+
+                news_items.append({
+                    "title": title,
+                    "snippet": snippet,
+                    "url": link,
+                    "date": date_str,
+                })
+            if news_items:
+                return news_items
+    except Exception as e:
+        print(f"[spring.py] RSS feed failed: {e}")
+
+    # Fallback: MLB Stats API editorial content
+    try:
+        resp = requests.get(
+            "https://statsapi.mlb.com/api/v1/news",
+            params={"sportId": 1},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            for article in data.get("articles", [])[:max_items]:
+                title = article.get("headline", article.get("title", ""))
+                snippet = article.get("subhead", article.get("blurb", ""))
+                if len(snippet) > 200:
+                    snippet = snippet[:197] + "..."
+                url = article.get("url", "")
+                if url and not url.startswith("http"):
+                    url = f"https://www.mlb.com{url}"
+                date_str = article.get("date", "")
+                if date_str and len(date_str) >= 10:
+                    try:
+                        dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+                        date_str = dt.strftime("%b %d, %Y")
+                    except Exception:
+                        pass
+                img = article.get("image", {})
+                img_url = ""
+                if isinstance(img, dict):
+                    for cut in img.get("cuts", []):
+                        if isinstance(cut, dict) and cut.get("width", 0) >= 200:
+                            img_url = cut.get("src", "")
+                            break
+
+                news_items.append({
+                    "title": title,
+                    "snippet": snippet,
+                    "url": url,
+                    "date": date_str,
+                    "image_url": img_url,
+                })
+    except Exception as e:
+        print(f"[spring.py] News API fallback failed: {e}")
+
+    return news_items
+
+
 def _parse_il_type(type_desc: str, description: str) -> str:
     """
     Extract the IL type (10-day, 15-day, 60-day) from transaction text.
