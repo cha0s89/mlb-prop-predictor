@@ -18,6 +18,9 @@ from datetime import date
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from src import predictor
 from src.predictor import (
     project_pitcher_strikeouts, project_pitcher_outs, project_pitcher_earned_runs,
@@ -500,13 +503,13 @@ def test_generate_prediction():
         if p_over < 0.4 or p_over > 0.6:
             pass  # Edge picks expected
 
-        # Check edge direction matches projection
-        if projection > line and pick != "MORE":
-            if pick != "NONE":
-                issues.append(f"Pick mismatch: proj {projection:.2f} > line {line} but pick={pick}")
-        elif projection < line and pick != "LESS":
-            if pick != "NONE":
-                issues.append(f"Pick mismatch: proj {projection:.2f} < line {line} but pick={pick}")
+        # For count distributions, mean > line does not guarantee P(over) > 50%.
+        # Validate pick against the computed probabilities, not the raw mean-line gap.
+        expected_pick = "MORE" if p_over >= p_under else "LESS"
+        if pick != expected_pick:
+            issues.append(
+                f"Pick mismatch: p_over={p_over:.3f}, p_under={p_under:.3f}, pick={pick}"
+            )
 
         status = "✓" if not issues else "✗"
         results_summary.append({
@@ -554,7 +557,7 @@ def test_comparative_analysis():
 
     # Batter comparison
     print("\n--- BATTER PROJECTIONS ---")
-    print("(Higher stat quality should project higher for all props)")
+    print("(Higher quality hitters should project better on production props and lower on strikeouts)")
     print()
 
     props = [
@@ -575,8 +578,11 @@ def test_comparative_analysis():
             projections.append(proj)
             print(f" {batter['name'][:8]:12} {proj:6.3f} |", end="")
 
-        # Check ordering
-        is_ordered = projections[0] > projections[1] > projections[2]
+        # Batter strikeouts should invert: better hitters strike out less.
+        if prop_name == "K":
+            is_ordered = projections[0] < projections[1] < projections[2]
+        else:
+            is_ordered = projections[0] > projections[1] > projections[2]
         status = "✓" if is_ordered else "✗ MISORDERED"
         print(f" {status}")
 

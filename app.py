@@ -12,6 +12,8 @@ import numpy as np
 import json
 import plotly.graph_objects as go
 from datetime import datetime, date, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from src.prizepicks import fetch_prizepicks_mlb_lines
 from src.sharp_odds import (
@@ -61,7 +63,7 @@ from src.kelly import calculate_slip_sizing
 from src.parlay_suggest import suggest_slips
 # drift module available for nightly cycle (not used in UI)
 from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matrix
-from src.board_logger import log_board_snapshot
+from src.board_logger import log_board_snapshot, mark_as_bet
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
 
@@ -92,6 +94,39 @@ def _safe_num(val, fallback=0.0):
         return fallback
 
 
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
+UTC_TZ = ZoneInfo("UTC")
+FRESHNESS_LOG_PATH = Path("data/freshness.json")
+PLAYER_SEARCH_ALL = "All current players"
+PLAYER_STATUS_LABELS = {
+    "eligible": "Model eligible",
+    "non_standard_line": "Excluded - promo/goblin/demon",
+    "spring_training": "Excluded - spring training",
+    "season_long": "Excluded - season-long/futures",
+}
+
+
+def _format_clock_pacific(dt: datetime) -> str:
+    local_dt = dt.astimezone(PACIFIC_TZ)
+    return f"{local_dt.strftime('%I:%M %p').lstrip('0')} {local_dt.tzname() or 'PT'}"
+
+
+def _format_datetime_pacific(dt: datetime) -> str:
+    local_dt = dt.astimezone(PACIFIC_TZ)
+    date_part = local_dt.strftime("%b %d").replace(" 0", " ")
+    time_part = local_dt.strftime("%I:%M %p").lstrip("0")
+    return f"{date_part} {time_part} {local_dt.tzname() or 'PT'}"
+
+
+def _current_pacific_time() -> datetime:
+    return datetime.now(PACIFIC_TZ)
+
+
+def _player_choice_label(player_name: str, team: str) -> str:
+    team = (team or "").strip()
+    return f"{player_name} ({team})" if team else player_name
+
+
 def _utc_to_pst(iso_str: str) -> str:
     """Convert an ISO-8601 UTC timestamp to a friendly PST/PDT string.
 
@@ -102,18 +137,40 @@ def _utc_to_pst(iso_str: str) -> str:
     if not iso_str:
         return ""
     try:
-        from datetime import timezone, timedelta as _td
         dt = pd.Timestamp(iso_str)
         if dt.tzinfo is None:
-            dt = dt.tz_localize("UTC")
-        # US Pacific: UTC-7 during DST (mid-Mar to early Nov), UTC-8 otherwise
-        # MLB regular season is almost entirely during DST, so use PDT (-7)
-        pst_offset = _td(hours=-7)
-        dt_pst = dt.astimezone(timezone(pst_offset))
-        suffix = "PDT"
-        return dt_pst.strftime(f"%b %-d %-I:%M %p {suffix}")
+            dt = dt.tz_localize(UTC_TZ)
+        return _format_datetime_pacific(dt.to_pydatetime())
     except Exception:
         return iso_str
+
+
+def _game_date_from_iso(iso_str: str) -> str:
+    """Resolve a game date from an ISO timestamp using Pacific calendar days."""
+    if not iso_str:
+        return date.today().isoformat()
+    try:
+        dt = pd.Timestamp(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.tz_localize(UTC_TZ)
+        return dt.tz_convert(PACIFIC_TZ).date().isoformat()
+    except Exception:
+        return date.today().isoformat()
+
+
+def _header_refresh_label() -> str:
+    try:
+        if FRESHNESS_LOG_PATH.exists():
+            log = json.loads(FRESHNESS_LOG_PATH.read_text(encoding="utf-8"))
+            latest_unix = max(
+                float(entry.get("unix"))
+                for entry in log.values()
+                if isinstance(entry, dict) and entry.get("unix") is not None
+            )
+            return _format_clock_pacific(datetime.fromtimestamp(latest_unix, tz=UTC_TZ))
+    except Exception:
+        pass
+    return _format_clock_pacific(_current_pacific_time())
 
 
 # ─────────────────────────────────────────────
@@ -121,9 +178,9 @@ def _utc_to_pst(iso_str: str) -> str:
 # ─────────────────────────────────────────────
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _cached_pp_lines():
-    """PrizePicks lines — cached 5 min."""
-    return fetch_prizepicks_mlb_lines()
+def _cached_pp_lines(include_all: bool = False):
+    """PrizePicks lines - cached 5 min."""
+    return fetch_prizepicks_mlb_lines(include_all=include_all)
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _cached_todays_games(game_dates: tuple = None):
@@ -406,6 +463,78 @@ def _sync_pick_metrics(pred: dict) -> None:
     pred["edge"] = round(abs(conf - 0.50), 4)
     pred["win_prob"] = round(conf * max(0.0, 1.0 - push_p), 4)
     pred["rating"] = _confidence_rating(conf)
+
+
+def _derive_top_plays(scored_all: list[dict], pdf: pd.DataFrame) -> list[dict]:
+    trivial_less_props = {"stolen_bases", "home_runs"}
+
+    def _is_trivial(pick: dict) -> bool:
+        return (
+            pick.get("pick") == "LESS"
+            and float(pick.get("line", 99)) <= 0.5
+            and pick.get("stat_type", "").lower().replace(" ", "_") in trivial_less_props
+        )
+
+    if scored_all:
+        top_plays = [
+            s for s in scored_all
+            if s["combined_grade"] in ("A+", "A")
+            and is_tradeable_pick(s.get("stat_internal", s.get("stat_type", "")), s.get("pick", ""))
+            and not _is_trivial(s)
+        ][:5]
+    else:
+        top_plays = []
+
+    if not top_plays and not pdf.empty:
+        tradeable_best = pdf[
+            pdf.apply(lambda r: is_tradeable_pick(r.get("stat_internal", ""), r.get("pick", "")), axis=1)
+        ].sort_values(["confidence", "edge"], ascending=False)
+        for _, tp in tradeable_best.head(5).iterrows():
+            top_plays.append({
+                "player_name": tp["player_name"],
+                "stat_type": tp["stat_type"],
+                "line": tp["line"],
+                "pick": tp["pick"],
+                "combined_score": tp.get("edge", 0),
+                "combined_grade": tp.get("rating", "B"),
+                "signal": SIGNAL_PROJECTION_ONLY,
+                "proj_confidence": tp.get("confidence", 0.5),
+            })
+            if len(top_plays) >= 5:
+                break
+
+    return top_plays
+
+
+def _render_top_plays(top_plays: list[dict]) -> None:
+    if not top_plays:
+        return
+
+    st.markdown('<div class="section-hdr">Today\'s Best Plays</div>', unsafe_allow_html=True)
+    grade_icons = {"A+": "A+", "A": "A", "B": "B", "C": "C", "D": "D"}
+    signal_labels = {
+        SIGNAL_CONFIRMED: "CONFIRMED",
+        SIGNAL_SHARP_ONLY: "SHARP",
+        SIGNAL_PROJECTION_ONLY: "PROJECTION",
+    }
+    bp_cols = st.columns(min(len(top_plays), 5))
+    for idx, tp in enumerate(top_plays[:5]):
+        pick_cls = "more" if tp["pick"] == "MORE" else "less"
+        grade_icon = grade_icons.get(tp.get("combined_grade", ""), "")
+        conf_val = _safe_num(tp.get("proj_confidence"), 0)
+        conf_pct = int(conf_val * 100)
+        conf_cls = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
+        sig_label = signal_labels.get(tp.get("signal", ""), "PROJECTION")
+        line_val = _safe_num(tp.get("line"), 0.0)
+        line_text = f"{line_val:g}" if isinstance(line_val, (int, float)) else str(tp.get("line", ""))
+        with bp_cols[idx]:
+            st.markdown(f'''<div class="best-play">
+                <div class="bp-name">{tp["player_name"]}</div>
+                <div class="bp-prop">{tp["stat_type"]} - Line {line_text}</div>
+                <div class="bp-pick {pick_cls}">{tp["pick"]}</div>
+                <div class="conf-track"><div class="conf-fill {conf_cls}" style="width:{min(conf_pct,100)}%"></div></div>
+                <div class="bp-conf">{grade_icon} {tp.get("combined_grade","?")} - {conf_pct}% conf - {sig_label}</div>
+            </div>''', unsafe_allow_html=True)
 
 
 # ── PrizePicks tradeable prop configurations ──────────────────────────────────
@@ -719,7 +848,7 @@ try:
     _model_ver = _wts.get("version", "v1") if isinstance(_wts, dict) else "v1"
 except Exception:
     _model_ver = "v1"
-_freshness_str = datetime.now().strftime("%I:%M %p").lstrip("0")
+_freshness_str = _header_refresh_label()
 
 st.markdown(f"""<div class="hero-wrapper">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
@@ -823,8 +952,18 @@ with tab_edge:
         st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{_creds_str}</span> credits remaining &nbsp;·&nbsp; {_age_msg} &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
 
     with st.spinner("Pulling PrizePicks MLB lines..."):
-        try: pp_lines = _cached_pp_lines()
-        except: pp_lines = pd.DataFrame()
+        try:
+            all_pp_lines = _cached_pp_lines(include_all=True)
+        except Exception:
+            all_pp_lines = pd.DataFrame()
+    if not all_pp_lines.empty and "model_eligible" in all_pp_lines.columns:
+        pp_lines = all_pp_lines[all_pp_lines["model_eligible"] == True].copy()
+    else:
+        pp_lines = all_pp_lines.copy()
+
+    selected_player_label = PLAYER_SEARCH_ALL
+    selected_player_name = None
+    selected_player_team = None
 
     # Snapshot PP lines for CLV tracking and stale-line detection
     if not pp_lines.empty:
@@ -837,6 +976,30 @@ with tab_edge:
         st.info("No MLB lines on PrizePicks right now. Lines usually post by 10 AM ET.")
     else:
         st.markdown(f"**{len(pp_lines)} MLB props** on PrizePicks today")
+        if not all_pp_lines.empty:
+            player_rows = (
+                all_pp_lines[["player_name", "team"]]
+                .dropna(subset=["player_name"])
+                .drop_duplicates()
+                .sort_values(["player_name", "team"])
+            )
+            player_rows = player_rows[player_rows["player_name"].astype(str).str.strip() != ""]
+            player_lookup = {
+                _player_choice_label(row["player_name"], row.get("team", "")): (
+                    row["player_name"],
+                    row.get("team", ""),
+                )
+                for _, row in player_rows.iterrows()
+            }
+            selected_player_label = st.selectbox(
+                "Find player props",
+                [PLAYER_SEARCH_ALL] + list(player_lookup.keys()),
+                index=0,
+                help="Type a player name to see every current PrizePicks prop for that player, including lines excluded from the model board.",
+                key="player_prop_search",
+            )
+            if selected_player_label != PLAYER_SEARCH_ALL:
+                selected_player_name, selected_player_team = player_lookup[selected_player_label]
         all_edges = []
         if has_sharp and not _is_preseason:
             total_sharp_lines = 0
@@ -943,7 +1106,11 @@ with tab_edge:
 
                 st.markdown("---")
                 if st.button("Save Edges", type="primary"):
-                    log_batch_predictions(filt, date.today().isoformat())
+                    rows_to_save = [
+                        {**edge, "game_date": _game_date_from_iso(edge.get("start_time", ""))}
+                        for edge in filt
+                    ]
+                    log_batch_predictions(rows_to_save)
                     st.success(f"Saved {len(filt)} predictions!")
             else: st.info("No edges match filters.")
         elif has_sharp and not _is_preseason:
@@ -1030,12 +1197,17 @@ with tab_edge:
             # Pre-build opposing pitcher lookup: team_abbr → {pitcher_name, hand, profile}
             # For batter props, "opposing pitcher" is the pitcher the batter faces
             # For pitcher props, "opposing lineup" stats come from the other team's batting
-            opp_pitcher_lookup = {}  # team_abbr → dict with pitcher info + FanGraphs profile
-            opp_team_k_lookup = {}   # team_abbr → team K% for pitcher K projections
+            opp_pitcher_lookup = {}  # team_abbr -> dict with pitcher info + FanGraphs profile
+            team_pitcher_lookup = {}  # team_abbr -> own probable starting pitcher
+            opp_team_k_lookup = {}   # team_abbr -> team K% for pitcher K projections
             try:
                 for game in todays_games:
                     home_team = game.get("home_team", "")
                     away_team = game.get("away_team", "")
+                    if home_team and game.get("home_pitcher_name") != "TBD":
+                        team_pitcher_lookup[home_team] = game.get("home_pitcher_name", "")
+                    if away_team and game.get("away_pitcher_name") != "TBD":
+                        team_pitcher_lookup[away_team] = game.get("away_pitcher_name", "")
                     # Home batters face the AWAY pitcher
                     if away_team and game.get("away_pitcher_name") != "TBD":
                         opp_info = {
@@ -1207,6 +1379,8 @@ with tab_edge:
                     ump=ump_adj,
                     lineup_pos=batting_pos,
                 )
+                p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
+                p["game_time_utc"] = row.get("start_time", "")
 
                 # Props that are count-based (safe to apply multipliers to)
                 # home_runs now returns expected count — include in COUNT_PROPS for spring/trend multipliers
@@ -1325,8 +1499,14 @@ with tab_edge:
                 # v018: Game context from pre-built cache (no API call)
                 if r_team and r_team in game_context_cache:
                     gctx = game_context_cache[r_team]
+                    raw_game_time = gctx.get("game_time", "")
                     p["opponent"] = gctx.get("opponent", "")
-                    p["game_time"] = _utc_to_pst(gctx.get("game_time", ""))
+                    p["game_time"] = _utc_to_pst(raw_game_time)
+                    p["game_time_utc"] = raw_game_time
+                    p["game_date"] = _game_date_from_iso(raw_game_time)
+                    p["game_pk"] = gctx.get("game_pk")
+                    p["is_home"] = gctx.get("is_home", False)
+                    p["team_pitcher"] = team_pitcher_lookup.get(r_team, "")
                     # Opposing pitcher name from the pre-built lookup
                     if r_team in opp_pitcher_lookup:
                         p["opp_pitcher"] = opp_pitcher_lookup[r_team].get("name", "")
@@ -1378,7 +1558,7 @@ with tab_edge:
                 # v018: Save projected stats for tracking accuracy over time
                 try:
                     stats_to_save = [{
-                        "game_date": date.today().isoformat(),
+                        "game_date": p.get("game_date", date.today().isoformat()),
                         "player_name": p["player_name"],
                         "team": p.get("team", ""),
                         "stat_type": p.get("stat_internal", ""),
@@ -1417,10 +1597,64 @@ with tab_edge:
                 elif not all_edges:
                     st.markdown('<div class="warn-strip"><strong>No sharp lines</strong> — showing projection-only analysis. Add Odds API key for full edge detection.</div>', unsafe_allow_html=True)
 
+                top_plays = _derive_top_plays(scored_all, pdf)
+                _render_top_plays(top_plays)
+
+                if selected_player_name:
+                    raw_mask = all_pp_lines["player_name"].eq(selected_player_name)
+                    if selected_player_team:
+                        raw_mask &= all_pp_lines["team"].fillna("").eq(selected_player_team)
+                    player_raw = all_pp_lines.loc[raw_mask].copy()
+
+                    model_mask = pdf["player_name"].eq(selected_player_name)
+                    if selected_player_team:
+                        model_mask &= pdf["team"].fillna("").eq(selected_player_team)
+                    player_model = pdf.loc[model_mask].copy()
+
+                    st.markdown(f'<div class="section-hdr">Player Search - {selected_player_label}</div>', unsafe_allow_html=True)
+                    if not player_raw.empty:
+                        raw_disp = player_raw[[
+                            "stat_type", "line", "odds_type", "league",
+                            "start_time", "eligibility_reason",
+                        ]].copy()
+                        raw_disp["start_time"] = raw_disp["start_time"].apply(
+                            lambda x: _utc_to_pst(x) if pd.notna(x) and str(x) else "-"
+                        )
+                        raw_disp["odds_type"] = raw_disp["odds_type"].fillna("standard").astype(str).str.replace("_", " ").str.title()
+                        raw_disp["eligibility_reason"] = raw_disp["eligibility_reason"].map(PLAYER_STATUS_LABELS).fillna("Excluded")
+                        raw_disp.columns = ["Prop", "Line", "Odds Type", "League", "Start", "Model Status"]
+                        st.dataframe(raw_disp, hide_index=True, width="stretch")
+                    if not player_model.empty:
+                        model_disp = player_model[[
+                            "stat_type", "line", "projection", "pick", "confidence", "rating"
+                        ]].copy()
+                        model_disp["projection"] = model_disp["projection"].apply(lambda x: round(_safe_num(x, 0.0), 2))
+                        model_disp["confidence"] = model_disp["confidence"].apply(lambda x: f"{_safe_num(x, 0.0) * 100:.1f}%")
+                        model_disp.columns = ["Projected Prop", "Line", "Projection", "Pick", "Confidence", "Grade"]
+                        st.caption("Model-eligible game props for this player")
+                        st.dataframe(model_disp, hide_index=True, width="stretch")
+                    else:
+                        st.info(
+                            f"{selected_player_label} has no model-eligible standard game props on the current board. "
+                            "If you still see rows above, they are season-long or non-standard PrizePicks lines."
+                        )
+
                 # ── GAME SCORE DIAGNOSTIC ────────────────────────
                 # Aggregate per-team projected runs and hits for sanity check.
                 # Sources: standalone runs/hits props + HRR combo breakdowns.
-                with st.expander("📊 Game Score Projections (diagnostic)", expanded=False):
+                with st.expander("Game Score Projections", expanded=False):
+                    def _estimate_team_runs(team_bucket):
+                        if not team_bucket.get("runs"):
+                            return None
+                        avg_runs = sum(team_bucket["runs"]) / len(team_bucket["runs"])
+                        return round(avg_runs * 9, 1)
+
+                    def _estimate_team_hits(team_bucket):
+                        if not team_bucket.get("hits"):
+                            return None
+                        avg_hits = sum(team_bucket["hits"]) / len(team_bucket["hits"])
+                        return round(avg_hits * 9, 1)
+
                     _game_scores = {}
                     for p in preds:
                         _team = p.get("team", "")
@@ -1431,122 +1665,161 @@ with tab_edge:
                         if _team not in _game_scores:
                             _r_team = resolve_team(_team) if _team else None
                             _pf = PARK_FACTORS.get(_r_team, 100) if _r_team else 100
-                            _game_scores[_team] = {"runs": [], "hits": [], "hr_proj": [],
-                                                   "players": set(),
-                                                   "opponent": _safe(p.get("opponent"), ""),
-                                                   "opp_pitcher": _safe(p.get("opp_pitcher"), ""),
-                                                   "game_time": _safe(p.get("game_time"), ""),
-                                                   "park_factor": _pf}
-                        _game_scores[_team]["players"].add(p.get("player_name", ""))
+                            _game_scores[_team] = {
+                                "runs": [],
+                                "hits": [],
+                                "hr_proj": [],
+                                "players": set(),
+                                "opponent": _safe(p.get("opponent"), ""),
+                                "opp_pitcher": _safe(p.get("opp_pitcher"), ""),
+                                "team_pitcher": _safe(p.get("team_pitcher"), ""),
+                                "game_time": _safe(p.get("game_time"), ""),
+                                "park_factor": _pf,
+                                "game_pk": p.get("game_pk"),
+                                "is_home": bool(p.get("is_home", False)),
+                            }
+                        _bucket = _game_scores[_team]
+                        _bucket["players"].add(p.get("player_name", ""))
+                        if not _bucket.get("opponent"):
+                            _bucket["opponent"] = _safe(p.get("opponent"), "")
+                        if not _bucket.get("opp_pitcher"):
+                            _bucket["opp_pitcher"] = _safe(p.get("opp_pitcher"), "")
+                        if not _bucket.get("team_pitcher"):
+                            _bucket["team_pitcher"] = _safe(p.get("team_pitcher"), "")
+                        if not _bucket.get("game_time"):
+                            _bucket["game_time"] = _safe(p.get("game_time"), "")
+                        if not _bucket.get("game_pk") and p.get("game_pk"):
+                            _bucket["game_pk"] = p.get("game_pk")
+                        if p.get("is_home"):
+                            _bucket["is_home"] = True
+
                         if _stat == "runs":
-                            _game_scores[_team]["runs"].append(_proj)
+                            _bucket["runs"].append(_proj)
                         elif _stat == "hits":
-                            _game_scores[_team]["hits"].append(_proj)
+                            _bucket["hits"].append(_proj)
                         elif _stat == "home_runs":
-                            _game_scores[_team]["hr_proj"].append(_proj)
+                            _bucket["hr_proj"].append(_proj)
                         elif _stat == "hits_runs_rbis":
-                            # Extract component breakdowns from HRR combo
-                            # (hits_proj/runs_proj are top-level keys from generate_prediction)
                             _h = _safe_num(p.get("hits_proj"), 0)
                             _r = _safe_num(p.get("runs_proj"), 0)
                             if _h > 0:
-                                _game_scores[_team]["hits"].append(_h)
+                                _bucket["hits"].append(_h)
                             if _r > 0:
-                                _game_scores[_team]["runs"].append(_r)
+                                _bucket["runs"].append(_r)
 
                     if _game_scores:
-                        _gs_rows = []
+                        _team_rows = []
+                        _matchup_buckets = {}
                         for _tm, _gs in sorted(_game_scores.items()):
-                            _avg_runs = sum(_gs["runs"]) / len(_gs["runs"]) if _gs["runs"] else 0
-                            _avg_hits = sum(_gs["hits"]) / len(_gs["hits"]) if _gs["hits"] else 0
-                            _avg_hr = sum(_gs["hr_proj"]) / len(_gs["hr_proj"]) if _gs["hr_proj"] else 0
+                            _est_team_runs = _estimate_team_runs(_gs)
+                            _est_team_hits = _estimate_team_hits(_gs)
+                            _avg_hr = sum(_gs["hr_proj"]) / len(_gs["hr_proj"]) if _gs["hr_proj"] else None
                             _n_players = len(_gs["players"] - {""})
-                            _n_run_sources = len(_gs["runs"])
-                            _n_hit_sources = len(_gs["hits"])
-                            # Estimate team total: avg per player × lineup (9)
-                            _est_team_runs = round(_avg_runs * 9, 1) if _gs["runs"] else 0
-                            _est_team_hits = round(_avg_hits * 9, 1) if _gs["hits"] else 0
                             _pf_val = _gs.get("park_factor", 100)
                             _pf_str = f"{_pf_val}" if _pf_val != 100 else "100"
-                            _gs_rows.append({
+                            _team_rows.append({
                                 "Team": _tm,
-                                "vs": _gs["opponent"],
-                                "Opp SP": _gs["opp_pitcher"],
-                                "Game": _gs.get("game_time", ""),
+                                "Facing": _gs.get("opponent", ""),
+                                "Opp SP Faced": _gs.get("opp_pitcher", "") or "-",
+                                "Own SP": _gs.get("team_pitcher", "") or "-",
+                                "Game": _gs.get("game_time", "") or "-",
                                 "Park": _pf_str,
                                 "Est Runs": _est_team_runs,
                                 "Est Hits": _est_team_hits,
-                                "Avg HR Proj": f"{_avg_hr:.2f}" if _gs["hr_proj"] else "—",
-                                "# Players": _n_players if _n_players else "—",
+                                "Avg HR Proj": _avg_hr,
+                                "# Players": _n_players if _n_players else None,
                             })
-                        if _gs_rows:
-                            _gs_df = pd.DataFrame(_gs_rows)
-                            st.dataframe(_gs_df, hide_index=True, width="stretch")
-                            # Variance check
-                            _run_vals = [r["Est Runs"] for r in _gs_rows if r["Est Runs"] > 0]
-                            if len(_run_vals) >= 4:
-                                _run_std = (sum((x - sum(_run_vals)/len(_run_vals))**2 for x in _run_vals) / len(_run_vals)) ** 0.5
-                                _run_mean = sum(_run_vals) / len(_run_vals)
-                                if _run_std < 0.5:
-                                    st.warning(f"⚠️ Low variance: all teams project {_run_mean:.1f} ± {_run_std:.1f} runs. Model may not be differentiating matchups well.")
+
+                            _opp = _gs.get("opponent", "")
+                            _game_key = _gs.get("game_pk") or f"{'/'.join(sorted([_tm, _opp]))}|{_gs.get('game_time', '')}"
+                            _matchup_buckets.setdefault(_game_key, []).append({
+                                "team": _tm,
+                                "opponent": _opp,
+                                "team_pitcher": _gs.get("team_pitcher", "") or "-",
+                                "game_time": _gs.get("game_time", "") or "-",
+                                "is_home": bool(_gs.get("is_home", False)),
+                                "est_runs": _est_team_runs,
+                            })
+
+                        _matchup_rows = []
+                        for _entries in _matchup_buckets.values():
+                            if len(_entries) < 2:
+                                continue
+                            _away = next((item for item in _entries if not item.get("is_home")), None)
+                            _home = next((item for item in _entries if item.get("is_home")), None)
+                            if _away is None or _home is None:
+                                _sorted_entries = sorted(_entries, key=lambda item: item["team"])
+                                _away = _away or _sorted_entries[0]
+                                _home = _home or _sorted_entries[-1]
+                                if _away["team"] == _home["team"] and len(_sorted_entries) > 1:
+                                    _home = _sorted_entries[1]
+                            if _away["team"] == _home["team"]:
+                                continue
+
+                            _away_runs = _away.get("est_runs")
+                            _home_runs = _home.get("est_runs")
+                            _score_text = "-"
+                            _winner = "-"
+                            _margin = "-"
+                            if isinstance(_away_runs, (int, float)) and isinstance(_home_runs, (int, float)):
+                                _score_text = f"{_away['team']} {int(round(_away_runs))} - {int(round(_home_runs))} {_home['team']}"
+                                if _away_runs > _home_runs + 0.05:
+                                    _winner = _away["team"]
+                                elif _home_runs > _away_runs + 0.05:
+                                    _winner = _home["team"]
                                 else:
-                                    st.caption(f"Run spread: {min(_run_vals):.1f} – {max(_run_vals):.1f} (σ={_run_std:.1f}). {'Good differentiation.' if _run_std > 1.0 else 'Moderate differentiation.'}")
+                                    _winner = "Toss-up"
+                                _margin = f"{abs(_away_runs - _home_runs):.1f}"
+
+                            _matchup_rows.append({
+                                "Game": f"{_away['team']} at {_home['team']}",
+                                "Start": _home.get("game_time") or _away.get("game_time") or "-",
+                                "Away SP": _away.get("team_pitcher", "-") or "-",
+                                "Home SP": _home.get("team_pitcher", "-") or "-",
+                                "Projected Score": _score_text,
+                                "Projected Winner": _winner,
+                                "Margin": _margin,
+                            })
+
+                        if _matchup_rows:
+                            _matchup_df = pd.DataFrame(_matchup_rows).sort_values(["Start", "Game"])
+                            st.caption("Projected winner uses the decimal team-run estimates; displayed scores are rounded to whole runs for readability.")
+                            st.dataframe(_matchup_df, hide_index=True, width="stretch")
+                        else:
+                            st.caption("Projected score rows need both teams in a game to have enough source props on the current board.")
+
+                        st.caption("Team offense view: 'Opp SP Faced' is the opposing starter that team's hitters are facing. The earlier Paul Skenes example for NYM was labeled ambiguously, not reversed.")
+                        _team_df = pd.DataFrame(_team_rows)
+                        _team_display = _team_df.copy()
+                        for _col in ("Est Runs", "Est Hits"):
+                            _team_display[_col] = _team_display[_col].apply(
+                                lambda x: f"{x:.1f}" if isinstance(x, (int, float)) else "-"
+                            )
+                        _team_display["Avg HR Proj"] = _team_display["Avg HR Proj"].apply(
+                            lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else "-"
+                        )
+                        _team_display["# Players"] = _team_display["# Players"].apply(
+                            lambda x: str(int(x)) if isinstance(x, (int, float)) else "-"
+                        )
+                        st.dataframe(_team_display, hide_index=True, width="stretch")
+                        st.caption("- means the current slate has no matching run/hit source props for that team, not a literal zero projection.")
+
+                        _run_vals = [
+                            row["Est Runs"] for row in _team_rows
+                            if isinstance(row["Est Runs"], (int, float)) and row["Est Runs"] > 0
+                        ]
+                        if len(_run_vals) >= 4:
+                            _run_mean = sum(_run_vals) / len(_run_vals)
+                            _run_std = (sum((x - _run_mean) ** 2 for x in _run_vals) / len(_run_vals)) ** 0.5
+                            if _run_std < 0.5:
+                                st.warning(f"Low variance: all teams project {_run_mean:.1f} +/- {_run_std:.1f} runs. Model may not be differentiating matchups well.")
+                            else:
+                                st.caption(
+                                    f"Run spread: {min(_run_vals):.1f} - {max(_run_vals):.1f} (sd={_run_std:.1f}). "
+                                    f"{'Good differentiation.' if _run_std > 1.0 else 'Moderate differentiation.'}"
+                                )
                     else:
                         st.caption("No per-team projections available yet.")
-
-                _TRIVIAL_LESS_PROPS = {"stolen_bases", "home_runs"}
-                def _is_trivial(pick: dict) -> bool:
-                    return (
-                        pick.get("pick") == "LESS"
-                        and float(pick.get("line", 99)) <= 0.5
-                        and pick.get("stat_type", "").lower().replace(" ", "_") in _TRIVIAL_LESS_PROPS
-                    )
-
-                if scored_all:
-                    top_plays = [s for s in scored_all
-                                 if s["combined_grade"] in ("A+", "A")
-                                 and is_tradeable_pick(s.get("stat_internal", s.get("stat_type", "")), s.get("pick", ""))
-                                 and not _is_trivial(s)][:5]
-                else:
-                    top_plays = []
-                if not top_plays:
-                    tradeable_a = pdf[(pdf["rating"] == "A") & pdf.apply(
-                        lambda r: is_tradeable_pick(r.get("stat_internal", ""), r.get("pick", "")), axis=1
-                    )]
-                    for _, tp in tradeable_a.head(5).iterrows():
-                        top_plays.append({
-                            "player_name": tp["player_name"],
-                            "stat_type": tp["stat_type"],
-                            "line": tp["line"],
-                            "pick": tp["pick"],
-                            "combined_score": tp.get("edge", 0),
-                            "combined_grade": "A",
-                            "signal": SIGNAL_PROJECTION_ONLY,
-                            "proj_confidence": tp.get("confidence", 0.5),
-                        })
-                        if len(top_plays) >= 5:
-                            break
-
-                if top_plays:
-                    st.markdown('<div class="section-hdr">Today\'s Best Plays</div>', unsafe_allow_html=True)
-                    _bp_grade_emoji = {"A+": "💎", "A": "⬆", "B": "▲", "C": "◆", "D": "▽"}
-                    _bp_signal_labels = {SIGNAL_CONFIRMED: ("confirmed", "CONFIRMED"), SIGNAL_SHARP_ONLY: ("sharp", "SHARP"), SIGNAL_PROJECTION_ONLY: ("proj", "PROJECTION")}
-                    bp_cols = st.columns(min(len(top_plays), 5))
-                    for idx, tp in enumerate(top_plays[:5]):
-                        pick_cls = "more" if tp["pick"] == "MORE" else "less"
-                        sig_key, sig_label = _bp_signal_labels.get(tp.get("signal", ""), ("proj", ""))
-                        grade_icon = _bp_grade_emoji.get(tp.get("combined_grade", ""), "")
-                        conf_val = _safe_num(tp.get("proj_confidence"), 0)
-                        conf_pct = int(conf_val * 100)
-                        conf_cls = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
-                        with bp_cols[idx]:
-                            st.markdown(f'''<div class="best-play">
-                                <div class="bp-name">{tp["player_name"]}</div>
-                                <div class="bp-prop">{tp["stat_type"]} · Line {tp["line"]}</div>
-                                <div class="bp-pick {pick_cls}">{tp["pick"]}</div>
-                                <div class="conf-track"><div class="conf-fill {conf_cls}" style="width:{min(conf_pct,100)}%"></div></div>
-                                <div class="bp-conf">{grade_icon} {tp.get("combined_grade","?")} · {conf_pct}% conf · {sig_label}</div>
-                            </div>''', unsafe_allow_html=True)
 
                 st.markdown('<div class="section-hdr">Filter Picks</div>', unsafe_allow_html=True)
                 prop_types_available = sorted(pdf["stat_type"].unique().tolist())
@@ -1936,8 +2209,27 @@ with tab_edge:
 
                     if st.button("Build Slip", type="primary"):
                         if len(selected_picks) == _num_needed:
-                            picks_for_slip = [{"player_name":p['player_name'],"stat_type":p['stat_type'],"line":p['line'],"pick":p['pick']} for _,p in slip_df.iterrows()]
-                            slip_id = create_slip(date.today().isoformat(), slip_type, slip_amt, picks_for_slip)
+                            picks_for_slip = []
+                            slip_game_dates = []
+                            for _, pick_row in slip_df.iterrows():
+                                pick_date = pick_row.get("game_date", date.today().isoformat())
+                                slip_game_dates.append(pick_date)
+                                prediction_payload = pick_row.to_dict()
+                                prediction_id = log_prediction(prediction_payload, game_date=pick_date)
+                                picks_for_slip.append({
+                                    "prediction_id": prediction_id,
+                                    "player_name": pick_row["player_name"],
+                                    "stat_type": pick_row["stat_type"],
+                                    "line": pick_row["line"],
+                                    "pick": pick_row["pick"],
+                                })
+                                mark_as_bet(
+                                    pick_row["player_name"],
+                                    pick_row.get("stat_internal", pick_row["stat_type"]),
+                                    pick_date,
+                                )
+                            slip_game_date = max(slip_game_dates) if slip_game_dates else date.today().isoformat()
+                            slip_id = create_slip(slip_game_date, slip_type, slip_amt, picks_for_slip)
                             st.success(f"Slip #{slip_id} created!")
                             st.rerun()
                         else:

@@ -11,6 +11,7 @@ from pathlib import Path
 
 
 DB_PATH = Path("data/predictions.db")
+PACIFIC_TZ_NAME = "America/Los_Angeles"
 
 
 def get_connection():
@@ -18,6 +19,31 @@ def get_connection():
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def resolve_game_date(pred: dict = None, game_date: str = None) -> str:
+    """Resolve the best available game date for a prediction payload."""
+    if game_date:
+        return str(game_date)
+
+    pred = pred or {}
+    explicit = pred.get("game_date")
+    if explicit:
+        return str(explicit)
+
+    for key in ("game_time_utc", "start_time", "game_time"):
+        raw_value = pred.get(key)
+        if not raw_value:
+            continue
+        try:
+            ts = pd.Timestamp(raw_value)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize("UTC")
+            return ts.tz_convert(PACIFIC_TZ_NAME).date().isoformat()
+        except Exception:
+            continue
+
+    return date.today().isoformat()
 
 
 def init_db():
@@ -132,16 +158,16 @@ def init_clv_table():
 def log_prediction(pred: dict, game_date: str = None):
     """Save a prediction to the database."""
     conn = get_connection()
-    game_date = game_date or date.today().isoformat()
+    resolved_game_date = resolve_game_date(pred, game_date)
 
-    conn.execute("""
+    cur = conn.execute("""
         INSERT INTO predictions
         (game_date, player_name, stat_type, stat_internal, line, projection,
          pick, confidence, rating, p_over, p_under, edge, park_team,
          weather_temp, weather_wind, model_version)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        game_date,
+        resolved_game_date,
         pred.get("player_name", ""),
         pred.get("stat_type", ""),
         pred.get("stat_internal", ""),
@@ -159,13 +185,17 @@ def log_prediction(pred: dict, game_date: str = None):
         pred.get("model_version", "v1.0"),
     ))
     conn.commit()
+    row_id = cur.lastrowid
     conn.close()
+    return row_id
 
 
 def log_batch_predictions(predictions: list, game_date: str = None):
     """Save multiple predictions at once."""
+    inserted_ids = []
     for pred in predictions:
-        log_prediction(pred, game_date)
+        inserted_ids.append(log_prediction(pred, game_date))
+    return inserted_ids
 
 
 def grade_prediction(pred_id: int, actual_result: float):

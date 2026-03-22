@@ -14,7 +14,7 @@ import pandas as pd
 from datetime import date, datetime
 from typing import Optional, List, Dict
 
-from src.database import get_connection
+from src.database import get_connection, resolve_game_date
 
 
 def init_board_table():
@@ -50,6 +50,18 @@ def init_board_table():
         CREATE INDEX IF NOT EXISTS idx_board_prop ON daily_board(prop_type);
         CREATE INDEX IF NOT EXISTS idx_board_outcome ON daily_board(outcome);
     """)
+    conn.execute("""
+        DELETE FROM daily_board
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM daily_board
+            GROUP BY date, player_name, prop_type, line, direction, line_type
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_board_unique
+        ON daily_board(date, player_name, prop_type, line, direction, line_type)
+    """)
     conn.commit()
     conn.close()
 
@@ -69,8 +81,6 @@ def log_board_snapshot(predictions: List[Dict], edges: List[Dict] = None,
     if not predictions:
         return 0
 
-    today = date.today().isoformat()
-
     # Build a lookup for sharp edges
     edge_lookup = {}
     if edges:
@@ -85,9 +95,10 @@ def log_board_snapshot(predictions: List[Dict], edges: List[Dict] = None,
         prop_type = p.get("stat_internal", p.get("stat_type", ""))
         key = f"{player}_{prop_type}"
         sharp = edge_lookup.get(key, {})
+        row_date = resolve_game_date(p)
 
         rows.append((
-            today,
+            row_date,
             player,
             p.get("team", ""),
             prop_type,
@@ -116,6 +127,17 @@ def log_board_snapshot(predictions: List[Dict], edges: List[Dict] = None,
              edge, grade, confidence, projection, was_bet,
              actual_stat, outcome, model_version, line_type, edge_source)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, player_name, prop_type, line, direction, line_type) DO UPDATE SET
+                team = excluded.team,
+                model_probability = excluded.model_probability,
+                sharp_implied_probability = excluded.sharp_implied_probability,
+                pp_line = excluded.pp_line,
+                edge = excluded.edge,
+                grade = excluded.grade,
+                confidence = excluded.confidence,
+                projection = excluded.projection,
+                model_version = excluded.model_version,
+                edge_source = excluded.edge_source
         """, rows)
         conn.commit()
 
@@ -146,9 +168,9 @@ def grade_board_entry(player_name: str, prop_type: str, actual_stat: float,
         SELECT id, line, direction FROM daily_board
         WHERE player_name = ? AND prop_type = ? AND date = ?
     """, (player_name, prop_type, game_date))
-    row = cur.fetchone()
-    if row:
-        board_id, line, direction = row
+    rows = cur.fetchall()
+    updated = 0
+    for board_id, line, direction in rows:
         if actual_stat > line:
             outcome = 1 if direction == "MORE" else 0
         elif actual_stat < line:
@@ -158,8 +180,11 @@ def grade_board_entry(player_name: str, prop_type: str, actual_stat: float,
         conn.execute("""
             UPDATE daily_board SET actual_stat = ?, outcome = ? WHERE id = ?
         """, (actual_stat, outcome, board_id))
+        updated += 1
+    if updated:
         conn.commit()
     conn.close()
+    return updated
 
 
 def get_board_stats(days: int = 30) -> Dict:

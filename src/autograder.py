@@ -22,7 +22,13 @@ from typing import Optional
 import requests
 import pandas as pd
 
-from src.database import get_connection, get_ungraded_predictions, grade_prediction
+from src.database import (
+    get_connection,
+    get_ungraded_predictions,
+    grade_prediction,
+    grade_projected_stats,
+)
+from src.board_logger import grade_board_entry
 from src.slips import grade_slip_pick
 
 logger = logging.getLogger(__name__)
@@ -65,6 +71,7 @@ STAT_TYPE_MAP = {
     "pitching_outs": "pitching_outs",
     "earned_runs": "earned_runs",
     "walks_allowed": "walks_allowed",
+    "hits_allowed": "hits_allowed",
 }
 
 # Stats that come from a pitcher's box score entry (not a batter's)
@@ -73,6 +80,7 @@ _PITCHING_STAT_INTERNALS = frozenset({
     "pitching_outs",
     "earned_runs",
     "walks_allowed",
+    "hits_allowed",
 })
 
 
@@ -406,6 +414,106 @@ def _find_matching_player_stats(
     return None
 
 
+def _date_has_aux_tracking_rows(game_date: str) -> bool:
+    """Check whether projected_stats or daily_board has pending rows for a date."""
+    conn = get_connection()
+    try:
+        projected_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM projected_stats
+            WHERE game_date = ? AND actual_value IS NULL
+            """,
+            (game_date,),
+        ).fetchone()[0]
+        board_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM daily_board
+            WHERE date = ? AND actual_stat IS NULL
+            """,
+            (game_date,),
+        ).fetchone()[0]
+        return bool(projected_count or board_count)
+    finally:
+        conn.close()
+
+
+def _lookup_actual_value(
+    player_name: str,
+    stat_internal: str,
+    player_stats_list: list[dict],
+) -> Optional[float]:
+    """Resolve an actual stat value for a player/stat pair from box scores."""
+    matched = _find_matching_player_stats(player_name, stat_internal, player_stats_list)
+    if matched is None:
+        return None
+
+    stat_key = STAT_TYPE_MAP.get(stat_internal)
+    if stat_key is None:
+        return None
+
+    actual_value = matched.get(stat_key)
+    if actual_value is None:
+        return None
+
+    return float(actual_value)
+
+
+def _grade_tracking_tables_for_date(game_date: str, player_stats_list: list[dict]) -> dict:
+    """Grade projected_stats and daily_board rows for a given date."""
+    conn = get_connection()
+    try:
+        projected_rows = conn.execute(
+            """
+            SELECT DISTINCT player_name, stat_type
+            FROM projected_stats
+            WHERE game_date = ? AND actual_value IS NULL
+            """,
+            (game_date,),
+        ).fetchall()
+        board_rows = conn.execute(
+            """
+            SELECT DISTINCT player_name, prop_type
+            FROM daily_board
+            WHERE date = ? AND actual_stat IS NULL
+            """,
+            (game_date,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    projected_set = set(projected_rows)
+    projected_actuals = {}
+    board_updates = 0
+    misses = []
+    seen = set()
+
+    for player_name, stat_internal in projected_rows + board_rows:
+        key = (player_name, stat_internal)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        actual_value = _lookup_actual_value(player_name, stat_internal, player_stats_list)
+        if actual_value is None:
+            misses.append({"player_name": player_name, "stat_type": stat_internal})
+            continue
+
+        if (player_name, stat_internal) in projected_set:
+            projected_actuals[(player_name, stat_internal)] = actual_value
+        board_updates += grade_board_entry(player_name, stat_internal, actual_value, game_date) or 0
+
+    if projected_actuals:
+        grade_projected_stats(game_date, projected_actuals)
+
+    return {
+        "projected_stats_graded": len(projected_actuals),
+        "board_entries_graded": board_updates,
+        "not_matched": misses,
+    }
+
+
 def auto_grade_prediction(
     pred_row: pd.Series,
     player_stats_list: list[dict],
@@ -536,13 +644,16 @@ def auto_grade_date(game_date: str) -> dict:
         "not_matched": 0,
         "skipped_not_final": 0,
         "slip_picks_graded": 0,
+        "projected_stats_graded": 0,
+        "board_entries_graded": 0,
         "results": [],
         "errors": [],
     }
 
     # Get ungraded predictions for this date
     ungraded = get_ungraded_predictions(game_date=game_date)
-    if ungraded.empty:
+    has_aux_tracking = _date_has_aux_tracking_rows(game_date)
+    if ungraded.empty and not has_aux_tracking:
         report["errors"].append(f"No ungraded predictions found for {game_date}.")
         return report
 
@@ -583,39 +694,49 @@ def auto_grade_date(game_date: str) -> dict:
         return report
 
     # Grade each ungraded prediction
-    for _, pred_row in ungraded.iterrows():
-        try:
-            result = auto_grade_prediction(pred_row, all_player_stats)
-            if result is not None:
-                report["graded"] += 1
-                # Determine actual value for the report
-                stat_key = STAT_TYPE_MAP.get(pred_row.get("stat_internal", ""), "")
-                matched = _find_matching_player_stats(
-                    pred_row["player_name"],
-                    pred_row.get("stat_internal", ""),
-                    all_player_stats,
+    if not ungraded.empty:
+        for _, pred_row in ungraded.iterrows():
+            try:
+                result = auto_grade_prediction(pred_row, all_player_stats)
+                if result is not None:
+                    report["graded"] += 1
+                    actual = _lookup_actual_value(
+                        pred_row["player_name"],
+                        pred_row.get("stat_internal", ""),
+                        all_player_stats,
+                    )
+                    report["results"].append({
+                        "pred_id": int(pred_row["id"]),
+                        "player": pred_row["player_name"],
+                        "stat_type": pred_row.get("stat_type", ""),
+                        "line": pred_row.get("line", 0),
+                        "pick": pred_row.get("pick", ""),
+                        "actual": actual if actual is not None else "?",
+                        "result": result,
+                    })
+                    if actual is not None:
+                        slip_graded = _grade_linked_slip_picks(int(pred_row["id"]), float(actual))
+                        report["slip_picks_graded"] += slip_graded
+                else:
+                    report["not_matched"] += 1
+            except Exception as exc:
+                report["errors"].append(
+                    f"Error grading pred {pred_row.get('id', '?')} "
+                    f"({pred_row.get('player_name', '?')}): {exc}"
                 )
-                actual = matched.get(stat_key, "?") if matched else "?"
-                report["results"].append({
-                    "pred_id": int(pred_row["id"]),
-                    "player": pred_row["player_name"],
-                    "stat_type": pred_row.get("stat_type", ""),
-                    "line": pred_row.get("line", 0),
-                    "pick": pred_row.get("pick", ""),
-                    "actual": actual,
-                    "result": result,
-                })
-                # Also grade any slip picks linked to this prediction
-                if isinstance(actual, (int, float)):
-                    slip_graded = _grade_linked_slip_picks(int(pred_row["id"]), float(actual))
-                    report["slip_picks_graded"] += slip_graded
-            else:
-                report["not_matched"] += 1
-        except Exception as exc:
+
+    # Also update the full-board and projected-stat tracking tables even if no
+    # rows were saved into the predictions table.
+    try:
+        tracking_result = _grade_tracking_tables_for_date(game_date, all_player_stats)
+        report["projected_stats_graded"] = tracking_result.get("projected_stats_graded", 0)
+        report["board_entries_graded"] = tracking_result.get("board_entries_graded", 0)
+        if tracking_result.get("not_matched"):
             report["errors"].append(
-                f"Error grading pred {pred_row.get('id', '?')} "
-                f"({pred_row.get('player_name', '?')}): {exc}"
+                f"Tracking rows not matched: {len(tracking_result['not_matched'])}"
             )
+    except Exception as exc:
+        report["errors"].append(f"Error grading tracking tables for {game_date}: {exc}")
 
     return report
 

@@ -9,7 +9,17 @@ from datetime import datetime
 
 
 PP_PROJECTIONS_URL = "https://partner-api.prizepicks.com/projections"
-MLB_LEAGUE_IDS = {"9", "43"}  # 9 = regular season, 43 = Spring Training
+# Known MLB league ids seen in the PrizePicks feed.
+# 2   = current game slate
+# 9   = legacy regular-season feed
+# 43  = spring training
+# 190 = season-long futures
+MLB_LEAGUE_IDS = {"2", "9", "43", "190"}
+MLB_TEAM_ABBRS = {
+    "ARI", "ATL", "BAL", "BOS", "CHC", "CIN", "CLE", "COL", "CWS", "DET",
+    "HOU", "KC", "LAA", "LAD", "MIA", "MIL", "MIN", "NYM", "NYY", "OAK",
+    "PHI", "PIT", "SD", "SEA", "SF", "STL", "TB", "TEX", "TOR", "WSH",
+}
 
 # Map PrizePicks stat types to our internal names
 STAT_TYPE_MAP = {
@@ -40,13 +50,19 @@ BATTER_PROPS = {"hits", "total_bases", "home_runs", "rbis", "runs", "stolen_base
                 "hitter_fantasy_score"}
 
 
-def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
+def fetch_prizepicks_mlb_lines(include_all: bool = False) -> pd.DataFrame:
     """
     Fetch all current MLB projections from PrizePicks.
 
     Returns a DataFrame with columns:
         player_name, player_id, team, position, stat_type, line,
         stat_internal, is_pitcher_prop, start_time, opponent, league
+
+    Args:
+        include_all: When True, return all MLB-related props from the live
+            PrizePicks feed, including futures and non-standard lines. Rows
+            include model_eligible and eligibility_reason so the UI can explain
+            why a prop is not part of the model board.
     """
     try:
         resp = requests.get(
@@ -60,7 +76,7 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
     except requests.RequestException as e:
         raise ConnectionError(f"Failed to fetch PrizePicks data: {e}")
 
-    # Record that we just pulled fresh data
+    # Record that we just pulled fresh data.
     try:
         from src.freshness import record_data_pull
         record_data_pull("prizepicks_lines", f"{len(data.get('data', []))} projections")
@@ -70,7 +86,7 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
     projections = data.get("data", [])
     included = data.get("included", [])
 
-    # Build lookup for player info from "included" section
+    # Build lookup for player info from the included section.
     player_lookup = {}
     for item in included:
         if item.get("type") == "new_player":
@@ -82,47 +98,54 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
             }
 
     rows = []
+    season_suffix = str(datetime.now().year)[-2:]
     for proj in projections:
         attrs = proj.get("attributes", {})
 
-        # Filter to MLB only — league ID is in relationships, NOT attributes
         league_id = str(
             proj.get("relationships", {})
                 .get("league", {})
                 .get("data", {})
                 .get("id", "")
         )
-        game_id = attrs.get("game_id", "")
-
-        is_mlb = league_id in MLB_LEAGUE_IDS or str(game_id).startswith("MLB_")
-        if not is_mlb:
-            continue
-
+        game_id = str(attrs.get("game_id", ""))
         stat_type_raw = attrs.get("stat_type", "")
         stat_internal = STAT_TYPE_MAP.get(stat_type_raw, stat_type_raw.lower().replace(" ", "_"))
-        is_pitcher = stat_internal in PITCHER_PROPS
+        stat_supported = stat_type_raw in STAT_TYPE_MAP
 
-        # Get player info
         player_rel = proj.get("relationships", {}).get("new_player", {}).get("data", {})
         player_id = player_rel.get("id", "")
         player_info = player_lookup.get(player_id, {})
+        team = player_info.get("team", "")
+
+        is_game_prop = game_id.startswith("MLB_")
+        is_futures_prop = (
+            not is_game_prop
+            and stat_supported
+            and team in MLB_TEAM_ABBRS
+            and (league_id == "190" or game_id.endswith(season_suffix))
+        )
+        is_mlb = (
+            league_id in MLB_LEAGUE_IDS
+            or is_game_prop
+            or is_futures_prop
+            or (stat_supported and team in MLB_TEAM_ABBRS)
+        )
+        if not is_mlb:
+            continue
 
         line_score = attrs.get("line_score")
         if line_score is None:
             continue
 
-        league_label = "MLB" if league_id == "9" else ("Spring Training" if league_id == "43" else "MLB")
+        league_label = "Spring Training" if league_id == "43" else "MLB"
+        is_pitcher = stat_internal in PITCHER_PROPS
 
-        # Detect special line types (Goblin/Demon/discounted)
-        # These have non-standard payouts — flag for user awareness
         is_promo = attrs.get("is_promo", False)
         discount = attrs.get("discount_percentage")
         odds_type = attrs.get("odds_type", "standard")
         flash_sale = attrs.get("flash_sale_line_score")
-        combo_flag = attrs.get("combo", False)
 
-        # Goblin lines are typically very easy (low lines like HR 0.5)
-        # and have reduced payouts — detect by promo flags or known patterns
         line_type = "standard"
         if is_promo or odds_type not in ("standard", ""):
             line_type = "promo"
@@ -131,19 +154,25 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
         elif flash_sale:
             line_type = "flash_sale"
 
-        # ── FILTER: Skip non-standard lines entirely ─────────────────
-        # Goblins/Demons/promos have reduced payouts that our model doesn't
-        # account for. A 92% hit rate means nothing if the payout is 0.2x.
-        # Also skip Spring Training league props — lines are unreliable.
-        if line_type != "standard":
-            continue
-        if league_id == "43":  # Spring Training league
+        model_eligible = True
+        eligibility_reason = "eligible"
+        if not is_game_prop:
+            model_eligible = False
+            eligibility_reason = "season_long"
+        elif league_id == "43":
+            model_eligible = False
+            eligibility_reason = "spring_training"
+        elif line_type != "standard":
+            model_eligible = False
+            eligibility_reason = "non_standard_line"
+
+        if not include_all and not model_eligible:
             continue
 
         rows.append({
             "player_name": player_info.get("name", "Unknown"),
             "player_id": player_id,
-            "team": player_info.get("team", ""),
+            "team": team,
             "position": player_info.get("position", ""),
             "stat_type": stat_type_raw,
             "stat_internal": stat_internal,
@@ -154,13 +183,18 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
             "league": league_label,
             "line_type": line_type,
             "odds_type": odds_type or "standard",
+            "model_eligible": model_eligible,
+            "eligibility_reason": eligibility_reason,
+            "is_game_prop": is_game_prop,
+            "is_futures_prop": is_futures_prop,
+            "league_id": league_id,
         })
 
     df = pd.DataFrame(rows)
 
     if not df.empty and "start_time" in df.columns:
         df["start_time"] = pd.to_datetime(df["start_time"], errors="coerce")
-        df = df.sort_values(["start_time", "player_name"]).reset_index(drop=True)
+        df = df.sort_values(["start_time", "player_name", "stat_type"]).reset_index(drop=True)
 
     return df
 
