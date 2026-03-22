@@ -33,7 +33,6 @@ from src.stats import fetch_batting_leaders, fetch_pitching_leaders
 from src.slips import (
     init_slips_table, create_slip, get_slips, get_slip_picks,
     get_slip_pnl, grade_slip_pick, finalize_slip, PAYOUTS, BREAKEVEN,
-    GOBLIN_PAYOUTS, DEMON_PAYOUTS, get_payout_table,
 )
 from src.autograder import auto_grade_date, auto_grade_yesterday
 from src.autolearn import run_adjustment_cycle, load_current_weights
@@ -1376,7 +1375,7 @@ with tab_edge:
 
                     chk_col, info_col = st.columns([0.06, 0.94])
                     with chk_col:
-                        checked = st.checkbox("", key=f"proj_pick_{pick_idx}", label_visibility="collapsed")
+                        checked = st.checkbox("Select pick", key=f"proj_pick_{pick_idx}", label_visibility="collapsed")
                     with info_col:
                         conf_val = _safe_num(pick_row.get('confidence'), 0.5)
                         conf_pct = int(conf_val * 100)

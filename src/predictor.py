@@ -576,8 +576,19 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
       Park K factor (5%) — slight effect
       Weather (5%) — cold = grip issues = fewer Ks
     """
-    k_pct = _ensure_pct(p.get("k_pct", 0), lg_default=None) or (p.get("k9", LG["k9"]) / (LG["bf_per_ip"] * 9) * 100)
-    bf_est = p.get("ip", 0) * LG["bf_per_ip"] if p.get("ip", 0) > 0 else 0
+    # K% — accept k_pct (already percentage), k_rate (decimal 0-1), or k9 (per 9 IP)
+    _raw_k = p.get("k_pct", 0)
+    if not _raw_k and p.get("k_rate", 0):
+        # k_rate is decimal (e.g. 0.30 = 30%) — convert to percentage
+        _kr = p["k_rate"]
+        _raw_k = _kr * 100 if _kr < 1 else _kr
+    k_pct = _ensure_pct(_raw_k, lg_default=None) or (p.get("k9", p.get("k_per_9", LG["k9"])) / (LG["bf_per_ip"] * 9) * 100)
+
+    # BF for regression sample — use season total IP, or estimate from per-start × games
+    _season_ip = p.get("ip", 0)
+    if not _season_ip and p.get("ip_per_start", 0):
+        _season_ip = p["ip_per_start"] * max(p.get("gs", 10), 1)
+    bf_est = _season_ip * LG["bf_per_ip"] if _season_ip > 0 else 0
     csw = p.get("recent_csw_pct", 0)
     swstr = p.get("recent_swstr_pct", 0)
 
@@ -611,9 +622,15 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     # Use centralized estimate_batters_faced() for consistent pitcher opportunity modeling
     if expected_ip is None:
         ip = p.get("ip", 0)
-        starts = max(p.get("gs", ip / 5.5), 1) if ip > 10 else 1
-        expected_ip = min(ip / starts, 7.0) if ip > 10 else LG["avg_ip_starter"]
-        expected_ip = max(4.5, min(6.5, expected_ip))
+        # Prefer ip_per_start if available (direct per-game average)
+        if p.get("ip_per_start", 0) > 0:
+            expected_ip = p["ip_per_start"]
+        elif ip > 10:
+            starts = max(p.get("gs", ip / 5.5), 1)
+            expected_ip = min(ip / starts, 7.0)
+        else:
+            expected_ip = LG["avg_ip_starter"]
+        expected_ip = max(4.5, min(7.0, expected_ip))  # Allow up to 7.0 for aces
     bf_est_result = estimate_batters_faced(
         pitcher_ip=expected_ip,
         pitcher_whip=p.get("whip"),
@@ -1364,10 +1381,25 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     # ── Per-PA rates for each scoring event ──
     games_est = pa / 4.2 if pa > 0 else 1
 
-    # Hit types from season stats
-    hits = avg * (pa * (1 - bb_rate / 100)) if pa > 0 else 0
+    # Hit types from season stats — derive from rate stats when counting unavailable
+    ab_est = pa * (1 - bb_rate / 100) if pa > 0 else 0
+    hits = avg * ab_est if pa > 0 else 0
+
+    # HR: prefer counting stat, fall back to hr_rate × PA, then ISO estimate
     hr_count = hr
+    if not hr_count and pa > 0:
+        _hr_rate = b.get("hr_rate", 0) or b.get("hr_fb", 0)
+        if _hr_rate and _hr_rate < 1:
+            hr_count = _hr_rate * pa
+        elif iso > 0:
+            hr_count = iso * 0.22 * pa  # ISO to HR approximation
+
     dbl_count = doubles
+    if not dbl_count and pa > 0:
+        # Estimate doubles from ISO and SLG: doubles ≈ (SLG - AVG - 3×HR/AB) / 2 × AB
+        _hr_per_ab = hr_count / ab_est if ab_est > 0 else 0
+        dbl_count = max((slg - avg - 3 * _hr_per_ab) / 2 * ab_est, 0) if ab_est > 0 else 0
+
     trp_count = triples
     singles_count = max(hits - hr_count - dbl_count - trp_count, 0) if pa > 0 else 0
 
@@ -1377,9 +1409,11 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     trp_per_pa = trp_count / pa if pa > 0 else 0.004  # ~0.4% league avg
     single_per_pa = singles_count / pa if pa > 0 else 0.135  # ~13.5% league avg
     bb_per_pa = bb_rate / 100 if bb_rate > 0 else LG["bb_rate"] / 100
-    sb_per_game = sb / games_est if games_est > 0 else LG["sb_per_game"]
-    rbi_per_game = rbi / games_est if games_est > 0 else LG["rbi_per_game"]
-    r_per_game = r / games_est if games_est > 0 else LG["runs_per_game"]
+
+    # RBI/R/SB: derive from rate stats when counting unavailable
+    sb_per_game = sb / games_est if (sb and games_est > 0) else LG["sb_per_game"]
+    rbi_per_game = rbi / games_est if (rbi and games_est > 0) else LG["rbi_per_game"]
+    r_per_game = r / games_est if (r and games_est > 0) else LG["runs_per_game"]
 
     # ── Bayesian stabilization ──
     reg_hr = _regress(hr_per_pa, pa, 300, LG["hr_per_pa"])
