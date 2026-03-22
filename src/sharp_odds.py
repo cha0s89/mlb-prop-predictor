@@ -18,8 +18,13 @@ from scipy.optimize import brentq
 from src.distributions import compute_probabilities
 
 
+import logging
+
+_log = logging.getLogger(__name__)
+
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 SPORT_KEY = "baseball_mlb"
+SPORT_KEY_PRESEASON = "baseball_mlb_preseason"
 
 # Prop market keys supported by The Odds API for MLB
 PROP_MARKETS = {
@@ -239,21 +244,36 @@ def get_api_key() -> str:
     return key
 
 
-def fetch_mlb_events(api_key: str = None) -> list:
-    """Fetch current MLB events (games) list."""
+def fetch_mlb_events(api_key: str = None, sport_key: str = None) -> list:
+    """Fetch current MLB events (games) list.
+
+    Falls back to preseason sport key if regular season returns 0 events.
+    """
     api_key = api_key or get_api_key()
     if not api_key:
+        _log.warning("No Odds API key configured — skipping sharp odds")
         return []
 
+    sport = sport_key or SPORT_KEY
+    url = f"{ODDS_API_BASE}/sports/{sport}/events"
+    _log.info("[sharp_odds] GET %s", url)
+
     try:
-        resp = requests.get(
-            f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events",
-            params={"apiKey": api_key},
-            timeout=15,
-        )
+        resp = requests.get(url, params={"apiKey": api_key}, timeout=15)
         resp.raise_for_status()
-        return resp.json()
-    except requests.RequestException:
+        events = resp.json()
+        credits = resp.headers.get("x-requests-remaining", "?")
+        _log.info("[sharp_odds] Got %d events for %s, credits remaining: %s",
+                  len(events), sport, credits)
+
+        # Preseason fallback: if regular season empty and we haven't tried yet
+        if not events and sport == SPORT_KEY and sport_key is None:
+            _log.info("[sharp_odds] No regular season events, trying preseason...")
+            return fetch_mlb_events(api_key, sport_key=SPORT_KEY_PRESEASON)
+
+        return events
+    except requests.RequestException as e:
+        _log.error("[sharp_odds] ERROR fetching events from %s: %s", url, e)
         return []
 
 
@@ -264,15 +284,18 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
     """
     api_key = api_key or get_api_key()
     if not api_key:
+        _log.warning("[sharp_odds] No API key — skipping props for event %s", event_id)
         return {}
 
     if markets is None:
-        # Fetch all supported prop markets
         markets = list(PROP_MARKETS.values())
+
+    url = f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events/{event_id}/odds"
+    _log.info("[sharp_odds] GET %s (%d markets)", url, len(markets))
 
     try:
         resp = requests.get(
-            f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events/{event_id}/odds",
+            url,
             params={
                 "apiKey": api_key,
                 "regions": "us",
@@ -283,14 +306,21 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
         )
         resp.raise_for_status()
         remaining = resp.headers.get("x-requests-remaining", "?")
+        data = resp.json()
+        n_books = len(data.get("bookmakers", []))
+        _log.info("[sharp_odds] Event %s: %d bookmakers, credits remaining: %s",
+                  event_id, n_books, remaining)
+
         # Record freshness
         try:
             from src.freshness import record_data_pull
             record_data_pull("sharp_odds", f"event {event_id}, {remaining} credits left")
         except Exception:
             pass
-        return {"data": resp.json(), "remaining_credits": remaining}
-    except requests.RequestException:
+
+        return {"data": data, "remaining_credits": remaining}
+    except requests.RequestException as e:
+        _log.error("[sharp_odds] ERROR fetching props for event %s: %s", event_id, e)
         return {}
 
 
@@ -635,7 +665,8 @@ def get_api_usage(api_key: str = None) -> dict:
             "remaining": resp.headers.get("x-requests-remaining", "?"),
             "used": resp.headers.get("x-requests-used", "?"),
         }
-    except Exception:
+    except Exception as e:
+        _log.error("[sharp_odds] ERROR checking API usage: %s", e)
         return {"remaining": "Error", "used": "Error"}
 
 

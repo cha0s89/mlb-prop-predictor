@@ -8,7 +8,9 @@ Statcast data provides the "why" confirmation layer.
 import streamlit as st
 import pandas as pd
 import numpy as np
+import json
 import plotly.graph_objects as go
+from pathlib import Path
 from datetime import datetime, date, timedelta
 
 from src.prizepicks import fetch_prizepicks_mlb_lines, get_available_stat_types
@@ -1851,6 +1853,97 @@ with tab_dash:
                     st.caption(f"{h.get('timestamp', '?')}: {h.get('description', 'adjustment')}")
         except Exception:
             st.caption("No adjustment history yet")
+
+    # ── NIGHTLY SELF-IMPROVEMENT CYCLE ────────────────────────
+    st.markdown('<div class="section-hdr">Self-Improvement Cycle</div>', unsafe_allow_html=True)
+
+    ni_col1, ni_col2 = st.columns([1, 3])
+    with ni_col1:
+        if st.button("Run Nightly Update", type="primary", help="Grade today's picks, update weights, check drift"):
+            with st.spinner("Running self-improvement cycle..."):
+                try:
+                    from src.nightly import run_nightly_cycle
+                    nightly_res = run_nightly_cycle()
+                    st.session_state["nightly_results"] = nightly_res
+                except Exception as e:
+                    st.error(f"Nightly cycle failed: {e}")
+
+    if "nightly_results" in st.session_state:
+        nr = st.session_state["nightly_results"]
+
+        # Grading summary
+        grading = nr.get("phase_results", {}).get("grading", {})
+        if grading.get("total_graded", 0) > 0:
+            g_w = grading.get("wins", 0)
+            g_l = grading.get("losses", 0)
+            g_t = grading.get("total_graded", 0)
+            g_acc = g_w / g_t if g_t else 0
+            gm1, gm2, gm3, gm4 = st.columns(4)
+            gm1.metric("Graded", g_t)
+            gm2.metric("Record", f"{g_w}W-{g_l}L")
+            gm3.metric("Hit Rate", f"{g_acc:.1%}")
+            gm4.metric("Pending", grading.get("pending", 0))
+
+        # Metrics from autolearn
+        metrics = nr.get("phase_results", {}).get("metrics", {})
+        if metrics.get("brier_score") is not None:
+            mm1, mm2, mm3 = st.columns(3)
+            mm1.metric("Brier Score", f"{metrics['brier_score']:.4f}",
+                        help="Lower is better. 0.25 = coin flip.")
+            mm2.metric("Log Loss", f"{metrics.get('log_loss', 0):.4f}")
+            mm3.metric("Accuracy", f"{metrics.get('accuracy_before', 0):.1%}" if metrics.get("accuracy_before") else "—")
+
+        # Weight update
+        w_info = nr.get("phase_results", {}).get("weights", {})
+        if w_info.get("updated"):
+            st.success(f"Ensemble weights updated — sharp: {w_info['new_weights'].get('sharp_odds', 0):.0%} / "
+                       f"projection: {w_info['new_weights'].get('projection', 0):.0%} / "
+                       f"form: {w_info['new_weights'].get('recent_form', 0):.0%}")
+        elif w_info.get("reason"):
+            st.info(f"Weights not updated: {w_info['reason']}")
+
+        # Drift alerts
+        for alert in nr.get("drift_alerts", []):
+            if isinstance(alert, dict):
+                st.warning(f"Drift: {alert.get('prop_type', '?')} degraded {alert.get('degradation_pct', '?')}%")
+            else:
+                st.warning(f"Drift: {alert}")
+
+        # Calibration warnings
+        for warn in nr.get("calibration_warnings", []):
+            st.warning(f"Miscalibrated {warn['bin']}: predicted {warn['predicted']:.1%} vs actual {warn['actual']:.1%} (n={warn['n']})")
+
+        # Errors
+        for err in nr.get("errors", []):
+            st.error(err)
+
+    # ── MODEL HEALTH (historical) ──────────────────────────
+    st.markdown('<div class="section-hdr">Model Health (14-day trend)</div>', unsafe_allow_html=True)
+    try:
+        from src.nightly import get_nightly_history
+        health_rows = get_nightly_history(days=14)
+        if health_rows:
+            health_df = pd.DataFrame(health_rows)
+            if "accuracy" in health_df.columns and health_df["accuracy"].notna().any():
+                chart_df = health_df[["date", "accuracy", "brier"]].dropna(subset=["accuracy"]).set_index("date")
+                st.line_chart(chart_df)
+
+            # Current ensemble weights
+            try:
+                w_path = Path("data/weights/current.json")
+                if w_path.exists():
+                    with open(w_path) as f:
+                        cw = json.load(f)
+                    ew = cw.get("ensemble_weights", {})
+                    if ew:
+                        ew_str = " · ".join(f"{k}: {v:.0%}" for k, v in ew.items())
+                        st.caption(f"Current ensemble weights: {ew_str}")
+            except Exception:
+                pass
+        else:
+            st.caption("No nightly logs yet. Run the nightly update after games finish (~11 PM ET).")
+    except Exception:
+        st.caption("No nightly logs yet.")
 
     st.markdown('<div class="section-hdr">Backtest Accuracy — v017 (Played Games Only)</div>', unsafe_allow_html=True)
     _bt_rows = [
