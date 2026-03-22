@@ -876,7 +876,7 @@ with tab_edge:
                 disp.columns = ["Player","Team","Prop","Line","Pick","Edge %","Fair Prob","Grade","Books"]
                 disp["Fair Prob"] = disp["Fair Prob"].apply(lambda x: f"{x*100:.1f}%")
                 disp["Edge %"] = disp["Edge %"].apply(lambda x: f"+{x:.1f}%")
-                st.dataframe(disp, hide_index=True, use_container_width=True, height=min(len(disp)*38+40,600))
+                st.dataframe(disp, hide_index=True, width="stretch", height=min(len(disp)*38+40,600))
 
                 st.markdown('<div class="section-hdr">Pick Details</div>', unsafe_allow_html=True)
                 for edge in filt[:8]:
@@ -1398,7 +1398,7 @@ with tab_edge:
                             })
                         if _gs_rows:
                             _gs_df = pd.DataFrame(_gs_rows)
-                            st.dataframe(_gs_df, hide_index=True, use_container_width=True)
+                            st.dataframe(_gs_df, hide_index=True, width="stretch")
                             # Variance check
                             _run_vals = [r["Est Runs"] for r in _gs_rows if r["Est Runs"] > 0]
                             if len(_run_vals) >= 4:
@@ -1689,7 +1689,7 @@ with tab_edge:
                 if selected_picks:
                     st.markdown('<div class="section-hdr">Create Slip from Selected</div>', unsafe_allow_html=True)
                     slip_df = pd.DataFrame(selected_picks)
-                    st.dataframe(slip_df[["player_name","stat_type","line","pick","rating","confidence"]], hide_index=True, use_container_width=True)
+                    st.dataframe(slip_df[["player_name","stat_type","line","pick","rating","confidence"]], hide_index=True, width="stretch")
 
                     # v018: Correlation warnings for same-game picks
                     try:
@@ -2006,7 +2006,7 @@ with tab_slips:
                 margin=dict(l=0, r=0, t=20, b=0), height=250,
                 yaxis_title="Balance ($)", xaxis_title="",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     with st.expander("Create New Slip"):
         sl_date = st.date_input("Game date", value=date.today(), key="slip_date")
         sl_type = st.selectbox("Entry type", ["5_flex", "6_flex", "4_flex", "3_power", "2_power"])

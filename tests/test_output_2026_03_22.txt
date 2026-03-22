@@ -1,0 +1,479 @@
+
+
+████████████████████████████████████████████████████████████████████████████████████████████████████
+█                                                                                                  █
+█                     MLB PROP PREDICTOR — COMPREHENSIVE MATH VERIFICATION TEST                    █
+█                                                                                                  █
+████████████████████████████████████████████████████████████████████████████████████████████████████
+
+====================================================================================================
+BATTER PROJECTIONS TEST
+====================================================================================================
+
+
+####################################################################################################
+# ELITE BATTER
+# AVG:0.300 OBP:0.400 SLG:0.550 PA:600
+####################################################################################################
+
+
+--- HITS ---
+✓ Neutral (no park/opp)                    → 1.280 H
+✓ vs Elite SP at Coors, batting 3          → 2.430 H
+✓ vs Terrible SP at SF, batting 7          → 2.130 H
+
+--- RUNS ---
+✓ Neutral (no park/opp)                    → 0.590 R
+✓ vs Elite SP at Coors, batting 3          → 0.540 R
+✓ vs Terrible SP at SF, batting 7          → 0.680 R
+
+--- RBIs ---
+✓ Neutral (no park/opp)                    → 0.610 RBI
+✓ vs Elite SP at Coors, batting 3          → 0.640 RBI
+✓ vs Terrible SP at SF, batting 7          → 0.740 RBI
+
+--- HOME RUNS ---
+✓ Neutral (no park/opp)                    → 0.2710 HR
+✓ vs Elite SP at Coors, batting 3          → 0.3120 HR
+✓ vs Terrible SP at SF, batting 7          → 0.3650 HR
+
+--- STOLEN BASES ---
+✓ Neutral (no park/opp)                    → 0.267 SB
+✓ vs Elite SP at Coors, batting 3          → 0.270 SB
+✓ vs Terrible SP at SF, batting 7          → 0.265 SB
+
+--- TOTAL BASES ---
+✓ Neutral (no park/opp)                    → 2.470 TB
+✓ vs Elite SP at Coors, batting 3          → 2.700 TB
+✓ vs Terrible SP at SF, batting 7          → 2.580 TB
+
+--- STRIKEOUTS (Batter) ---
+✓ Neutral (no park/opp)                    → 0.540 K
+✓ vs Elite SP at Coors, batting 3          → 0.660 K
+✓ vs Terrible SP at SF, batting 7          → 0.410 K
+
+--- WALKS (Batter) ---
+✓ Neutral (no park/opp)                    → 0.350 BB
+✓ vs Elite SP at Coors, batting 3          → 0.290 BB
+✓ vs Terrible SP at SF, batting 7          → 0.510 BB
+
+--- HITTER FANTASY SCORE ---
+✓ Neutral (no park/opp)                    → 10.020 PTS
+✓ vs Elite SP at Coors, batting 3          → 10.440 PTS
+✓ vs Terrible SP at SF, batting 7          → 10.370 PTS
+
+--- HITS+RUNS+RBIs ---
+✓ Neutral (no park/opp)                    → 2.480 H+R+RBI
+✓ vs Elite SP at Coors, batting 3          → 3.610 H+R+RBI
+✓ vs Terrible SP at SF, batting 7          → 3.540 H+R+RBI
+
+
+####################################################################################################
+# AVERAGE BATTER
+# AVG:0.248 OBP:0.312 SLG:0.399 PA:500
+####################################################################################################
+
+
+--- HITS ---
+✓ Neutral (no park/opp)                    → 0.960 H
+✓ vs Elite SP at Coors, batting 3          → 2.070 H
+✓ vs Terrible SP at SF, batting 7          → 1.800 H
+
+--- RUNS ---
+✓ Neutral (no park/opp)                    → 0.490 R
+✓ vs Elite SP at Coors, batting 3          → 0.450 R
+✓ vs Terrible SP at SF, batting 7          → 0.560 R
+
+--- RBIs ---
+✓ Neutral (no park/opp)                    → 0.500 RBI
+✓ vs Elite SP at Coors, batting 3          → 0.520 RBI
+✓ vs Terrible SP at SF, batting 7          → 0.600 RBI
+
+--- HOME RUNS ---
+✓ Neutral (no park/opp)                    → 0.1460 HR
+✓ vs Elite SP at Coors, batting 3          → 0.1690 HR
+✓ vs Terrible SP at SF, batting 7          → 0.1970 HR
+
+--- STOLEN BASES ---
+✓ Neutral (no park/opp)                    → 0.089 SB
+✓ vs Elite SP at Coors, batting 3          → 0.090 SB
+✓ vs Terrible SP at SF, batting 7          → 0.089 SB
+
+--- TOTAL BASES ---
+✓ Neutral (no park/opp)                    → 1.540 TB
+✓ vs Elite SP at Coors, batting 3          → 1.680 TB
+✓ vs Terrible SP at SF, batting 7          → 1.600 TB
+
+--- STRIKEOUTS (Batter) ---
+✓ Neutral (no park/opp)                    → 0.960 K
+✓ vs Elite SP at Coors, batting 3          → 1.180 K
+✓ vs Terrible SP at SF, batting 7          → 0.730 K
+
+--- WALKS (Batter) ---
+✓ Neutral (no park/opp)                    → 0.350 BB
+✓ vs Elite SP at Coors, batting 3          → 0.290 BB
+✓ vs Terrible SP at SF, batting 7          → 0.510 BB
+
+--- HITTER FANTASY SCORE ---
+✓ Neutral (no park/opp)                    → 7.680 PTS
+✓ vs Elite SP at Coors, batting 3          → 8.000 PTS
+✓ vs Terrible SP at SF, batting 7          → 7.950 PTS
+
+--- HITS+RUNS+RBIs ---
+✓ Neutral (no park/opp)                    → 1.940 H+R+RBI
+✓ vs Elite SP at Coors, batting 3          → 3.040 H+R+RBI
+✓ vs Terrible SP at SF, batting 7          → 2.970 H+R+RBI
+
+
+####################################################################################################
+# TERRIBLE BATTER
+# AVG:0.180 OBP:0.230 SLG:0.270 PA:200
+####################################################################################################
+
+
+--- HITS ---
+✓ Neutral (no park/opp)                    → 0.770 H
+✓ vs Elite SP at Coors, batting 3          → 1.840 H
+✓ vs Terrible SP at SF, batting 7          → 1.600 H
+
+--- RUNS ---
+✓ Neutral (no park/opp)                    → 0.430 R
+✓ vs Elite SP at Coors, batting 3          → 0.400 R
+✓ vs Terrible SP at SF, batting 7          → 0.490 R
+
+--- RBIs ---
+✓ Neutral (no park/opp)                    → 0.430 RBI
+✓ vs Elite SP at Coors, batting 3          → 0.450 RBI
+✓ vs Terrible SP at SF, batting 7          → 0.520 RBI
+
+--- HOME RUNS ---
+✓ Neutral (no park/opp)                    → 0.1050 HR
+✓ vs Elite SP at Coors, batting 3          → 0.1200 HR
+✓ vs Terrible SP at SF, batting 7          → 0.1410 HR
+
+--- STOLEN BASES ---
+✓ Neutral (no park/opp)                    → 0.045 SB
+✓ vs Elite SP at Coors, batting 3          → 0.045 SB
+✓ vs Terrible SP at SF, batting 7          → 0.045 SB
+
+--- TOTAL BASES ---
+✓ Neutral (no park/opp)                    → 1.260 TB
+✓ vs Elite SP at Coors, batting 3          → 1.370 TB
+✓ vs Terrible SP at SF, batting 7          → 1.310 TB
+
+--- STRIKEOUTS (Batter) ---
+✓ Neutral (no park/opp)                    → 1.280 K
+✓ vs Elite SP at Coors, batting 3          → 1.590 K
+✓ vs Terrible SP at SF, batting 7          → 0.980 K
+
+--- WALKS (Batter) ---
+✓ Neutral (no park/opp)                    → 0.260 BB
+✓ vs Elite SP at Coors, batting 3          → 0.220 BB
+✓ vs Terrible SP at SF, batting 7          → 0.380 BB
+
+--- HITTER FANTASY SCORE ---
+✓ Neutral (no park/opp)                    → 5.880 PTS
+✓ vs Elite SP at Coors, batting 3          → 6.120 PTS
+✓ vs Terrible SP at SF, batting 7          → 6.090 PTS
+
+--- HITS+RUNS+RBIs ---
+✓ Neutral (no park/opp)                    → 1.630 H+R+RBI
+✓ vs Elite SP at Coors, batting 3          → 2.690 H+R+RBI
+✓ vs Terrible SP at SF, batting 7          → 2.620 H+R+RBI
+
+
+####################################################################################################
+# ROOKIE/UNKNOWN
+# AVG:0.250 OBP:0.310 SLG:0.400 PA:50
+####################################################################################################
+
+
+--- HITS ---
+✓ Neutral (no park/opp)                    → 0.960 H
+✓ vs Elite SP at Coors, batting 3          → 2.070 H
+✓ vs Terrible SP at SF, batting 7          → 1.810 H
+
+--- RUNS ---
+✓ Neutral (no park/opp)                    → 0.490 R
+✓ vs Elite SP at Coors, batting 3          → 0.450 R
+✓ vs Terrible SP at SF, batting 7          → 0.560 R
+
+--- RBIs ---
+✓ Neutral (no park/opp)                    → 0.510 RBI
+✓ vs Elite SP at Coors, batting 3          → 0.530 RBI
+✓ vs Terrible SP at SF, batting 7          → 0.610 RBI
+
+--- HOME RUNS ---
+✓ Neutral (no park/opp)                    → 0.1430 HR
+✓ vs Elite SP at Coors, batting 3          → 0.1640 HR
+✓ vs Terrible SP at SF, batting 7          → 0.1920 HR
+
+--- STOLEN BASES ---
+✓ Neutral (no park/opp)                    → 0.145 SB
+✓ vs Elite SP at Coors, batting 3          → 0.146 SB
+✓ vs Terrible SP at SF, batting 7          → 0.143 SB
+
+--- TOTAL BASES ---
+✓ Neutral (no park/opp)                    → 1.540 TB
+✓ vs Elite SP at Coors, batting 3          → 1.680 TB
+✓ vs Terrible SP at SF, batting 7          → 1.610 TB
+
+--- STRIKEOUTS (Batter) ---
+✓ Neutral (no park/opp)                    → 0.990 K
+✓ vs Elite SP at Coors, batting 3          → 1.230 K
+✓ vs Terrible SP at SF, batting 7          → 0.760 K
+
+--- WALKS (Batter) ---
+✓ Neutral (no park/opp)                    → 0.340 BB
+✓ vs Elite SP at Coors, batting 3          → 0.290 BB
+✓ vs Terrible SP at SF, batting 7          → 0.510 BB
+
+--- HITTER FANTASY SCORE ---
+✓ Neutral (no park/opp)                    → 7.630 PTS
+✓ vs Elite SP at Coors, batting 3          → 7.940 PTS
+✓ vs Terrible SP at SF, batting 7          → 7.900 PTS
+
+--- HITS+RUNS+RBIs ---
+✓ Neutral (no park/opp)                    → 1.950 H+R+RBI
+✓ vs Elite SP at Coors, batting 3          → 3.050 H+R+RBI
+✓ vs Terrible SP at SF, batting 7          → 2.980 H+R+RBI
+
+
+====================================================================================================
+PITCHER PROJECTIONS TEST
+====================================================================================================
+
+
+####################################################################################################
+# ELITE SP
+# ERA:2.80 K/9:10.50 BB/9:2.20 IP:180
+####################################################################################################
+
+--- STRIKEOUTS (Pitcher) ---
+✓ Neutral                                  → 6.080 K
+✓ At Coors (bad lineup)                    → 6.370 K
+✓ At SF (good lineup)                      → 5.520 K
+
+--- OUTS ---
+✓ Neutral                                  → 15.600 Outs
+✓ At Coors (bad lineup)                    → 15.400 Outs
+✓ At SF (good lineup)                      → 15.700 Outs
+
+--- EARNED RUNS ---
+✓ Neutral                                  → 1.830 ER
+✓ At Coors (bad lineup)                    → 2.050 ER
+✓ At SF (good lineup)                      → 1.790 ER
+
+--- WALKS ALLOWED ---
+✓ Neutral                                  → 1.410 BB
+✓ At Coors (bad lineup)                    → 1.410 BB
+✓ At SF (good lineup)                      → 1.410 BB
+
+--- HITS ALLOWED ---
+✓ Neutral                                  → 4.530 H
+✓ At Coors (bad lineup)                    → 5.260 H
+✓ At SF (good lineup)                      → 4.300 H
+
+
+####################################################################################################
+# TERRIBLE SP
+# ERA:5.80 K/9:6.00 BB/9:4.50 IP:100
+####################################################################################################
+
+--- STRIKEOUTS (Pitcher) ---
+✓ Neutral                                  → 3.410 K
+✓ At Coors (bad lineup)                    → 3.660 K
+✓ At SF (good lineup)                      → 3.010 K
+
+--- OUTS ---
+✓ Neutral                                  → 14.100 Outs
+✓ At Coors (bad lineup)                    → 13.900 Outs
+✓ At SF (good lineup)                      → 14.200 Outs
+
+--- EARNED RUNS ---
+✓ Neutral                                  → 2.820 ER
+✓ At Coors (bad lineup)                    → 3.170 ER
+✓ At SF (good lineup)                      → 2.770 ER
+
+--- WALKS ALLOWED ---
+✓ Neutral                                  → 2.640 BB
+✓ At Coors (bad lineup)                    → 2.640 BB
+✓ At SF (good lineup)                      → 2.640 BB
+
+--- HITS ALLOWED ---
+✓ Neutral                                  → 5.830 H
+✓ At Coors (bad lineup)                    → 6.770 H
+✓ At SF (good lineup)                      → 5.540 H
+
+
+====================================================================================================
+GENERATE_PREDICTION INTEGRATION TEST
+====================================================================================================
+
+✗ Elite Batter         hits                      @ 1.5
+   Projection: 1.380 | Over: 0.372 Under: 0.627
+   Confidence: 0.519 | Edge: 0.0893 | Rating: D
+   ⚠️  Edge mismatch: proj 1.38 < line 1.5 but edge=0.0893
+
+✗ Elite Batter         runs                      @ 0.5
+   Projection: 0.620 | Over: 0.375 Under: 0.625
+   Confidence: 0.518 | Edge: 0.0875 | Rating: D
+   ⚠️  Edge mismatch: proj 0.62 > line 0.5 but edge=0.0875
+
+✗ Elite Batter         rbis                      @ 1.5
+   Projection: 0.730 | Over: 0.178 Under: 0.822
+   Confidence: 0.655 | Edge: 0.2255 | Rating: B
+   ⚠️  Edge mismatch: proj 0.73 < line 1.5 but edge=0.2255
+
+✗ Elite Batter         home_runs                 @ 0.5
+   Projection: 0.290 | Over: 0.210 Under: 0.790
+   Confidence: 0.633 | Edge: 0.2033 | Rating: B
+   ⚠️  Edge mismatch: proj 0.29 < line 0.5 but edge=0.2033
+
+✗ Elite Batter         stolen_bases              @ 0.5
+   Projection: 0.270 | Over: 0.367 Under: 0.632
+   Confidence: 0.523 | Edge: 0.0927 | Rating: D
+   ⚠️  Edge mismatch: proj 0.27 < line 0.5 but edge=0.0927
+
+✗ Elite Batter         total_bases               @ 2.5
+   Projection: 2.970 | Over: 0.470 Under: 0.530
+   Confidence: 0.500 | Edge: 0.0207 | Rating: D
+   ⚠️  Edge mismatch: proj 2.97 > line 2.5 but edge=0.0207
+
+✗ Elite Batter         batter_strikeouts         @ 1.5
+   Projection: 0.580 | Over: 0.132 Under: 0.868
+   Confidence: 0.688 | Edge: 0.2578 | Rating: B
+   ⚠️  Edge mismatch: proj 0.58 < line 1.5 but edge=0.2578
+
+✗ Elite Batter         hitter_fantasy_score      @ 7.5
+   Projection: 9.700 | Over: 0.527 Under: 0.473
+   Confidence: 0.500 | Edge: 0.019 | Rating: D
+   ⚠️  Edge mismatch: proj 9.70 > line 7.5 but edge=0.019
+
+✗ Terrible Batter      hits                      @ 0.5
+   Projection: 0.820 | Over: 0.486 Under: 0.514
+   Confidence: 0.500 | Edge:  0.01 | Rating: D
+   ⚠️  Edge mismatch: proj 0.82 > line 0.5 but edge=0.01
+
+✗ Terrible Batter      runs                      @ 0.5
+   Projection: 0.450 | Over: 0.290 Under: 0.710
+   Confidence: 0.577 | Edge: 0.1467 | Rating: C
+   ⚠️  Edge mismatch: proj 0.45 < line 0.5 but edge=0.1467
+
+✗ Terrible Batter      rbis                      @ 0.5
+   Projection: 0.520 | Over: 0.316 Under: 0.684
+   Confidence: 0.558 | Edge: 0.1285 | Rating: D
+   ⚠️  Edge mismatch: proj 0.52 > line 0.5 but edge=0.1285
+
+✗ Elite SP             pitcher_strikeouts        @ 7.5
+   Projection: 6.080 | Over: 0.248 Under: 0.752
+   Confidence: 0.576 | Edge: 0.1763 | Rating: C
+   ⚠️  Edge mismatch: proj 6.08 < line 7.5 but edge=0.1763
+
+✗ Elite SP             earned_runs               @ 3.5
+   Projection: 1.830 | Over: 0.167 Under: 0.833
+   Confidence: 0.633 | Edge: 0.233 | Rating: B
+   ⚠️  Edge mismatch: proj 1.83 < line 3.5 but edge=0.233
+
+✗ Elite SP             pitching_outs             @ 15.5
+   Projection: 15.590 | Over: 0.509 Under: 0.491
+   Confidence: 0.500 | Edge: 0.0062 | Rating: D
+   ⚠️  Edge mismatch: proj 15.59 > line 15.5 but edge=0.0062
+
+✗ Elite SP             walks_allowed             @ 2.5
+   Projection: 1.410 | Over: 0.193 Under: 0.807
+   Confidence: 0.615 | Edge: 0.2148 | Rating: C
+   ⚠️  Edge mismatch: proj 1.41 < line 2.5 but edge=0.2148
+
+✗ Elite SP             hits_allowed              @ 6.5
+   Projection: 4.530 | Over: 0.206 Under: 0.793
+   Confidence: 0.606 | Edge: 0.2055 | Rating: C
+   ⚠️  Edge mismatch: proj 4.53 < line 6.5 but edge=0.2055
+
+✗ Terrible SP          pitcher_strikeouts        @ 5.5
+   Projection: 3.410 | Over: 0.207 Under: 0.793
+   Confidence: 0.605 | Edge: 0.2049 | Rating: C
+   ⚠️  Edge mismatch: proj 3.41 < line 5.5 but edge=0.2049
+
+✗ Terrible SP          earned_runs               @ 5.5
+   Projection: 2.820 | Over: 0.134 Under: 0.866
+   Confidence: 0.656 | Edge: 0.2561 | Rating: B
+   ⚠️  Edge mismatch: proj 2.82 < line 5.5 but edge=0.2561
+
+✗ Terrible SP          walks_allowed             @ 4.5
+   Projection: 2.640 | Over: 0.168 Under: 0.833
+   Confidence: 0.633 | Edge: 0.2327 | Rating: B
+   ⚠️  Edge mismatch: proj 2.64 < line 4.5 but edge=0.2327
+
+
+====================================================================================================
+GENERATE_PREDICTION SUMMARY
+====================================================================================================
+Player               Stat                        Line    Proj   P(O)   Conf   Edge Rating Status
+----------------------------------------------------------------------------------------------------
+Elite Batter         hits                         1.5   1.380  0.372  0.519 0.0893      D ✗   (1 issues)
+Elite Batter         runs                         0.5   0.620  0.375  0.518 0.0875      D ✗   (1 issues)
+Elite Batter         rbis                         1.5   0.730  0.178  0.655 0.2255      B ✗   (1 issues)
+Elite Batter         home_runs                    0.5   0.290  0.210  0.633 0.2033      B ✗   (1 issues)
+Elite Batter         stolen_bases                 0.5   0.270  0.367  0.523 0.0927      D ✗   (1 issues)
+Elite Batter         total_bases                  2.5   2.970  0.470  0.500 0.0207      D ✗   (1 issues)
+Elite Batter         batter_strikeouts            1.5   0.580  0.132  0.688 0.2578      B ✗   (1 issues)
+Elite Batter         hitter_fantasy_score         7.5   9.700  0.527  0.500  0.019      D ✗   (1 issues)
+Terrible Batter      hits                         0.5   0.820  0.486  0.500   0.01      D ✗   (1 issues)
+Terrible Batter      runs                         0.5   0.450  0.290  0.577 0.1467      C ✗   (1 issues)
+Terrible Batter      rbis                         0.5   0.520  0.316  0.558 0.1285      D ✗   (1 issues)
+Elite SP             pitcher_strikeouts           7.5   6.080  0.248  0.576 0.1763      C ✗   (1 issues)
+Elite SP             earned_runs                  3.5   1.830  0.167  0.633  0.233      B ✗   (1 issues)
+Elite SP             pitching_outs               15.5  15.590  0.509  0.500 0.0062      D ✗   (1 issues)
+Elite SP             walks_allowed                2.5   1.410  0.193  0.615 0.2148      C ✗   (1 issues)
+Elite SP             hits_allowed                 6.5   4.530  0.206  0.606 0.2055      C ✗   (1 issues)
+Terrible SP          pitcher_strikeouts           5.5   3.410  0.207  0.605 0.2049      C ✗   (1 issues)
+Terrible SP          earned_runs                  5.5   2.820  0.134  0.656 0.2561      B ✗   (1 issues)
+Terrible SP          walks_allowed                4.5   2.640  0.168  0.633 0.2327      B ✗   (1 issues)
+
+
+====================================================================================================
+COMPARATIVE ANALYSIS (Elite vs Average vs Terrible)
+====================================================================================================
+
+--- BATTER PROJECTIONS ---
+(Higher stat quality should project higher for all props)
+
+Hits: Elite Ba      1.280 | Average       0.960 | Terrible      0.770 | ✓
+Runs: Elite Ba      0.590 | Average       0.490 | Terrible      0.430 | ✓
+RBIs: Elite Ba      0.610 | Average       0.500 | Terrible      0.430 | ✓
+HR: Elite Ba      0.271 | Average       0.146 | Terrible      0.105 | ✓
+TB: Elite Ba      2.470 | Average       1.540 | Terrible      1.260 | ✓
+K: Elite Ba      0.540 | Average       0.960 | Terrible      1.280 | ✗ MISORDERED
+
+--- PITCHER PROJECTIONS ---
+(Elite SP should project higher K, lower ER/walks than Terrible SP)
+
+K: Elite:  6.080 | Terrible:  3.410 | ✓
+ER: Elite:  1.830 | Terrible:  2.820 | ✓
+BB: Elite:  1.410 | Terrible:  2.640 | ✓
+H: Elite:  4.530 | Terrible:  5.830 | ✓
+
+
+====================================================================================================
+PARK FACTOR EFFECTS
+====================================================================================================
+
+Batter at neutral vs Coors vs SF:
+(Coors should boost offense, SF should suppress)
+
+Neutral: 0.960 | Coors: 0.990 | SF: 0.940
+Coors > Neutral > SF: ✓
+
+Pitcher strikeouts at neutral vs Coors vs SF:
+(SF should boost K rate, Coors should suppress)
+
+Neutral: 6.080 | Coors: 5.840 | SF: 6.200
+
+
+████████████████████████████████████████████████████████████████████████████████████████████████████
+█                                                                                                  █
+█                                        TEST SUITE COMPLETE                                       █
+█                                                                                                  █
+████████████████████████████████████████████████████████████████████████████████████████████████████
+
