@@ -1528,6 +1528,25 @@ def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
 # PROBABILITY & DISTRIBUTION
 # ═══════════════════════════════════════════════════════
 
+def _rating_from_confidence(confidence: float, is_dead_zone: bool = False) -> str:
+    """Map resolved confidence to the display grade."""
+    if is_dead_zone:
+        return "D"
+    if confidence >= 0.66:
+        return "A"
+    if confidence >= 0.60:
+        return "B"
+    if confidence >= 0.55:
+        return "C"
+    return "D"
+
+
+def _win_prob_from_confidence(confidence: float, p_push: float) -> float:
+    """Convert resolved confidence back to outright win probability."""
+    non_push_mass = max(0.0, 1.0 - p_push)
+    return confidence * non_push_mass
+
+
 def calculate_over_under_probability(projection, line, prop_type, proj_result=None):
     """
     P(over) and P(under) using prop-appropriate distributions.
@@ -1589,10 +1608,6 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     var_ratio = prop_dist.get("vr", vr.get(prop_type, default_vr))
     phi = prop_dist.get("phi", 25)
 
-    # Update dist_type for home_runs: changed from "binary" to "negbin"
-    if dist_type == "binary" and prop_type == "home_runs":
-        dist_type = "negbin"
-
     # Build distribution-specific params
     bb_alpha = None
     bb_beta = None
@@ -1627,14 +1642,27 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     p_under = prob_result_dist["p_under"]
     p_push = prob_result_dist["p_push"]
 
-    # Normalize (continuous distributions may not sum exactly to 1)
-    total = p_over + p_under
+    # Keep a single probability contract everywhere:
+    # p_over + p_under + p_push == 1.0
+    total = p_over + p_under + p_push
     if total > 0:
         p_over /= total
         p_under /= total
+        p_push /= total
     else:
         p_over = 0.5
         p_under = 0.5
+        p_push = 0.0
+
+    non_push_mass = p_over + p_under
+    if non_push_mass > 0:
+        resolved_over = p_over / non_push_mass
+        resolved_under = p_under / non_push_mass
+    else:
+        resolved_over = 0.5
+        resolved_under = 0.5
+
+    pick = "MORE" if resolved_over >= resolved_under else "LESS"
 
     # ── v016: Empirical calibration blend ──────────────────
     # Per-prop blend of theoretical distribution probability with empirical
@@ -1649,18 +1677,17 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
             # Reduce weight slightly for low-N bins (< 100 observations)
             emp_weight = base_emp_weight if emp["n"] >= 100 else base_emp_weight * 0.8
             theo_weight = 1.0 - emp_weight
-            p_over = emp["p_over"] * emp_weight + p_over * theo_weight
-            p_under = emp["p_under"] * emp_weight + p_under * theo_weight
-            # Re-normalize
-            total = p_over + p_under
+            resolved_over = emp["p_over"] * emp_weight + resolved_over * theo_weight
+            resolved_under = emp["p_under"] * emp_weight + resolved_under * theo_weight
+            total = resolved_over + resolved_under
             if total > 0:
-                p_over /= total
-                p_under /= total
+                resolved_over /= total
+                resolved_under /= total
 
-    pick = "MORE" if p_over > 0.5 else "LESS"
+    pick = "MORE" if resolved_over >= resolved_under else "LESS"
 
-    # Raw probability from distribution
-    raw_prob = max(p_over, p_under)
+    # Confidence is the resolved (non-push) probability that the chosen side wins.
+    raw_prob = max(resolved_over, resolved_under)
 
     # ── MODEL UNCERTAINTY DISCOUNT ─────────────────────────────
     # Raw CDF probability assumes the projection is perfect truth.
@@ -1676,27 +1703,15 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     confidence = 0.50 + (raw_prob - 0.50) * MODEL_UNCERTAINTY_SHRINKAGE
 
     edge = round(abs(confidence - 0.50), 4)
-
-    if confidence >= 0.66:
-        rating = "A"
-    elif confidence >= 0.60:
-        rating = "B"
-    elif confidence >= 0.55:
-        rating = "C"
-    else:
-        rating = "D"
-
-    # v016: Dead-zone filtering — projection ranges where calibration shows
-    # neither MORE nor LESS has meaningful edge (best direction < 54%).
-    # These are coinflip zones where the model can't reliably pick a winner.
-    if is_dead_zone:
-        rating = "D"
+    win_prob = _win_prob_from_confidence(confidence, p_push)
+    rating = _rating_from_confidence(confidence, is_dead_zone=is_dead_zone)
 
 
     return {
         "p_over": round(p_over, 4), "p_under": round(p_under, 4),
         "p_push": round(p_push, 4),
         "pick": pick, "confidence": round(confidence, 4),
+        "win_prob": round(win_prob, 4),
         "edge": round(edge, 4), "rating": rating,
         "projection": round(mu, 2), "line": line,
     }
@@ -1846,7 +1861,12 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         # Slash confidence hard: cap at 0.55 max (D-grade territory).
         raw_conf = result.get("confidence", 0.5)
         result["confidence"] = min(raw_conf, 0.55)
-        result["rating"] = "D"
+        result["rating"] = _rating_from_confidence(result["confidence"], is_dead_zone=True)
+        result["edge"] = round(abs(result["confidence"] - 0.50), 4)
+        result["win_prob"] = round(
+            _win_prob_from_confidence(result["confidence"], result.get("p_push", 0.0)),
+            4,
+        )
         result["data_warning"] = "no_player_data"
     else:
         # Player data exists but context may be incomplete.
@@ -1862,15 +1882,11 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         if missing_penalty > 0:
             raw_conf = result.get("confidence", 0.5)
             result["confidence"] = max(raw_conf - missing_penalty, 0.50)
-            # Recalculate rating based on penalized confidence
-            c = result["confidence"]
-            if c >= 0.70:
-                result["rating"] = "A"
-            elif c >= 0.62:
-                result["rating"] = "B"
-            elif c >= 0.57:
-                result["rating"] = "C"
-            else:
-                result["rating"] = "D"
+            result["rating"] = _rating_from_confidence(result["confidence"])
+            result["edge"] = round(abs(result["confidence"] - 0.50), 4)
+            result["win_prob"] = round(
+                _win_prob_from_confidence(result["confidence"], result.get("p_push", 0.0)),
+                4,
+            )
 
     return result

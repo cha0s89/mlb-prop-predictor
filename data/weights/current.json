@@ -84,7 +84,7 @@
     "pitcher_strikeouts": {"type": "betabinom", "phi": 25},
     "hits": {"type": "negbin", "vr": 1.5},
     "total_bases": {"type": "negbin", "vr": 2.5},
-    "home_runs": {"type": "binary"},
+    "home_runs": {"type": "negbin", "vr": 2.0},
     "stolen_bases": {"type": "negbin", "vr": 2.5},
     "hitter_fantasy_score": {"type": "gamma", "vr": 4.0},
     "earned_runs": {"type": "negbin", "vr": 2.2},

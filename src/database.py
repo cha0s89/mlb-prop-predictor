@@ -84,9 +84,23 @@ def init_projected_stats_table():
             created_at TEXT DEFAULT (datetime('now'))
         )
     """)
+    # Older app versions inserted the full board on every rerun. Collapse those
+    # duplicates so the uniqueness rule below can be enforced safely.
+    conn.execute("""
+        DELETE FROM projected_stats
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM projected_stats
+            GROUP BY game_date, player_name, stat_type
+        )
+    """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_stats_date ON projected_stats(game_date)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_stats_player ON projected_stats(player_name)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_projected_stats_stat ON projected_stats(stat_type)")
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_projected_stats_unique
+        ON projected_stats(game_date, player_name, stat_type)
+    """)
     conn.commit()
     conn.close()
 
@@ -286,25 +300,35 @@ def save_projected_stats(predictions: list):
             - confidence (float, optional)
             - rating (str, optional: 'A'/'B'/'C'/'D')
     """
+    if not predictions:
+        return
+
     conn = get_connection()
-    for pred in predictions:
-        conn.execute("""
-            INSERT INTO projected_stats
-            (game_date, player_name, team, stat_type, projected_value,
-             actual_value, line, pick, confidence, rating)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            pred.get("game_date"),
-            pred.get("player_name"),
-            pred.get("team"),
-            pred.get("stat_type"),
-            pred.get("projected_value"),
-            pred.get("actual_value"),
-            pred.get("line"),
-            pred.get("pick"),
-            pred.get("confidence"),
-            pred.get("rating"),
-        ))
+    rows = [(
+        pred.get("game_date"),
+        pred.get("player_name"),
+        pred.get("team"),
+        pred.get("stat_type"),
+        pred.get("projected_value"),
+        pred.get("actual_value"),
+        pred.get("line"),
+        pred.get("pick"),
+        pred.get("confidence"),
+        pred.get("rating"),
+    ) for pred in predictions]
+    conn.executemany("""
+        INSERT INTO projected_stats
+        (game_date, player_name, team, stat_type, projected_value,
+         actual_value, line, pick, confidence, rating)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(game_date, player_name, stat_type) DO UPDATE SET
+            team = excluded.team,
+            projected_value = excluded.projected_value,
+            line = excluded.line,
+            pick = excluded.pick,
+            confidence = excluded.confidence,
+            rating = excluded.rating
+    """, rows)
     conn.commit()
     conn.close()
 
@@ -321,15 +345,17 @@ def grade_projected_stats(game_date: str, actuals: dict):
     for (player_name, stat_type), actual_value in actuals.items():
         # Get the projected row
         cur = conn.execute("""
-            SELECT id, projected_value, line, pick FROM projected_stats
+            SELECT projected_value, line, pick FROM projected_stats
             WHERE game_date = ? AND player_name = ? AND stat_type = ?
+            ORDER BY id DESC
+            LIMIT 1
         """, (game_date, player_name, stat_type))
 
         row = cur.fetchone()
         if not row:
             continue
 
-        pred_id, projected_value, line, pick = row
+        projected_value, line, pick = row
 
         # Determine if correct
         was_correct = None
@@ -345,8 +371,8 @@ def grade_projected_stats(game_date: str, actuals: dict):
         conn.execute("""
             UPDATE projected_stats
             SET actual_value = ?, was_correct = ?
-            WHERE id = ?
-        """, (actual_value, was_correct, pred_id))
+            WHERE game_date = ? AND player_name = ? AND stat_type = ?
+        """, (actual_value, was_correct, game_date, player_name, stat_type))
 
     conn.commit()
     conn.close()

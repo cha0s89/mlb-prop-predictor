@@ -481,15 +481,16 @@ def test_generate_prediction():
         projection = result.get("projection", 0)
         p_over = result.get("p_over", 0)
         p_under = result.get("p_under", 0)
+        p_push = result.get("p_push", 0)
         confidence = result.get("confidence", 0)
-        edge = result.get("edge", "NONE")
+        pick = result.get("pick", "NONE")
         rating = result.get("rating", "?")
 
         # Sanity checks
         issues = []
 
         # Probability calibration
-        prob_sum = p_over + p_under
+        prob_sum = p_over + p_under + p_push
         if abs(prob_sum - 1.0) > 0.01:
             issues.append(f"Prob sum {prob_sum:.3f} ≠ 1.0")
 
@@ -500,12 +501,12 @@ def test_generate_prediction():
             pass  # Edge picks expected
 
         # Check edge direction matches projection
-        if projection > line and edge != "MORE":
-            if edge != "NONE":
-                issues.append(f"Edge mismatch: proj {projection:.2f} > line {line} but edge={edge}")
-        elif projection < line and edge != "LESS":
-            if edge != "NONE":
-                issues.append(f"Edge mismatch: proj {projection:.2f} < line {line} but edge={edge}")
+        if projection > line and pick != "MORE":
+            if pick != "NONE":
+                issues.append(f"Pick mismatch: proj {projection:.2f} > line {line} but pick={pick}")
+        elif projection < line and pick != "LESS":
+            if pick != "NONE":
+                issues.append(f"Pick mismatch: proj {projection:.2f} < line {line} but pick={pick}")
 
         status = "✓" if not issues else "✗"
         results_summary.append({
@@ -515,16 +516,17 @@ def test_generate_prediction():
             "projection": projection,
             "p_over": p_over,
             "p_under": p_under,
+            "p_push": p_push,
             "confidence": confidence,
-            "edge": edge,
+            "pick": pick,
             "rating": rating,
             "issues": issues,
             "status": status,
         })
 
         print(f"\n{status} {player_name:20} {stat_internal:25} @ {line}")
-        print(f"   Projection: {projection:.3f} | Over: {p_over:.3f} Under: {p_under:.3f}")
-        print(f"   Confidence: {confidence:.3f} | Edge: {edge:5} | Rating: {rating}")
+        print(f"   Projection: {projection:.3f} | Over: {p_over:.3f} Under: {p_under:.3f} Push: {p_push:.3f}")
+        print(f"   Confidence: {confidence:.3f} | Pick: {pick:5} | Rating: {rating}")
         if issues:
             for issue in issues:
                 print(f"   ⚠️  {issue}")
@@ -533,12 +535,12 @@ def test_generate_prediction():
     print("\n\n" + "="*100)
     print("GENERATE_PREDICTION SUMMARY")
     print("="*100)
-    print(f"{'Player':<20} {'Stat':<25} {'Line':>6} {'Proj':>7} {'P(O)':>6} {'Conf':>6} {'Edge':>6} {'Rating':>6} {'Status':<3}")
+    print(f"{'Player':<20} {'Stat':<25} {'Line':>6} {'Proj':>7} {'P(O)':>6} {'Conf':>6} {'Pick':>6} {'Rating':>6} {'Status':<3}")
     print("-" * 100)
     for r in results_summary:
         issues_str = f" ({len(r['issues'])} issues)" if r['issues'] else ""
         print(f"{r['player']:<20} {r['stat']:<25} {r['line']:>6.1f} {r['projection']:>7.3f} "
-              f"{r['p_over']:>6.3f} {r['confidence']:>6.3f} {r['edge']:>6} {r['rating']:>6} {r['status']:<3}{issues_str}")
+              f"{r['p_over']:>6.3f} {r['confidence']:>6.3f} {r['pick']:>6} {r['rating']:>6} {r['status']:<3}{issues_str}")
 
 
 def test_comparative_analysis():
@@ -628,7 +630,7 @@ def test_park_effects():
     print("(SF should boost K rate, Coors should suppress)")
     print()
 
-    p_neutral = project_pitcher_strikeouts(AVERAGE_BATTER if hasattr(AVERAGE_BATTER, 'k_pct') else ELITE_SP, park=None)["projection"]
+    p_neutral = project_pitcher_strikeouts(ELITE_SP, park=None)["projection"]
     p_coors = project_pitcher_strikeouts(ELITE_SP, park="COL")["projection"]
     p_sf = project_pitcher_strikeouts(ELITE_SP, park="SF")["projection"]
 

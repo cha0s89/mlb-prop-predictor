@@ -694,6 +694,8 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
             # Use FanDuel line if available, otherwise consensus
             fair_over = sharp.get("fanduel_fair_over") or sharp["consensus_fair_over"]
             fair_under = sharp.get("fanduel_fair_under") or sharp["consensus_fair_under"]
+            repriced_over = fair_over
+            repriced_under = fair_under
 
             # PrizePicks breakeven thresholds (implied odds of each entry type)
             # 5-pick flex: ~54.2% per leg
@@ -760,10 +762,18 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
                 "player_name": pp_row["player_name"],
                 "team": pp_row.get("team", ""),
                 "stat_type": pp_row["stat_type"],
+                "stat_internal": pp_row.get("stat_internal", _MARKET_TO_DIST_KEY.get(market, "")),
                 "pp_line": pp_line,
                 "sharp_line": sharp_line_val,
+                "line": pp_line,
+                # Sharp lines are the best same-unit proxy we have for a market-implied projection.
+                "projection": round(float(sharp_line_val), 3),
                 "pick": pick,
+                "confidence": round(fair_prob, 4),
                 "fair_prob": round(fair_prob, 4),
+                "p_over": round(repriced_over, 4),
+                "p_under": round(repriced_under, 4),
+                "edge": round(edge, 4),
                 "edge_pct": round(edge * 100, 2),
                 "rating": rating,
                 "num_books": sharp["num_books"],
@@ -774,6 +784,7 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
                 "ev_6pick_roi": round(ev_6pick * 100, 1),
                 "start_time": pp_row.get("start_time", ""),
                 "market": market,
+                "model_version": "sharp_odds_v1",
             })
 
     # Sort by edge size descending

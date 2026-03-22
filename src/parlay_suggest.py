@@ -354,12 +354,13 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
         dict: Slip with metadata
     """
     confidences = [p.get('confidence', 0.5) for p in picks]
+    leg_win_probs = [p.get('win_prob', p.get('confidence', 0.5)) for p in picks]
     avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
 
     # Estimated win probability with empirical correlation adjustment
     win_prob = 1.0
-    for conf in confidences:
-        win_prob *= conf
+    for leg_win_prob in leg_win_probs:
+        win_prob *= leg_win_prob
 
     # Apply correlation multiplier (research: positive correlation drops effective breakeven from 54.2% to ~51.5%)
     correlation_mult = estimate_slip_correlation(picks)
@@ -399,11 +400,11 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
             n = len(picks)
             entry_type = f"{n}_flex"
             ev_result = quick_slip_ev(
-                probs=[p.get('confidence', 0.55) for p in picks],
+                win_probs=leg_win_probs,
                 entry_type=entry_type,
             )
-            result['mc_ev_pct'] = ev_result.get('ev_pct', 0)
-            result['mc_win_rate'] = ev_result.get('win_rate', 0)
+            result['mc_ev_pct'] = ev_result.get('ev_profit_pct', 0)
+            result['mc_win_rate'] = ev_result.get('prob_perfect', 0)
         except Exception:
             pass
 

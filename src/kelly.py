@@ -130,7 +130,8 @@ def calculate_slip_sizing(
     by 75%.
 
     Args:
-        picks: List of pick dicts, each with 'confidence' key (0-1 scale)
+        picks: List of pick dicts. Prefers 'win_prob' (outright win chance)
+            and falls back to 'confidence' when only resolved-confidence is available.
         bankroll: Total bankroll available, in dollars
         slip_type: Slip type string, e.g. "5_flex", "6_flex"
 
@@ -171,13 +172,14 @@ def calculate_slip_sizing(
             "edge_pct": 0.0,
         }
 
-    # Calculate joint win probability
-    # Start with product of individual confidences
+    # Calculate joint win probability from the outright leg win chances.
     joint_prob = 1.0
     for pick in picks:
-        conf = pick.get("confidence") or 0.5  # handles None and missing
-        conf = max(0.01, min(0.99, float(conf)))  # clamp to valid range
-        joint_prob *= conf
+        leg_win_prob = pick.get("win_prob")
+        if leg_win_prob is None:
+            leg_win_prob = pick.get("confidence", 0.5)
+        leg_win_prob = max(0.01, min(0.99, float(leg_win_prob)))
+        joint_prob *= leg_win_prob
 
     # Apply same-game correlation discount
     # (assume all picks are same-game parlay for conservative estimate)

@@ -388,6 +388,26 @@ def grade_label(r):
     return f"{icons.get(r, '⚪')} {r}"
 
 
+def _confidence_rating(confidence: float) -> str:
+    if confidence >= 0.66:
+        return "A"
+    if confidence >= 0.60:
+        return "B"
+    if confidence >= 0.55:
+        return "C"
+    return "D"
+
+
+def _sync_pick_metrics(pred: dict) -> None:
+    """Keep confidence-derived fields aligned after app-side adjustments."""
+    conf = max(0.0, min(_safe_num(pred.get("confidence"), 0.5), 1.0))
+    push_p = max(0.0, min(_safe_num(pred.get("p_push"), 0.0), 1.0))
+    pred["confidence"] = conf
+    pred["edge"] = round(abs(conf - 0.50), 4)
+    pred["win_prob"] = round(conf * max(0.0, 1.0 - push_p), 4)
+    pred["rating"] = _confidence_rating(conf)
+
+
 # ── PrizePicks tradeable prop configurations ──────────────────────────────────
 PP_TRADEABLE: dict = {
     "pitcher_strikeouts":  {"directions": ["MORE", "LESS"], "lines": [3.5, 4.5, 5.5, 6.5, 7.5]},
@@ -765,7 +785,12 @@ with st.sidebar:
     if _sb_stats["total"] > 0:
         st.markdown("### Record")
         _sb_acc = _sb_stats["accuracy"]
-        st.metric("Accuracy", f"{_sb_acc:.1f}%", delta=f"{_sb_acc - 55:.1f}% vs break-even")
+        _five_flex_be = BREAKEVEN.get("5_flex", 0.54253)
+        st.metric(
+            "Accuracy",
+            f"{_sb_acc * 100:.1f}%",
+            delta=f"{(_sb_acc - _five_flex_be) * 100:+.1f} pts vs 5-flex BE",
+        )
         st.caption(f"{_sb_stats['wins']}W – {_sb_stats['losses']}L ({_sb_stats['total']} picks)")
 
 tab_edge, tab_news, tab_slips, tab_grade = st.tabs(["🎯 FIND EDGES", "📰 NEWS", "🎫 MY SLIPS", "✅ GRADE"])
@@ -813,7 +838,7 @@ with tab_edge:
     else:
         st.markdown(f"**{len(pp_lines)} MLB props** on PrizePicks today")
         all_edges = []
-        if has_sharp:
+        if has_sharp and not _is_preseason:
             total_sharp_lines = 0
             events_with_props = 0
             _skipped_events = 0
@@ -860,20 +885,19 @@ with tab_edge:
                 bcls = "g" if best_e>8 else ("y" if best_e>5 else "")
                 st.markdown(f'<div class="card"><div class="lbl">Best Edge</div><div class="val {bcls}">+{best_e:.1f}%</div><div class="sub">{len(all_edges)} total edges</div></div>', unsafe_allow_html=True)
 
+            _sharp_prop_options = ["All"] + sorted({e.get("stat_type", "") for e in all_edges if e.get("stat_type")})
             f1,f2,f3 = st.columns([2,2,2])
             with f1: min_grade = st.selectbox("Min grade", ["A only","A + B","A + B + C","All"], index=1)
-            with f2: prop_f = st.selectbox("Prop type", ["All","Pitcher Ks","Batter Hits","Total Bases","Home Runs"])
+            with f2: prop_f = st.selectbox("Prop type", _sharp_prop_options)
             with f3: show_all_sharp = st.checkbox("Show all picks (incl. non-tradeable)", value=False, key="show_all_sharp")
             gm = {"A only":["A"],"A + B":["A","B"],"A + B + C":["A","B","C"],"All":["A","B","C","D"]}
             filt = [e for e in all_edges if e["rating"] in gm[min_grade]]
-            if prop_f=="Pitcher Ks": filt=[e for e in filt if "strikeout" in e.get("market","").lower() and "batter" not in e.get("market","").lower()]
-            elif prop_f=="Batter Hits": filt=[e for e in filt if "hits" in e.get("market","").lower()]
-            elif prop_f=="Total Bases":
-                filt=[e for e in filt if "total_bases" in e.get("market","").lower()]
+            if prop_f != "All":
+                filt = [e for e in filt if e.get("stat_type") == prop_f]
+            if prop_f == "Total Bases":
                 less_tb = [e for e in filt if e.get("pick") == "LESS"]
                 if less_tb:
                     st.markdown('<div class="warn-strip"><strong>TB LESS Warning:</strong> Total Bases LESS picks historically underperform — trade with extra caution</div>', unsafe_allow_html=True)
-            elif prop_f=="Home Runs": filt=[e for e in filt if "home_run" in e.get("market","").lower()]
             if not show_all_sharp:
                 _hidden_sharp = [e for e in filt if not is_tradeable_pick(e.get("stat_internal", e.get("market", "")), e.get("pick", ""))]
                 filt = [e for e in filt if is_tradeable_pick(e.get("stat_internal", e.get("market", "")), e.get("pick", ""))]
@@ -922,11 +946,8 @@ with tab_edge:
                     log_batch_predictions(filt, date.today().isoformat())
                     st.success(f"Saved {len(filt)} predictions!")
             else: st.info("No edges match filters.")
-        elif has_sharp:
-            if _is_preseason:
-                st.info("Sharp book player props aren't available until Opening Day. Projection-based analysis is below.")
-            else:
-                st.info("No sharp book player prop edges found right now — odds may not be posted yet. Showing projection-based analysis below.")
+        elif has_sharp and not _is_preseason:
+            st.info("No sharp book player prop edges found right now — odds may not be posted yet. Showing projection-based analysis below.")
 
         if not all_edges:
             st.markdown('<div class="section-hdr">Projection Analysis</div>', unsafe_allow_html=True)
@@ -1250,6 +1271,16 @@ with tab_edge:
                         if _is_count_prop:
                             p["projection"] = round(p["projection"] * 1.04, 2)
 
+                # Spring/trend/buy-low modifiers change the projection itself, so the
+                # displayed probabilities and pick direction must be refreshed too.
+                _refreshed_prob = calculate_over_under_probability(
+                    p["projection"],
+                    p["line"],
+                    stat_int,
+                    proj_result=p,
+                )
+                p.update(_refreshed_prob)
+
                 injury = get_player_injury_status(
                     player_name=row["player_name"],
                     injuries=injury_list,
@@ -1260,9 +1291,8 @@ with tab_edge:
                 if injury["status"] == "IL":
                     continue
                 if injury["status"] == "day-to-day":
-                    p["confidence"] = max(p.get("confidence", 0.5) * 0.85, 0)
-                    if p.get("rating") in ("A", "A+"):
-                        p["rating"] = "B"
+                    p["confidence"] = max(p.get("confidence", 0.5) * 0.85, 0.50)
+                    _sync_pick_metrics(p)
 
                 # ── DATA QUALITY GATE ────────────────────────
                 # Skip players with no player-specific data entirely.
@@ -1322,9 +1352,7 @@ with tab_edge:
                 if _raw_edge > MAX_EDGE_PCT:
                     # Clamp confidence to reflect that we don't trust this edge
                     p["confidence"] = min(p.get("confidence", 0.5), 0.65)
-                    if p.get("rating") == "A":
-                        p["rating"] = "B"
-                    p["edge"] = round(MAX_EDGE_PCT if p.get("edge", 0) > 0 else -MAX_EDGE_PCT, 4)
+                    _sync_pick_metrics(p)
                     p["edge_capped"] = True
 
                 preds.append(p)
@@ -1709,14 +1737,17 @@ with tab_edge:
 
                                     # v018: Monte Carlo EV for suggested slip
                                     try:
-                                        _sg_probs = [sp.get("confidence", 0.55) for sp in _sg["picks"]]
+                                        _sg_probs = [
+                                            sp.get("win_prob", sp.get("confidence", 0.55))
+                                            for sp in _sg["picks"]
+                                        ]
                                         _sg_ev = quick_slip_ev(_sg_probs, entry_type=f"{_slip_size}_flex")
                                         _sg_ev_pct = _sg_ev["ev_profit_pct"]
                                         _sg_ev_color = "#00C853" if _sg_ev_pct > 0 else ("#FFB300" if _sg_ev_pct > -10 else "#FF4444")
                                         _sg_ev_label = f"{_sg_ev_pct:+.1f}%"
                                         st.markdown(
                                             f'<div style="margin-top:0.4rem;padding:0.4rem 0.6rem;background:rgba(0,100,200,0.04);border:1px solid rgba(0,100,200,0.08);border-radius:8px;font-size:0.72rem;">'
-                                            f'<span style="color:rgba(232,236,241,0.4);">EV:</span> '
+                                            f'<span style="color:rgba(232,236,241,0.4);">Approx EV (no ties):</span> '
                                             f'<span style="font-family:JetBrains Mono;font-weight:700;color:{_sg_ev_color};">{_sg_ev_label}</span>'
                                             f' · <span style="color:rgba(232,236,241,0.4);">Perfect:</span> '
                                             f'<span style="font-family:JetBrains Mono;font-size:0.7rem;color:rgba(232,236,241,0.5);">{_sg_ev["prob_perfect"]*100:.1f}%</span>'
@@ -1732,7 +1763,7 @@ with tab_edge:
                                     _edge_color = "#00C853" if _edge > 0 else "#FF4444"
                                     st.markdown(
                                         f'<div style="margin-top:0.5rem;padding:0.5rem 0.6rem;background:rgba(0,200,83,0.04);border:1px solid rgba(0,200,83,0.08);border-radius:8px;font-size:0.75rem;">'
-                                        f'<span style="color:rgba(232,236,241,0.4);">Kelly Wager:</span> '
+                                        f'<span style="color:rgba(232,236,241,0.4);">Kelly Approx:</span> '
                                         f'<span style="font-family:JetBrains Mono;font-weight:700;color:#E8ECF1;">${_rec_wager:.2f}</span>'
                                         f' · <span style="color:rgba(232,236,241,0.4);">Edge:</span> '
                                         f'<span style="font-family:JetBrains Mono;font-weight:600;color:{_edge_color};">{_edge:+.1f}%</span>'
@@ -1807,7 +1838,11 @@ with tab_edge:
                             )
                         # Kelly Criterion sizing
                         try:
-                            _sel_picks_for_kelly = [{"confidence": p.get("confidence", 0.55)} for _, p in slip_df.iterrows()]
+                            _sel_picks_for_kelly = [{
+                                "confidence": p.get("confidence", 0.55),
+                                "win_prob": p.get("win_prob", p.get("confidence", 0.55)),
+                                "p_push": p.get("p_push", 0.0),
+                            } for _, p in slip_df.iterrows()]
                             _kelly_result = calculate_slip_sizing(
                                 _sel_picks_for_kelly,
                                 bankroll=st.session_state.get("starting_bankroll", 100.0),
@@ -1819,7 +1854,7 @@ with tab_edge:
                             _k_cls = "#00C853" if _k_edge > 0 else "#FF4444"
                             st.markdown(
                                 f'<div class="info-strip">'
-                                f'Kelly Suggested Wager: <span class="hl">${_k_rec:.2f}</span> · '
+                                f'Kelly Approx Wager: <span class="hl">${_k_rec:.2f}</span> · '
                                 f'Win Prob: <span class="hl">{_k_wp:.1f}%</span> · '
                                 f'Edge: <span style="color:{_k_cls};font-weight:600">{_k_edge:+.1f}%</span>'
                                 f'</div>',
@@ -1835,7 +1870,8 @@ with tab_edge:
                             _has_promo = False
                             for _, _sp in slip_df.iterrows():
                                 _mc_legs.append({
-                                    "win_prob": _sp.get("confidence", 0.55),
+                                    "win_prob": _sp.get("win_prob", _sp.get("confidence", 0.55)),
+                                    "p_push": _sp.get("p_push", 0.0),
                                     "stat_type": _sp.get("stat_internal", _sp.get("stat_type", "")),
                                     "line": _sp.get("line", 0.5),
                                     "team": _sp.get("team", ""),
@@ -2196,4 +2232,3 @@ with tab_grade:
             f'<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:0.5rem 0.8rem;overflow:hidden">{"".join(feed_rows[:20])}</div>',
             unsafe_allow_html=True
         )
-
