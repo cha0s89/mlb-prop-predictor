@@ -1229,13 +1229,19 @@ with tab_edge:
                 if not p.get("has_player_data", True):
                     continue  # Don't show picks where we have no data
 
-                # Also skip if ALL context is missing (opponent, pitcher,
-                # batting order, park) — zero informational value.
-                _no_opp = not p.get("has_opp_data") and not (r_team and r_team in opp_pitcher_lookup)
-                _no_lineup = batting_pos is None
-                _no_park = r_team is None
-                if _no_opp and _no_lineup and _no_park:
-                    continue
+                # Also skip if ALL context is missing — zero informational value.
+                # NOTE: Pitcher props don't have batting_pos, so we only check
+                # opponent and park for pitchers. Batters need 2+ of 3 context fields.
+                if is_pitcher_prop:
+                    # Pitchers need at least a resolved team (for park factor)
+                    if r_team is None:
+                        continue
+                else:
+                    _no_opp = not p.get("has_opp_data") and not (r_team and r_team in opp_pitcher_lookup)
+                    _no_lineup = batting_pos is None
+                    _no_park = r_team is None
+                    if _no_opp and _no_lineup and _no_park:
+                        continue
 
                 # v018: Lineup position display info
                 # NOTE: PA adjustment now handled INSIDE generate_prediction() via
