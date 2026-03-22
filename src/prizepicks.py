@@ -113,24 +113,6 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
 
         league_label = "MLB" if league_id == "9" else ("Spring Training" if league_id == "43" else "MLB")
 
-        # Detect special line types (Goblin/Demon/discounted)
-        # These have non-standard payouts — flag for user awareness
-        is_promo = attrs.get("is_promo", False)
-        discount = attrs.get("discount_percentage")
-        odds_type = attrs.get("odds_type", "standard")
-        flash_sale = attrs.get("flash_sale_line_score")
-        combo_flag = attrs.get("combo", False)
-
-        # Goblin lines are typically very easy (low lines like HR 0.5)
-        # and have reduced payouts — detect by promo flags or known patterns
-        line_type = "standard"
-        if is_promo or odds_type not in ("standard", ""):
-            line_type = "promo"
-        elif discount:
-            line_type = "discounted"
-        elif flash_sale:
-            line_type = "flash_sale"
-
         rows.append({
             "player_name": player_info.get("name", "Unknown"),
             "player_id": player_id,
@@ -143,8 +125,6 @@ def fetch_prizepicks_mlb_lines() -> pd.DataFrame:
             "start_time": attrs.get("start_time", ""),
             "description": attrs.get("description", ""),
             "league": league_label,
-            "line_type": line_type,
-            "odds_type": odds_type or "standard",
         })
 
     df = pd.DataFrame(rows)

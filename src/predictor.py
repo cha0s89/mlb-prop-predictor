@@ -1712,6 +1712,9 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     p = pitcher_profile or {}
     opp = opp_pitcher_profile or {}
 
+    # Track whether we have real player data vs league-average fallback
+    _has_player_data = bool(b or p)
+
     # Route to correct projection
     route = {
         "pitcher_strikeouts": lambda: project_pitcher_strikeouts(
@@ -1817,8 +1820,50 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         prob_result["nb_p_over"] = prob_result.get("p_over")
         prob_result["nb_p_under"] = prob_result.get("p_under")
 
-    return {
+    # ── DATA QUALITY FLAGS ──────────────────────────────────
+    # When player-specific data is missing, the projection is just league
+    # averages or line-as-projection.  Flag this and penalize confidence.
+    result = {
         "player_name": player_name, "stat_type": stat_type,
         "stat_internal": stat_internal, "line": line,
         **proj_result, **prob_result,
     }
+
+    result["has_player_data"] = _has_player_data
+    result["has_opp_data"] = bool(opp)
+    result["has_lineup_pos"] = lineup_pos is not None
+    result["has_park"] = park_team is not None
+
+    if not _has_player_data:
+        # No player stats at all — projection is pure league average / line fallback.
+        # Slash confidence hard: cap at 0.55 max (D-grade territory).
+        raw_conf = result.get("confidence", 0.5)
+        result["confidence"] = min(raw_conf, 0.55)
+        result["rating"] = "D"
+        result["data_warning"] = "no_player_data"
+    else:
+        # Player data exists but context may be incomplete.
+        # Penalize missing context fields (opponent, lineup, park).
+        missing_penalty = 0.0
+        if not opp:
+            missing_penalty += 0.05   # No opposing pitcher data
+        if lineup_pos is None:
+            missing_penalty += 0.03   # No confirmed batting order
+        if park_team is None:
+            missing_penalty += 0.02   # No park factor
+
+        if missing_penalty > 0:
+            raw_conf = result.get("confidence", 0.5)
+            result["confidence"] = max(raw_conf - missing_penalty, 0.50)
+            # Recalculate rating based on penalized confidence
+            c = result["confidence"]
+            if c >= 0.70:
+                result["rating"] = "A"
+            elif c >= 0.62:
+                result["rating"] = "B"
+            elif c >= 0.57:
+                result["rating"] = "C"
+            else:
+                result["rating"] = "D"
+
+    return result

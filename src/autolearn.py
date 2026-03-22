@@ -1040,7 +1040,7 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
             failed_keys.add(sig)
 
     # 1. Direction bias correction
-    # DISABLED for v003: NegBin CDFs make LESS-heavy direction balance
+    # DISABLED for v003: Poisson CDFs make LESS-heavy direction balance
     # correct for discrete stats.
     if False:
         dir_analysis = analysis.get("direction_bias", {})
@@ -1129,7 +1129,7 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
                     })
 
     # 4. Variance ratio adjustments (general)
-    # DISABLED for v003: NegBin props already have variance ratios baked in.
+    # DISABLED for v003: Poisson/NegBin props don't use variance ratios.
     if False:
         var_analysis = analysis.get("variance_calibration", {})
         for stat_type, info in var_analysis.get("per_prop_suggestions", {}).items():
@@ -1500,25 +1500,6 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
     accuracy_before = wins / total if total > 0 else 0.0
     result["accuracy_before"] = round(accuracy_before, 4)
 
-    # v018: Compute Brier Score and Log Loss for proper calibration assessment
-    try:
-        confidences = wl["confidence"].astype(float).values
-        outcomes = (wl["result"] == "W").astype(int).values
-        # Brier Score: E[(p - y)^2], lower is better (0 = perfect, 0.25 = coin flip)
-        brier_score = float(np.mean((confidences - outcomes) ** 2))
-        # Log Loss: -E[y*log(p) + (1-y)*log(1-p)], lower is better
-        eps = 1e-7
-        clipped = np.clip(confidences, eps, 1 - eps)
-        log_loss = float(-np.mean(outcomes * np.log(clipped) + (1 - outcomes) * np.log(1 - clipped)))
-        result["brier_score"] = round(brier_score, 4)
-        result["log_loss"] = round(log_loss, 4)
-        logger.info("Scoring: Brier=%.4f, LogLoss=%.4f, Accuracy=%.1f%%",
-                     brier_score, log_loss, accuracy_before * 100)
-    except Exception as e:
-        logger.warning("Scoring metrics failed (non-fatal): %s", e)
-        result["brier_score"] = None
-        result["log_loss"] = None
-
     # ── Run all analyses ──
     analysis = {
         "direction_bias": analyze_direction_bias(graded),
@@ -1637,7 +1618,7 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
         f"Monitoring for kill switch ({KILL_SWITCH_EVAL_SIZE} picks)."
     )
 
-    # Log to history (with proper scoring metrics)
+    # Log to history
     _append_history({
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": "adjustment",
@@ -1646,27 +1627,9 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
         "status": "applied",
         "sample_size": total,
         "accuracy_before": round(accuracy_before, 4),
-        "brier_score": result.get("brier_score"),
-        "log_loss": result.get("log_loss"),
         "changes": proposals,
         "description": description,
     })
-
-    # v018: Trigger hedge-style ensemble weight update after grading
-    # This reweights sharp_odds vs projection vs recent_form based on
-    # which signal sources have been most accurate recently.
-    try:
-        from src.ensemble import update_ensemble_weights
-        ens_result = update_ensemble_weights(learning_rate=0.1, min_samples=20)
-        if ens_result.get("updated"):
-            logger.info("Ensemble weights updated: %s", ens_result.get("new_weights"))
-            result["ensemble_updated"] = True
-            result["ensemble_weights"] = ens_result.get("new_weights")
-        else:
-            result["ensemble_updated"] = False
-    except Exception as e:
-        logger.warning("Ensemble weight update failed: %s", e)
-        result["ensemble_updated"] = False
 
     logger.info(result["reason"])
     return result

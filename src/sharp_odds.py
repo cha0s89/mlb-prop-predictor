@@ -14,17 +14,10 @@ from typing import Optional
 import os
 import json
 from datetime import datetime
-from scipy.optimize import brentq
-from src.distributions import compute_probabilities
 
-
-import logging
-
-_log = logging.getLogger(__name__)
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 SPORT_KEY = "baseball_mlb"
-SPORT_KEY_PRESEASON = "baseball_mlb_preseason"
 
 # Prop market keys supported by The Odds API for MLB
 PROP_MARKETS = {
@@ -87,137 +80,6 @@ BOOK_WEIGHTS = {
 # Priority order for which books to trust for MLB props
 SHARP_BOOKS = ["fanduel", "pinnacle", "draftkings", "betmgm", "caesars"]
 
-# ── Distribution-based repricing engine ──────────────────────────────
-# Maps Odds API market keys → distribution_params keys in current.json
-_MARKET_TO_DIST_KEY = {
-    "pitcher_strikeouts": "pitcher_strikeouts",
-    "batter_hits": "hits",
-    "batter_total_bases": "total_bases",
-    "batter_home_runs": "home_runs",
-    "batter_rbis": "hits_runs_rbis",  # closest proxy
-    "batter_runs_scored": "hits_runs_rbis",
-    "batter_stolen_bases": "stolen_bases",
-    "batter_singles": "hits",
-    "batter_doubles": "hits",
-    "batter_walks": "walks_allowed",
-    "batter_strikeouts": "batter_strikeouts",
-    "pitcher_hits_allowed": "hits_allowed",
-    "pitcher_walks": "walks_allowed",
-    "pitcher_earned_runs": "earned_runs",
-    "pitcher_outs": "pitching_outs",
-}
-
-# Load distribution params from weights once
-_DIST_PARAMS_CACHE = {}
-
-
-def _load_dist_params() -> dict:
-    """Load distribution_params from current.json (cached)."""
-    if _DIST_PARAMS_CACHE:
-        return _DIST_PARAMS_CACHE
-    try:
-        weights_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "data", "weights", "current.json"
-        )
-        with open(weights_path) as f:
-            w = json.load(f)
-        _DIST_PARAMS_CACHE.update(w.get("distribution_params", {}))
-    except Exception:
-        pass
-    return _DIST_PARAMS_CACHE
-
-
-def _prob_over_at_line(line: float, mu: float, dist_type: str,
-                       vr: float = 1.5, phi: float = 25.0) -> float:
-    """Compute P(X >= ceil(line)) for a given mean mu and distribution type.
-
-    Delegates to distributions.compute_probabilities() as single source of truth.
-
-    Args:
-        line: The threshold line value
-        mu: Distribution mean
-        dist_type: One of betabinom, negbin, normal, gamma, binary
-        vr: Variance ratio (for negbin/normal/gamma)
-        phi: Precision parameter (for betabinom)
-    """
-    result = compute_probabilities(
-        line=line, mu=mu, dist_type=dist_type,
-        var_ratio=vr, phi=phi,
-    )
-    return result["p_over"]
-
-
-def _solve_mu_from_fair_over(fair_over: float, line: float,
-                              dist_type: str, vr: float = 1.5,
-                              phi: float = 25.0) -> float:
-    """Numerically solve for the distribution mean mu such that
-    P(X >= ceil(line)) = fair_over.
-
-    Returns mu, or line as fallback if solver fails.
-    """
-    if fair_over <= 0.01 or fair_over >= 0.99:
-        return max(0.1, line)
-
-    def objective(mu):
-        return _prob_over_at_line(line, mu, dist_type, vr, phi) - fair_over
-
-    try:
-        # Search range: mu from 0.1 to 3x the line
-        lo, hi = 0.1, max(line * 3, 10.0)
-        # Ensure bracketing — P(over) decreases as mu decreases
-        f_lo = objective(hi)   # high mu → high P(over) → positive
-        f_hi = objective(lo)   # low mu → low P(over) → negative
-        if f_lo * f_hi > 0:
-            # Can't bracket — fall back to line as mu
-            return max(0.1, line)
-        mu_solved = brentq(objective, lo, hi, xtol=0.001, maxiter=50)
-        return max(0.1, mu_solved)
-    except Exception:
-        return max(0.1, line)
-
-
-def distribution_reprice(market: str, sharp_line: float, pp_line: float,
-                         fair_over: float, fair_under: float) -> tuple:
-    """Replace the heuristic `* 0.08` line-difference adjustment with
-    distribution-based repricing.
-
-    Given sharp book fair probabilities at sharp_line, compute the fair
-    probabilities at pp_line using the prop's statistical distribution.
-
-    Args:
-        market: Odds API market key (e.g. "pitcher_strikeouts")
-        sharp_line: Sharp book consensus line
-        pp_line: PrizePicks line
-        fair_over: Sharp fair P(over) at sharp_line
-        fair_under: Sharp fair P(under) at sharp_line
-
-    Returns:
-        (fair_over_at_pp, fair_under_at_pp) — adjusted probabilities
-    """
-    if pp_line == sharp_line:
-        return fair_over, fair_under
-
-    # Look up distribution type for this market
-    dist_params = _load_dist_params()
-    dist_key = _MARKET_TO_DIST_KEY.get(market, "")
-    params = dist_params.get(dist_key, {})
-    dist_type = params.get("type", "negbin")
-    vr = params.get("vr", 1.5)
-    phi = params.get("phi", 25.0)
-
-    # Step 1: solve for mu from the sharp fair_over at sharp_line
-    mu = _solve_mu_from_fair_over(fair_over, sharp_line, dist_type, vr, phi)
-
-    # Step 2: compute P(over) at pp_line using that mu
-    new_fair_over = _prob_over_at_line(pp_line, mu, dist_type, vr, phi)
-
-    # Sanity bounds
-    new_fair_over = min(0.95, max(0.05, new_fair_over))
-    new_fair_under = min(0.95, max(0.05, 1.0 - new_fair_over))
-
-    return new_fair_over, new_fair_under
-
 
 def get_api_key() -> str:
     """Get The Odds API key from env var, .env file, or Streamlit secrets."""
@@ -244,36 +106,21 @@ def get_api_key() -> str:
     return key
 
 
-def fetch_mlb_events(api_key: str = None, sport_key: str = None) -> list:
-    """Fetch current MLB events (games) list.
-
-    Falls back to preseason sport key if regular season returns 0 events.
-    """
+def fetch_mlb_events(api_key: str = None) -> list:
+    """Fetch current MLB events (games) list."""
     api_key = api_key or get_api_key()
     if not api_key:
-        _log.warning("No Odds API key configured — skipping sharp odds")
         return []
 
-    sport = sport_key or SPORT_KEY
-    url = f"{ODDS_API_BASE}/sports/{sport}/events"
-    _log.info("[sharp_odds] GET %s", url)
-
     try:
-        resp = requests.get(url, params={"apiKey": api_key}, timeout=15)
+        resp = requests.get(
+            f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events",
+            params={"apiKey": api_key},
+            timeout=15,
+        )
         resp.raise_for_status()
-        events = resp.json()
-        credits = resp.headers.get("x-requests-remaining", "?")
-        _log.info("[sharp_odds] Got %d events for %s, credits remaining: %s",
-                  len(events), sport, credits)
-
-        # Preseason fallback: if regular season empty and we haven't tried yet
-        if not events and sport == SPORT_KEY and sport_key is None:
-            _log.info("[sharp_odds] No regular season events, trying preseason...")
-            return fetch_mlb_events(api_key, sport_key=SPORT_KEY_PRESEASON)
-
-        return events
-    except requests.RequestException as e:
-        _log.error("[sharp_odds] ERROR fetching events from %s: %s", url, e)
+        return resp.json()
+    except requests.RequestException:
         return []
 
 
@@ -284,18 +131,15 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
     """
     api_key = api_key or get_api_key()
     if not api_key:
-        _log.warning("[sharp_odds] No API key — skipping props for event %s", event_id)
         return {}
 
     if markets is None:
+        # Fetch all supported prop markets
         markets = list(PROP_MARKETS.values())
-
-    url = f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events/{event_id}/odds"
-    _log.info("[sharp_odds] GET %s (%d markets)", url, len(markets))
 
     try:
         resp = requests.get(
-            url,
+            f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events/{event_id}/odds",
             params={
                 "apiKey": api_key,
                 "regions": "us",
@@ -306,21 +150,14 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
         )
         resp.raise_for_status()
         remaining = resp.headers.get("x-requests-remaining", "?")
-        data = resp.json()
-        n_books = len(data.get("bookmakers", []))
-        _log.info("[sharp_odds] Event %s: %d bookmakers, credits remaining: %s",
-                  event_id, n_books, remaining)
-
         # Record freshness
         try:
             from src.freshness import record_data_pull
             record_data_pull("sharp_odds", f"event {event_id}, {remaining} credits left")
         except Exception:
             pass
-
-        return {"data": data, "remaining_credits": remaining}
-    except requests.RequestException as e:
-        _log.error("[sharp_odds] ERROR fetching props for event %s: %s", event_id, e)
+        return {"data": resp.json(), "remaining_credits": remaining}
+    except requests.RequestException:
         return {}
 
 
@@ -583,20 +420,17 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
                     continue
             elif pp_line < sharp_line_val:
                 # PP line is lower → MORE is easier on PP
-                # Distribution-based repricing: compute exact P(over) at PP line
-                repriced_over, repriced_under = distribution_reprice(
-                    market, sharp_line_val, pp_line, fair_over, fair_under
-                )
                 pick = "MORE"
-                fair_prob = repriced_over
+                edge = fair_over + (sharp_line_val - pp_line) * 0.08  # rough adjustment
+                edge = min(edge, 0.85)
+                fair_prob = edge
                 edge = fair_prob - pp_implied
             elif pp_line > sharp_line_val:
                 # PP line is higher → LESS is easier on PP
-                repriced_over, repriced_under = distribution_reprice(
-                    market, sharp_line_val, pp_line, fair_over, fair_under
-                )
                 pick = "LESS"
-                fair_prob = repriced_under
+                edge = fair_under + (pp_line - sharp_line_val) * 0.08
+                edge = min(edge, 0.85)
+                fair_prob = edge
                 edge = fair_prob - pp_implied
             else:
                 continue
@@ -665,8 +499,7 @@ def get_api_usage(api_key: str = None) -> dict:
             "remaining": resp.headers.get("x-requests-remaining", "?"),
             "used": resp.headers.get("x-requests-used", "?"),
         }
-    except Exception as e:
-        _log.error("[sharp_odds] ERROR checking API usage: %s", e)
+    except Exception:
         return {"remaining": "Error", "used": "Error"}
 
 

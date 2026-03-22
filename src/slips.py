@@ -52,52 +52,6 @@ TIE_SPECIAL = {
     "2_power": {(1, 1): 1.5},  # 1 correct + 1 tie = 1.5x
 }
 
-# Goblin/Demon payout tables — reduced payouts for promo lines
-# Source: PrizePicks in-app, approximate values (March 2026)
-# Goblin lines are "easy" (e.g., HR 0.5 over) with much lower payouts
-# Demon lines are "hard" with higher payouts
-GOBLIN_PAYOUTS = {
-    "2_power": {2: 1.5, 1: 0, 0: 0},
-    "3_power": {3: 2.5, 2: 0, 1: 0, 0: 0},
-    "4_power": {4: 5.0, 3: 0, 2: 0, 1: 0, 0: 0},
-    "5_power": {5: 10.0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
-    "6_power": {6: 12.5, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
-    "3_flex": {3: 1.5, 2: 0.5, 1: 0, 0: 0},
-    "4_flex": {4: 3.0, 3: 0.75, 2: 0, 1: 0, 0: 0},
-    "5_flex": {5: 5.0, 4: 1.0, 3: 0.2, 2: 0, 1: 0, 0: 0},
-    "6_flex": {6: 6.25, 5: 1.0, 4: 0.2, 3: 0, 2: 0, 1: 0, 0: 0},
-}
-
-DEMON_PAYOUTS = {
-    "2_power": {2: 6.0, 1: 0, 0: 0},
-    "3_power": {3: 12.0, 2: 0, 1: 0, 0: 0},
-    "4_power": {4: 20.0, 3: 0, 2: 0, 1: 0, 0: 0},
-    "5_power": {5: 40.0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
-    "6_power": {6: 50.0, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
-    "3_flex": {3: 6.0, 2: 2.0, 1: 0, 0: 0},
-    "4_flex": {4: 12.0, 3: 3.0, 2: 0, 1: 0, 0: 0},
-    "5_flex": {5: 20.0, 4: 4.0, 3: 0.8, 2: 0, 1: 0, 0: 0},
-    "6_flex": {6: 25.0, 5: 4.0, 4: 0.8, 3: 0, 2: 0, 1: 0, 0: 0},
-}
-
-
-def get_payout_table(entry_type: str, line_type: str = "standard") -> dict:
-    """Get the appropriate payout table based on line type.
-
-    Args:
-        entry_type: e.g. '5_flex', '3_power'
-        line_type: 'standard', 'promo' (goblin), 'demon', etc.
-
-    Returns:
-        Payout dict mapping num_wins -> multiplier
-    """
-    if line_type in ("promo", "goblin", "discounted", "flash_sale"):
-        return GOBLIN_PAYOUTS.get(entry_type, PAYOUTS.get(entry_type, {}))
-    elif line_type == "demon":
-        return DEMON_PAYOUTS.get(entry_type, PAYOUTS.get(entry_type, {}))
-    return PAYOUTS.get(entry_type, {})
-
-
 # Per-leg iid break-even probabilities (exact, from research report)
 BREAKEVEN = {
     "2_power": 0.57735,

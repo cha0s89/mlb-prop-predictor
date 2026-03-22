@@ -5,6 +5,7 @@ When sharp books disagree with PrizePicks → that's the edge.
 Statcast data provides the "why" confirmation layer.
 """
 
+import math
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -62,6 +63,32 @@ from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matri
 from src.board_logger import log_board_snapshot, mark_as_bet
 from src.line_snapshots import snapshot_pp_lines, detect_stale_lines, get_line_movement_summary
 from src.consistency import enforce_consistency, flag_inconsistencies
+
+
+# ─────────────────────────────────────────────
+# NaN SANITIZATION — prevent raw NaN/None from leaking into UI
+# ─────────────────────────────────────────────
+
+def _safe(val, fallback="—"):
+    """Return fallback if val is None, NaN, empty string, or the literal string 'nan'."""
+    if val is None:
+        return fallback
+    if isinstance(val, float) and math.isnan(val):
+        return fallback
+    if isinstance(val, str) and val.strip().lower() in ("nan", "none", ""):
+        return fallback
+    return val
+
+
+def _safe_num(val, fallback=0.0):
+    """Return fallback if val is None or NaN, else float(val)."""
+    if val is None:
+        return fallback
+    try:
+        f = float(val)
+        return fallback if math.isnan(f) else f
+    except (ValueError, TypeError):
+        return fallback
 
 
 # ─────────────────────────────────────────────
@@ -1106,6 +1133,20 @@ with tab_edge:
                     if p.get("rating") in ("A", "A+"):
                         p["rating"] = "B"
 
+                # ── DATA QUALITY GATE ────────────────────────
+                # Skip players with no player-specific data entirely.
+                # These are pure league-average projections with zero edge.
+                if not p.get("has_player_data", True):
+                    continue  # Don't show picks where we have no data
+
+                # Also skip if ALL context is missing (opponent, pitcher,
+                # batting order, park) — zero informational value.
+                _no_opp = not p.get("has_opp_data") and not (r_team and r_team in opp_pitcher_lookup)
+                _no_lineup = batting_pos is None
+                _no_park = r_team is None
+                if _no_opp and _no_lineup and _no_park:
+                    continue
+
                 # v018: Lineup position display info
                 # NOTE: PA adjustment now handled INSIDE generate_prediction() via
                 # lineup_pos → estimate_plate_appearances() (Task 3A). No post-hoc
@@ -1265,7 +1306,7 @@ with tab_edge:
                         pick_cls = "more" if tp["pick"] == "MORE" else "less"
                         sig_key, sig_label = _bp_signal_labels.get(tp.get("signal", ""), ("proj", ""))
                         grade_icon = _bp_grade_emoji.get(tp.get("combined_grade", ""), "")
-                        conf_val = tp.get("proj_confidence", 0) or 0
+                        conf_val = _safe_num(tp.get("proj_confidence"), 0)
                         conf_pct = int(conf_val * 100)
                         conf_cls = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
                         with bp_cols[idx]:
@@ -1351,22 +1392,22 @@ with tab_edge:
                     with chk_col:
                         checked = st.checkbox("", key=f"proj_pick_{pick_idx}", label_visibility="collapsed")
                     with info_col:
-                        conf_val = pick_row['confidence']
+                        conf_val = _safe_num(pick_row.get('confidence'), 0.5)
                         conf_pct = int(conf_val * 100)
-                        edge_val = pick_row['edge']*100
+                        edge_val = _safe_num(pick_row.get('edge'), 0) * 100
                         edge_pct = f"{edge_val:.1f}%"
-                        proj = pick_row.get('projection', 0)
+                        proj = _safe_num(pick_row.get('projection'), 0)
 
                         pick_card_html = f'''<div class="pick-card {pick_cls}">
                             <div class="pick-card-header">
-                                <span class="badge badge-{pick_row['rating'].lower()}">{pick_row['rating']}</span>
-                                <span class="pick-card-player">{pick_row['player_name']}{promo_tag}</span>
-                                <span class="pick-card-team">{pick_row.get('team', '')}</span>
+                                <span class="badge badge-{_safe(pick_row.get('rating'), 'D').lower()}">{_safe(pick_row.get('rating'), 'D')}</span>
+                                <span class="pick-card-player">{_safe(pick_row.get('player_name'), 'Unknown')}{promo_tag}</span>
+                                <span class="pick-card-team">{_safe(pick_row.get('team'), '')}</span>
                                 <span class="dir-chip {"more" if pick_row["pick"]=="MORE" else "less"}">{pick_row["pick"]}</span>
                             </div>
                             <div class="pick-card-row">
-                                <span class="pick-card-stat">{pick_row['stat_type']}</span>
-                                <span class="pick-card-line">Line {pick_row['line']}</span>
+                                <span class="pick-card-stat">{_safe(pick_row.get('stat_type'), 'Unknown')}</span>
+                                <span class="pick-card-line">Line {_safe_num(pick_row.get('line'), 0)}</span>
                                 <span class="pick-card-proj">Proj {proj:.2f}</span>
                                 <span class="pick-card-edge" style="color:#00C853;">+{edge_pct}</span>
                             </div>
@@ -1382,22 +1423,28 @@ with tab_edge:
                             det1, det2 = st.columns(2)
                             with det1:
                                 st.markdown("**Game Context**")
-                                _opp = pick_row.get("opponent", "—")
-                                _venue = pick_row.get("venue", "—")
-                                _opp_p = pick_row.get("opp_pitcher", "—")
+                                _opp = _safe(pick_row.get("opponent"))
+                                _venue = _safe(pick_row.get("venue"))
+                                _opp_p = _safe(pick_row.get("opp_pitcher"))
                                 _bat_ord = pick_row.get("batting_order")
-                                _gt = pick_row.get("game_time", "")
+                                if _bat_ord is not None:
+                                    try:
+                                        _bat_ord = int(_bat_ord)
+                                    except (ValueError, TypeError):
+                                        _bat_ord = None
+                                _gt = _safe(pick_row.get("game_time"), "")
                                 ctx_lines = []
-                                if _opp and _opp != "—":
+                                if _opp != "—":
                                     ctx_lines.append(f"**vs** {_opp}")
-                                if _opp_p and _opp_p != "—":
+                                if _opp_p != "—":
                                     ctx_lines.append(f"**Opp Pitcher:** {_opp_p}")
                                 if _bat_ord:
                                     ctx_lines.append(f"**Batting:** {_bat_ord}{'st' if _bat_ord==1 else 'nd' if _bat_ord==2 else 'rd' if _bat_ord==3 else 'th'} in order")
-                                if _venue and _venue != "—":
+                                if _venue != "—":
                                     ctx_lines.append(f"**Park:** {_venue}")
                                 # Park factor
-                                _pk_team = resolve_team(pick_row.get("team", "")) if pick_row.get("team") else None
+                                _pk_team_raw = _safe(pick_row.get("team"), "")
+                                _pk_team = resolve_team(_pk_team_raw) if _pk_team_raw else None
                                 if _pk_team and _pk_team in PARK_FACTORS:
                                     _pf = PARK_FACTORS[_pk_team] - 100
                                     if _pf != 0:
@@ -1409,14 +1456,15 @@ with tab_edge:
                                 st.markdown("**Projected Statline**")
                                 _si = pick_row.get("stat_internal", "")
                                 _is_pitcher = pick_row.get("is_pitcher_prop", False) or _si in ("pitcher_strikeouts", "earned_runs", "hits_allowed", "walks_allowed", "pitching_outs")
-                                proj_val = pick_row.get("projection", 0)
-                                line_val = pick_row.get("line", 0)
+                                proj_val = _safe_num(pick_row.get("projection"), 0)
+                                line_val = _safe_num(pick_row.get("line"), 0)
                                 diff = proj_val - line_val
                                 diff_color = "#00C853" if (diff > 0 and pick_row["pick"] == "MORE") or (diff < 0 and pick_row["pick"] == "LESS") else "#FF4444"
                                 st.markdown(f'**{pick_row["stat_type"]}:** <span style="font-family:JetBrains Mono;font-weight:700;color:{diff_color}">{proj_val:.2f}</span> vs line {line_val}  ({"+" if diff>=0 else ""}{diff:.2f})', unsafe_allow_html=True)
                                 st.markdown(f"**Confidence:** {conf_pct}% · **Edge:** +{edge_pct}")
-                                if pick_row.get("batting_order"):
-                                    st.markdown(f"**PA Multiplier:** {pick_row.get('pa_multiplier', 1.0):.2f}x (lineup spot #{pick_row['batting_order']})")
+                                if _bat_ord:
+                                    _pa_mult = _safe_num(pick_row.get('pa_multiplier'), 1.0)
+                                    st.markdown(f"**PA Multiplier:** {_pa_mult:.2f}x (lineup spot #{_bat_ord})")
                                 # Health/form
                                 _health = pick_row.get("injury_status", "active")
                                 _spring = pick_row.get("spring_badge", "neutral")
