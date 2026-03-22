@@ -61,6 +61,172 @@ def cusum_detect(values: list[float], target: float = 0.0,
     }
 
 
+class ADWIN:
+    """ADaptive WINdowing drift detector.
+
+    ADWIN automatically adjusts its window size by dropping old data when
+    a statistically significant change in the mean is detected. This is
+    more robust than fixed-window CUSUM for nonstationary environments
+    like MLB props where the market regime can shift gradually.
+
+    Algorithm: Maintains a growing window of observations. At each step,
+    checks if splitting the window at any point reveals a significant
+    difference in means (using Hoeffding bound). If so, drops the older
+    half and signals drift.
+
+    Source: Bifet & Gavalda (2007), "Learning from Time-Changing Data
+    with Adaptive Windowing"
+    """
+
+    def __init__(self, delta: float = 0.002, min_window: int = 30):
+        """
+        Args:
+            delta: Confidence parameter (lower = fewer false alarms).
+                   0.002 is conservative, 0.01 is more sensitive.
+            min_window: Minimum observations before checking for drift.
+        """
+        self.delta = delta
+        self.min_window = min_window
+        self.window = []
+        self.drift_detected = False
+        self.drift_count = 0
+        self._last_mean_before = None
+        self._last_mean_after = None
+
+    def update(self, value: float) -> bool:
+        """Add an observation and check for drift.
+
+        Args:
+            value: New observation (e.g., 0/1 for correct/incorrect,
+                   or a Brier score)
+
+        Returns:
+            True if drift was detected on this step
+        """
+        self.window.append(value)
+        self.drift_detected = False
+
+        if len(self.window) < 2 * self.min_window:
+            return False
+
+        # Check if splitting the window reveals a significant mean difference
+        for i in range(self.min_window, len(self.window) - self.min_window):
+            left = self.window[:i]
+            right = self.window[i:]
+
+            n_left = len(left)
+            n_right = len(right)
+            n = n_left + n_right
+
+            mean_left = np.mean(left)
+            mean_right = np.mean(right)
+            mean_diff = abs(mean_left - mean_right)
+
+            # Hoeffding bound for the difference of means
+            # epsilon = sqrt((1/(2*m)) * ln(4*n/delta)) where m = min(n_left, n_right)
+            m = min(n_left, n_right)
+            epsilon_cut = np.sqrt(
+                (1.0 / (2.0 * m)) * np.log(4.0 * n / self.delta)
+            )
+
+            if mean_diff > epsilon_cut:
+                # Drift detected — drop the older half
+                self._last_mean_before = mean_left
+                self._last_mean_after = mean_right
+                self.window = right  # Keep only recent data
+                self.drift_detected = True
+                self.drift_count += 1
+                return True
+
+        return False
+
+    def get_mean(self) -> float:
+        """Current window mean."""
+        return float(np.mean(self.window)) if self.window else 0.0
+
+    def get_window_size(self) -> int:
+        """Current adaptive window size."""
+        return len(self.window)
+
+    def get_status(self) -> dict:
+        """Full status for monitoring/display."""
+        return {
+            "window_size": len(self.window),
+            "mean": round(self.get_mean(), 4) if self.window else None,
+            "drift_detected": self.drift_detected,
+            "total_drifts": self.drift_count,
+            "last_mean_before": round(self._last_mean_before, 4) if self._last_mean_before else None,
+            "last_mean_after": round(self._last_mean_after, 4) if self._last_mean_after else None,
+        }
+
+
+# Module-level ADWIN instances per prop type (persist across calls within a session)
+_ADWIN_MONITORS = {}
+
+
+def get_adwin_monitor(prop_type: str = "overall", delta: float = 0.002) -> ADWIN:
+    """Get or create an ADWIN monitor for a specific prop type."""
+    if prop_type not in _ADWIN_MONITORS:
+        _ADWIN_MONITORS[prop_type] = ADWIN(delta=delta)
+    return _ADWIN_MONITORS[prop_type]
+
+
+def check_adwin_drift(predictions: list[dict]) -> dict:
+    """Run ADWIN drift detection on a batch of predictions.
+
+    Feeds predictions one-by-one into per-prop-type ADWIN monitors.
+    Returns drift alerts for any prop type where drift was detected.
+
+    Args:
+        predictions: List of graded prediction dicts with:
+            - stat_type: prop type
+            - confidence: predicted probability
+            - result: "W" or "L"
+
+    Returns:
+        dict with overall_drift, by_prop drift status, and alerts
+    """
+    alerts = []
+    by_prop = {}
+
+    # Overall monitor
+    overall = get_adwin_monitor("overall")
+
+    for pred in predictions:
+        y = 1.0 if pred.get("result") == "W" else 0.0
+        p = pred.get("confidence", 0.5)
+        brier = (p - y) ** 2
+
+        prop_type = pred.get("stat_type", "unknown")
+
+        # Feed to overall monitor
+        if overall.update(brier):
+            alerts.append(
+                f"OVERALL drift: Brier shifted from "
+                f"{overall._last_mean_before:.3f} → {overall._last_mean_after:.3f} "
+                f"(window={overall.get_window_size()})"
+            )
+
+        # Feed to prop-specific monitor
+        prop_monitor = get_adwin_monitor(prop_type)
+        if prop_monitor.update(brier):
+            alerts.append(
+                f"{prop_type} drift: Brier shifted from "
+                f"{prop_monitor._last_mean_before:.3f} → {prop_monitor._last_mean_after:.3f}"
+            )
+
+    # Gather status for all active monitors
+    for prop_type, monitor in _ADWIN_MONITORS.items():
+        by_prop[prop_type] = monitor.get_status()
+
+    return {
+        "overall_drift": overall.drift_detected,
+        "by_prop": by_prop,
+        "alerts": alerts,
+        "active_monitors": len(_ADWIN_MONITORS),
+    }
+
+
 def rolling_brier(predictions: list[dict], window: int = 50) -> list[float]:
     """Compute rolling Brier score over a window of predictions.
 

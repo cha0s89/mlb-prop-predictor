@@ -31,8 +31,7 @@ import json
 import os
 import numpy as np
 from datetime import date, datetime
-from scipy import stats as sp_stats
-from scipy.stats import poisson, nbinom, norm, gamma
+from scipy import stats as sp_stats  # kept for potential future use
 from typing import Optional
 
 from src import distributions
@@ -273,6 +272,84 @@ def _regress(observed, sample_n, stab_n, league_avg):
     return (sample_n * observed + stab_n * league_avg) / (sample_n + stab_n)
 
 
+# ═══════════════════════════════════════════════════════
+# LOG5 MATCHUP ADJUSTMENT (Bill James)
+# ═══════════════════════════════════════════════════════
+
+def log5_rate(pitcher_rate: float, batter_rate: float, league_rate: float) -> float:
+    """Log5 matchup adjustment for any binary rate stat.
+
+    Combines pitcher skill, batter skill, and league context to produce
+    a matchup-specific rate that's more accurate than either alone.
+
+    Example: Pitcher with 28% K rate vs lineup with 26% K rate (league 22%):
+      log5 = (0.28 * 0.26 / 0.22) / (0.28 * 0.26 / 0.22 + 0.72 * 0.74 / 0.78)
+           ≈ 0.326 → higher K rate than either individually
+
+    Args:
+        pitcher_rate: Pitcher's rate (decimal, e.g. 0.25 for 25% K rate)
+        batter_rate: Batter/team rate (decimal, e.g. 0.22 for 22% K rate)
+        league_rate: League average rate (decimal, e.g. 0.22)
+
+    Returns:
+        Matchup-adjusted rate (decimal)
+    """
+    # Guard against division by zero or extreme values
+    league_rate = max(0.01, min(0.99, league_rate))
+    pitcher_rate = max(0.01, min(0.99, pitcher_rate))
+    batter_rate = max(0.01, min(0.99, batter_rate))
+
+    num = pitcher_rate * batter_rate / league_rate
+    den = num + (1 - pitcher_rate) * (1 - batter_rate) / (1 - league_rate)
+    if den <= 0:
+        return league_rate
+    return num / den
+
+
+# ═══════════════════════════════════════════════════════
+# ABS CHALLENGE SYSTEM ADJUSTMENT (2026 Rule Change)
+# ═══════════════════════════════════════════════════════
+
+def abs_adjustment_factor(prop_type: str, game_date: date = None) -> float:
+    """Temporary ABS challenge system adjustment for 2026 season.
+
+    The ABS (Automated Ball-Strike) challenge system changes umpire behavior:
+    - Umps call a wider zone pre-challenge → fewer Ks, more walks early
+    - Effect decays as pitchers/hitters adapt over ~50 games (~7 weeks)
+
+    Args:
+        prop_type: Internal stat type (e.g. 'pitcher_strikeouts')
+        game_date: Date of the game (defaults to today)
+
+    Returns:
+        Multiplier to apply to projection (e.g. 0.98 for -2% K rate)
+    """
+    if game_date is None:
+        game_date = date.today()
+
+    # Check if ABS adjustment is enabled in weights
+    weights = _load_weights()
+    if not weights.get("abs_adjustment_enabled", True):
+        return 1.0
+
+    opening_day = date(2026, 3, 27)
+    days_since = (game_date - opening_day).days
+    if days_since < 0:
+        return 1.0  # Pre-season, no adjustment
+
+    # Decay factor: full effect day 1, zero effect by day 50
+    decay = max(0.0, 1.0 - days_since / 50)
+
+    adjustments = {
+        "pitcher_strikeouts": 1.0 - 0.02 * decay,   # -2% K rate initially
+        "batter_strikeouts": 1.0 - 0.02 * decay,     # -2% K rate initially
+        "walks_allowed": 1.0 + 0.015 * decay,         # +1.5% BB rate initially
+        "walks": 1.0 + 0.015 * decay,                 # +1.5% BB rate for batters too
+        "pitching_outs": 1.0 - 0.01 * decay,          # Slightly fewer outs (more walks)
+    }
+    return adjustments.get(prop_type, 1.0)
+
+
 def _park(team, factors_dict):
     """Get park factor as multiplier (1.0 = neutral)."""
     return factors_dict.get(team, 100) / 100.0
@@ -403,6 +480,38 @@ def _ensure_pct(val, lg_default=None):
 # ═══════════════════════════════════════════════════════
 
 
+def tto_k_rate_decay(base_k_rate: float, expected_bf: float) -> float:
+    """Apply Times Through Order penalty to K rate.
+
+    Research: K% drops by ~3% absolute on the third time through the order.
+    This translates to roughly -0.15 K% per batter faced beyond 18 BF
+    (the point where TTO3 begins for most lineups).
+
+    The effect is significant — a 28% K rate pitcher drops to ~25% on TTO3.
+    Not accounting for this causes systematic over-projection of Ks for
+    pitchers expected to go deep into games.
+
+    Args:
+        base_k_rate: Matchup-adjusted K rate (decimal, e.g. 0.25)
+        expected_bf: Expected batters faced
+
+    Returns:
+        Adjusted K rate accounting for TTO decay
+    """
+    if expected_bf <= 18:
+        return base_k_rate  # No TTO3 penalty if not reaching 3rd time
+
+    # BF beyond 18 (start of TTO3)
+    tto3_bf = expected_bf - 18
+
+    # Each TTO3 batter has ~3% lower K rate than base
+    # Weight by fraction of total BF in TTO3
+    tto3_fraction = tto3_bf / expected_bf
+    k_rate_drop = 0.03 * tto3_fraction  # Blended drop across all BF
+
+    return max(base_k_rate * 0.70, base_k_rate - k_rate_drop)  # Floor at 70% of base
+
+
 def _early_season_ip_discount(game_date: date = None) -> float:
     """
     Early-season workload discount for pitcher IP projections.
@@ -467,8 +576,19 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
       Park K factor (5%) — slight effect
       Weather (5%) — cold = grip issues = fewer Ks
     """
-    k_pct = _ensure_pct(p.get("k_pct", 0), lg_default=None) or (p.get("k9", LG["k9"]) / (LG["bf_per_ip"] * 9) * 100)
-    bf_est = p.get("ip", 0) * LG["bf_per_ip"] if p.get("ip", 0) > 0 else 0
+    # K% — accept k_pct (already percentage), k_rate (decimal 0-1), or k9 (per 9 IP)
+    _raw_k = p.get("k_pct", 0)
+    if not _raw_k and p.get("k_rate", 0):
+        # k_rate is decimal (e.g. 0.30 = 30%) — convert to percentage
+        _kr = p["k_rate"]
+        _raw_k = _kr * 100 if _kr < 1 else _kr
+    k_pct = _ensure_pct(_raw_k, lg_default=None) or (p.get("k9", p.get("k_per_9", LG["k9"])) / (LG["bf_per_ip"] * 9) * 100)
+
+    # BF for regression sample — use season total IP, or estimate from per-start × games
+    _season_ip = p.get("ip", 0)
+    if not _season_ip and p.get("ip_per_start", 0):
+        _season_ip = p["ip_per_start"] * max(p.get("gs", 10), 1)
+    bf_est = _season_ip * LG["bf_per_ip"] if _season_ip > 0 else 0
     csw = p.get("recent_csw_pct", 0)
     swstr = p.get("recent_swstr_pct", 0)
 
@@ -483,9 +603,14 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         swstr_delta = (swstr - LG["swstr_pct"]) * 1.5
         reg_k = reg_k * 0.85 + (reg_k + swstr_delta) * 0.15
 
-    # Opposing lineup K% (team K rates range 19%-27% — huge impact)
+    # v018: Log5 matchup adjustment for opposing lineup K% (replaces simple ratio)
+    # Team K rates range 19%-27% — huge impact on pitcher K projections
     if opp_k_rate and opp_k_rate > 0:
-        reg_k *= (opp_k_rate / LG["k_rate"])
+        pitcher_k_dec = reg_k / 100.0
+        opp_k_dec = opp_k_rate / 100.0 if opp_k_rate > 1 else opp_k_rate
+        lg_k_dec = LG["k_rate"] / 100.0
+        matchup_k = log5_rate(pitcher_k_dec, opp_k_dec, lg_k_dec)
+        reg_k = matchup_k * 100.0
 
     # BvP aggregate K adjustment
     if bvp and bvp.get("has_data") and bvp.get("total_pa", 0) >= 10:
@@ -493,18 +618,33 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         bvp_adj = bvp_k / LG["k_rate"]
         reg_k *= (1 + (bvp_adj - 1) * 0.25)  # 25% weight on BvP
 
-    # Expected IP / batters faced
+    # v018 Task 3A: Opportunity-first BF estimation
+    # Use centralized estimate_batters_faced() for consistent pitcher opportunity modeling
     if expected_ip is None:
         ip = p.get("ip", 0)
-        starts = max(p.get("gs", ip / 5.5), 1) if ip > 10 else 1
-        expected_ip = min(ip / starts, 7.0) if ip > 10 else LG["avg_ip_starter"]
-        expected_ip = max(4.5, min(6.5, expected_ip))  # BUGFIX: 7.5 was too high for K projections
-    # v018: Early-season workload discount — teams limit pitch counts in first weeks
-    expected_ip *= _early_season_ip_discount()
-    exp_bf = expected_ip * LG["bf_per_ip"]
+        # Prefer ip_per_start if available (direct per-game average)
+        if p.get("ip_per_start", 0) > 0:
+            expected_ip = p["ip_per_start"]
+        elif ip > 10:
+            starts = max(p.get("gs", ip / 5.5), 1)
+            expected_ip = min(ip / starts, 7.0)
+        else:
+            expected_ip = LG["avg_ip_starter"]
+        expected_ip = max(4.5, min(7.0, expected_ip))  # Allow up to 7.0 for aces
+    bf_est_result = estimate_batters_faced(
+        pitcher_ip=expected_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+        opposing_lineup_woba=None,  # TODO: wire from game context
+    )
+    exp_bf = bf_est_result["mean_bf"]
+    expected_ip = bf_est_result["effective_ip"]
 
-    # Raw projection
-    proj = exp_bf * (reg_k / 100)
+    # v018 Task 3A: TTO penalty — K rate drops ~3% on third time through order
+    k_rate_tto = tto_k_rate_decay(reg_k / 100.0, exp_bf)
+
+    # Raw projection (using TTO-adjusted rate)
+    proj = exp_bf * k_rate_tto
 
     # Park K factor
     if park: proj *= _park(park, PARK_K)
@@ -527,6 +667,9 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     if proj > 6.0:
         excess = proj - 6.0
         proj = 6.0 + excess * 0.65  # Dampen the excess above 6.0 by 35%
+
+    # v018: ABS Challenge System adjustment (2026 rule change)
+    proj *= abs_adjustment_factor("pitcher_strikeouts")
 
     mu = max(proj, 0.5)
 
@@ -576,12 +719,19 @@ def project_pitcher_outs(p, park=None, wx=None):
     bb_adj = 1.0 - (reg_bb - LG["bb_pct_p"]) / LG["bb_pct_p"] * 0.15
 
     proj_ip = avg_ip * bb_adj
-    # v018: Early-season workload discount — teams limit pitch counts in first weeks
-    proj_ip *= _early_season_ip_discount()
-    proj_outs = proj_ip * 3
+    # v018 Task 3A: Use centralized BF estimation for consistent opportunity modeling
+    bf_result = estimate_batters_faced(
+        pitcher_ip=proj_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+    )
+    proj_outs = bf_result["effective_ip"] * 3
 
     if park: proj_outs *= (1 + (_park(park, PARK) - 1) * -0.1)  # Hitter parks = fewer outs
     if wx: proj_outs *= (1 + (wx.get("weather_offense_mult", 1.0) - 1) * -0.1)
+
+    # v018: ABS Challenge System adjustment (more walks → fewer outs)
+    proj_outs *= abs_adjustment_factor("pitching_outs")
 
     mu = max(proj_outs, 9.0)
     return {"projection": round(mu, 1), "mu": mu, "avg_ip_start": round(avg_ip, 1),
@@ -607,14 +757,19 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
     pitching_rate = era * 0.15 + fip * 0.35 + xfip * 0.50
     reg_rate = _regress(pitching_rate, bf_est, STAB["fip"], LG["fip"])
 
-    # Expected IP
+    # v018 Task 3A: Use centralized BF estimation
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for ER projections
-    # v018: Early-season workload discount — teams limit pitch counts in first weeks
-    avg_ip *= _early_season_ip_discount()
+    avg_ip = max(4.0, min(6.5, avg_ip))
+    bf_result = estimate_batters_faced(
+        pitcher_ip=avg_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+        opposing_lineup_woba=opp_woba,
+    )
+    effective_ip = bf_result["effective_ip"]
 
     # ER projection = (rate / 9) * expected IP
-    proj_er = (reg_rate / 9.0) * avg_ip
+    proj_er = (reg_rate / 9.0) * effective_ip
 
     # Opposing lineup quality
     if opp_woba and opp_woba > 0:
@@ -654,9 +809,15 @@ def project_pitcher_walks(p, park=None, ump=None):
         zone_adj = (zone - LG["zone_pct"]) / LG["zone_pct"] * -0.2
         reg_bb *= (1 + zone_adj)
 
+    # v018 Task 3A: Use centralized BF estimation
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
-    avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for walks projections
-    exp_bf = avg_ip * LG["bf_per_ip"]
+    avg_ip = max(4.0, min(6.5, avg_ip))
+    bf_result = estimate_batters_faced(
+        pitcher_ip=avg_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(),
+    )
+    exp_bf = bf_result["mean_bf"]
 
     proj = exp_bf * (reg_bb / 100)
 
@@ -664,6 +825,9 @@ def project_pitcher_walks(p, park=None, ump=None):
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
         proj -= k_adj * 0.3  # Inverse: high-K ump = fewer walks
+
+    # v018: ABS Challenge System adjustment
+    proj *= abs_adjustment_factor("walks_allowed")
 
     mu = max(proj, 0.5)
     return {"projection": round(mu, 2), "mu": mu, "regressed_bb_pct": round(reg_bb, 1)}
@@ -757,12 +921,23 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
         bvp_weight = min(bvp["pa"] / 50, 0.30)  # Max 30% weight at 50+ PA
         reg_avg = reg_avg * (1 - bvp_weight) + bvp_avg * bvp_weight
 
-    # Opposing pitcher quality
+    # v018: Log5 matchup adjustment for opposing pitcher
+    # Uses pitcher's hit-allowed rate vs batter AVG with league context
     if opp_p:
         opp_whip = opp_p.get("whip", LG["whip"])
         opp_fip = opp_p.get("fip", LG["fip"])
+        # Estimate pitcher's hit-allowed rate from WHIP
+        # WHIP = (H + BB) / IP, so H/IP ≈ WHIP - BB/9*9
+        opp_h_rate = max(0.15, min(0.35, 1.0 - (opp_fip / 15.0)))  # Approximate
+        matchup_avg = log5_rate(
+            1.0 - opp_h_rate,  # pitcher prevention rate
+            reg_avg,            # batter hit rate
+            LG["avg"]           # league AVG
+        )
+        # Blend: 60% Log5, 40% old quality method for stability
         opp_quality = (opp_whip / LG["whip"] * 0.6 + opp_fip / LG["fip"] * 0.4)
-        reg_avg *= (1 + (opp_quality - 1) * 0.35)
+        old_adj = reg_avg * (1 + (opp_quality - 1) * 0.35)
+        reg_avg = matchup_avg * 0.6 + old_adj * 0.4
 
     # Platoon
     if platoon and platoon.get("adjustment"):
@@ -772,9 +947,12 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
     if park: reg_avg *= (1 + (_park(park, PARK) - 1) * 0.25)
     if wx: reg_avg *= wx.get("weather_offense_mult", 1.0)
 
-    # Expected AB (PA minus walks/HBP ~9%)
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
+    # Use batter's actual BB rate for AB conversion (not league average 12%)
+    bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
+    exp_ab = exp_pa * (1 - bb_rate_pct / 100)
 
     mu = max(exp_ab * reg_avg, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_avg": round(reg_avg, 3),
@@ -854,12 +1032,15 @@ def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
         blended_wx = wx.get("weather_offense_mult", 1.0) * 0.5 + wx.get("weather_hr_mult", 1.0) * 0.5
         reg_slg *= blended_wx
 
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
-    exp_ab = exp_pa * (1 - (_ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"]) / 100))
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
+    bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
+    exp_ab = exp_pa * (1 - bb_rate_pct / 100)
 
     mu = max(exp_ab * reg_slg, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_slg": round(reg_slg, 3),
-            "expected_ab": round(exp_ab, 1)}
+            "expected_pa": round(exp_pa, 1), "expected_ab": round(exp_ab, 1)}
 
 
 def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
@@ -917,8 +1098,9 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
     # Weather (temp is huge for HR — 2% per degree C above 72F)
     if wx: reg_hr_rate *= wx.get("weather_hr_mult", 1.0)
 
-    # Expected PA in the game
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
 
     # NEW APPROACH: P(1+ HR in exp_pa) = 1 - (1 - rate)^pa
     # Clamp rate to avoid numerical issues
@@ -1116,13 +1298,19 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
         k_ump_adj = ump.get("k_adjustment", 0) * 0.15  # Scaled for individual batter
         reg_k *= (1 + k_ump_adj / 5)
 
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
     proj = exp_pa * (reg_k / 100)
 
     if park: proj *= _park(park, PARK_K)
 
+    # v018: ABS Challenge System adjustment
+    proj *= abs_adjustment_factor("batter_strikeouts")
+
     mu = max(proj, 0.1)
-    return {"projection": round(mu, 2), "mu": mu, "regressed_k_rate": round(reg_k, 1)}
+    return {"projection": round(mu, 2), "mu": mu, "regressed_k_rate": round(reg_k, 1),
+            "expected_pa": round(exp_pa, 1)}
 
 
 def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
@@ -1141,8 +1329,13 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
         k_adj = ump.get("k_adjustment", 0)
         reg_bb *= (1 - k_adj * 0.05)  # High-K ump = fewer walks
 
-    exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
+    # v018 Task 3A: Opportunity-first PA estimation
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
     proj = exp_pa * (reg_bb / 100)
+
+    # v018: ABS Challenge System adjustment
+    proj *= abs_adjustment_factor("walks")
 
     mu = max(proj, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_bb_rate": round(reg_bb, 1)}
@@ -1188,10 +1381,25 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     # ── Per-PA rates for each scoring event ──
     games_est = pa / 4.2 if pa > 0 else 1
 
-    # Hit types from season stats
-    hits = avg * (pa * (1 - bb_rate / 100)) if pa > 0 else 0
+    # Hit types from season stats — derive from rate stats when counting unavailable
+    ab_est = pa * (1 - bb_rate / 100) if pa > 0 else 0
+    hits = avg * ab_est if pa > 0 else 0
+
+    # HR: prefer counting stat, fall back to hr_rate × PA, then ISO estimate
     hr_count = hr
+    if not hr_count and pa > 0:
+        _hr_rate = b.get("hr_rate", 0) or b.get("hr_fb", 0)
+        if _hr_rate and _hr_rate < 1:
+            hr_count = _hr_rate * pa
+        elif iso > 0:
+            hr_count = iso * 0.22 * pa  # ISO to HR approximation
+
     dbl_count = doubles
+    if not dbl_count and pa > 0:
+        # Estimate doubles from ISO and SLG: doubles ≈ (SLG - AVG - 3×HR/AB) / 2 × AB
+        _hr_per_ab = hr_count / ab_est if ab_est > 0 else 0
+        dbl_count = max((slg - avg - 3 * _hr_per_ab) / 2 * ab_est, 0) if ab_est > 0 else 0
+
     trp_count = triples
     singles_count = max(hits - hr_count - dbl_count - trp_count, 0) if pa > 0 else 0
 
@@ -1201,9 +1409,11 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     trp_per_pa = trp_count / pa if pa > 0 else 0.004  # ~0.4% league avg
     single_per_pa = singles_count / pa if pa > 0 else 0.135  # ~13.5% league avg
     bb_per_pa = bb_rate / 100 if bb_rate > 0 else LG["bb_rate"] / 100
-    sb_per_game = sb / games_est if games_est > 0 else LG["sb_per_game"]
-    rbi_per_game = rbi / games_est if games_est > 0 else LG["rbi_per_game"]
-    r_per_game = r / games_est if games_est > 0 else LG["runs_per_game"]
+
+    # RBI/R/SB: derive from rate stats when counting unavailable
+    sb_per_game = sb / games_est if (sb and games_est > 0) else LG["sb_per_game"]
+    rbi_per_game = rbi / games_est if (rbi and games_est > 0) else LG["rbi_per_game"]
+    r_per_game = r / games_est if (r and games_est > 0) else LG["runs_per_game"]
 
     # ── Bayesian stabilization ──
     reg_hr = _regress(hr_per_pa, pa, 300, LG["hr_per_pa"])
@@ -1324,13 +1534,12 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     """
     P(over) and P(under) using prop-appropriate distributions.
 
-    Distribution selection:
-      Poisson: most count props (hits, Ks, walks, runs, etc.)
-      Negative binomial: overdispersed rare events (SB)
+    Distribution selection (via distributions.compute_probabilities):
+      Negative Binomial: all count props (hits, Ks, walks, runs, SB, ER, etc.)
+      Beta-Binomial: pitcher strikeouts (bounded by batters faced)
       Gamma: continuous-ish scores (fantasy score)
       Normal: high-mean continuous props (pitching outs, H+R+RBI)
-      Beta-Binomial: pitcher strikeouts (when BB params available)
-      SPECIAL: home_runs now uses binary classification (P(1+ HR))
+      Binary: home_runs (P(1+ HR))
 
     Args:
         projection: The mean projection value
@@ -1367,6 +1576,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
         return {
             "p_over": round(p_over, 3),
             "p_under": round(p_under, 3),
+            "p_push": 0.0,  # HR line is 0.5 — no push possible
             "pick": pick,
             "confidence": round(confidence, 3),
             "edge": round(edge, 3),
@@ -1378,123 +1588,87 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # Load weights once (needed for both BB and non-BB paths)
     weights = _load_weights()
 
-    # ── Beta-Binomial distribution for pitcher strikeouts ──────────────────
-    # If proj_result contains BB parameters, use Beta-Binomial for pitcher strikeouts
-    p_over = None
-    p_under = None
-    if (prop_type == "pitcher_strikeouts" and proj_result is not None and
-        "bb_alpha" in proj_result and "bb_beta" in proj_result and
-        "expected_bf" in proj_result):
-        alpha = proj_result.get("bb_alpha")
-        beta = proj_result.get("bb_beta")
-        n_batters = int(proj_result.get("expected_bf", 18))
-        if alpha > 0 and beta > 0 and n_batters > 0:
-            p_over = distributions.prob_over_betabinom(line, n_batters, alpha, beta)
-            p_under = distributions.prob_under_betabinom(line, n_batters, alpha, beta)
+    # ── Compute probabilities via centralized distributions module ──────
+    # distributions.compute_probabilities() is the SINGLE source of truth for
+    # all CDF/PMF calculations. It reads distribution type from weights file
+    # (distribution_params) and routes to the correct distribution.
+    dist_params = weights.get("distribution_params", {})
+    vr = weights.get("variance_ratios", {})
+    prop_dist = dist_params.get(prop_type, {})
+    dist_type = prop_dist.get("type", "negbin")  # Default: NegBin for all count props
 
-    # ── Negative Binomial distribution for earned runs ──────────────────
-    # If proj_result contains NB parameters, use Negative Binomial for earned runs
+    # Override dist_type from variance_ratios if present but not in distribution_params
+    # This preserves backward compatibility with existing weights files
+    _DIST_DEFAULTS = {
+        "pitcher_strikeouts": ("betabinom", 2.2),
+        "hits": ("negbin", 1.5),
+        "total_bases": ("negbin", 2.5),
+        "stolen_bases": ("negbin", 2.5),
+        "hitter_fantasy_score": ("gamma", 4.0),
+        "earned_runs": ("negbin", 2.2),
+        "batter_strikeouts": ("negbin", 1.4),
+        "walks_allowed": ("negbin", 1.6),
+        "hits_allowed": ("negbin", 1.5),
+        "rbis": ("negbin", 1.8),
+        "runs": ("negbin", 1.7),
+        "walks": ("negbin", 1.5),
+        "singles": ("negbin", 1.3),
+        "doubles": ("negbin", 1.6),
+        "pitching_outs": ("normal", 1.3),
+        "hits_runs_rbis": ("normal", 1.5),
+        "home_runs": ("binary", 1.0),
+    }
+    if not prop_dist and prop_type in _DIST_DEFAULTS:
+        dist_type, default_vr = _DIST_DEFAULTS[prop_type]
+    else:
+        default_vr = 1.5
+
+    # Get variance ratio from weights file, falling back to defaults
+    var_ratio = prop_dist.get("vr", vr.get(prop_type, default_vr))
+    phi = prop_dist.get("phi", 25)
+
+    # Build distribution-specific params
+    bb_alpha = None
+    bb_beta = None
+    n_batters = None
+    if dist_type == "betabinom" and proj_result is not None:
+        bb_alpha = proj_result.get("bb_alpha")
+        bb_beta = proj_result.get("bb_beta")
+        n_batters = int(proj_result.get("expected_bf", 18)) if proj_result.get("expected_bf") else None
+
+    # For earned runs with pre-fit NB params, use them directly
     if (prop_type == "earned_runs" and proj_result is not None and
-        "nb_n" in proj_result and "nb_p" in proj_result):
+            "nb_n" in proj_result and "nb_p" in proj_result):
         nb_n = proj_result.get("nb_n")
         nb_p = proj_result.get("nb_p")
         if nb_n > 0 and 0 < nb_p < 1:
-            p_over = distributions.prob_over_negbinom(line, nb_n, nb_p)
-            p_under = distributions.prob_under_negbinom(line, nb_n, nb_p)
-
-    # If Beta-Binomial or Negative Binomial wasn't used, calculate using standard distributions
-    if p_over is None or p_under is None:
-        # NegBin/Gamma params are tunable via weights file (autolearn can adjust)
-        vr = weights.get("variance_ratios", {})
-
-        negbin_props = {
-            "stolen_bases": vr.get("stolen_bases", 2.5),
-            # Pitcher Ks are overdispersed vs Poisson (ace vs bad starts have high variance).
-            # NegBin with vr=2.2: PK accuracy 58.4% → 64.3% when combined with offset fix.
-            "pitcher_strikeouts": vr.get("pitcher_strikeouts", 2.2),
-            # v014: Hits overdispersed vs Poisson (0-hit and multi-hit games more common
-            # than Poisson predicts). NegBin vr=1.5 produces better-calibrated probabilities.
-            "hits": vr.get("hits", 1.5),
-            # v014: TB highly overdispersed — extra-base hits create multimodal distribution.
-            # NegBin vr=2.5 + offset +0.32 fixes under-projection: 54.4% → 59.7%.
-            "total_bases": vr.get("total_bases", 2.5),
-        }
-        poisson_props = {
-            "rbis", "runs", "walks",
-            "walks_allowed",
-            "hits_allowed", "batter_strikeouts", "singles", "doubles",
-        }
-        gamma_props = {
-            # vr=4.0 validated on 2025 backtest: FS MORE 56.7%, LESS 57.1% (pre-floor).
-            # With confidence floors applied, improves to MORE 59.1%, LESS 59.5%.
-            "hitter_fantasy_score": vr.get("hitter_fantasy_score", 4.0),
-        }
-        normal_props = {
-            "pitching_outs": 1.3,
-            "hits_runs_rbis": 1.5,
-        }
-
-        if prop_type in negbin_props:
-            r = negbin_props[prop_type]
-            var = mu * r
-            if var > mu and mu > 0:
-                n_param = (mu ** 2) / (var - mu)
-                p_param = mu / var
-                if line == int(line):
-                    int_line = int(line)
-                    p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
-                    p_under = nbinom.cdf(int_line - 1, n_param, p_param)
-                else:
-                    int_line = int(line)
-                    p_over = 1 - nbinom.cdf(int_line, n_param, p_param)
-                    p_under = nbinom.cdf(int_line, n_param, p_param)
-            else:
-                if line == int(line):
-                    p_over = 1 - poisson.cdf(int(line), mu)
-                    p_under = poisson.cdf(int(line) - 1, mu)
-                else:
-                    p_over = 1 - poisson.cdf(int(line), mu)
-                    p_under = poisson.cdf(int(line), mu)
-
-        elif prop_type in poisson_props:
-            if line == int(line):
-                int_line = int(line)
-                p_over = 1 - poisson.cdf(int_line, mu)
-                p_under = poisson.cdf(int_line - 1, mu)
-            else:
-                int_line = int(line)
-                p_over = 1 - poisson.cdf(int_line, mu)
-                p_under = poisson.cdf(int_line, mu)
-
-        elif prop_type in gamma_props:
-            var_ratio = gamma_props[prop_type]
-            var = mu * var_ratio
-            shape = (mu ** 2) / var
-            scale = var / mu
-            if line == int(line):
-                p_over = 1 - gamma.cdf(line + 0.5, shape, scale=scale)
-                p_under = gamma.cdf(line - 0.5, shape, scale=scale)
-            else:
-                p_over = 1 - gamma.cdf(line, shape, scale=scale)
-                p_under = gamma.cdf(line, shape, scale=scale)
-
+            prob_result_dist = {
+                "p_over": distributions.prob_over_negbinom(line, nb_n, nb_p),
+                "p_under": distributions.prob_under_negbinom(line, nb_n, nb_p),
+                "p_push": distributions.prob_push_negbin_mu(line, mu, var_ratio)
+                          if line == int(line) else 0.0,
+            }
         else:
-            var_ratio = normal_props.get(prop_type, 1.5)
-            sigma = max(np.sqrt(mu * var_ratio), 0.25)
-            if line == int(line):
-                p_over = 1 - norm.cdf(line + 0.5, loc=mu, scale=sigma)
-                p_under = norm.cdf(line - 0.5, loc=mu, scale=sigma)
-            else:
-                p_over = 1 - norm.cdf(line, loc=mu, scale=sigma)
-                p_under = norm.cdf(line, loc=mu, scale=sigma)
+            prob_result_dist = distributions.compute_probabilities(
+                line, mu, dist_type, var_ratio=var_ratio, phi=phi,
+                n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta)
+    else:
+        prob_result_dist = distributions.compute_probabilities(
+            line, mu, dist_type, var_ratio=var_ratio, phi=phi,
+            n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta)
 
-        total = p_over + p_under
-        if total > 0:
-            p_over /= total
-            p_under /= total
-        else:
-            p_over = 0.5
-            p_under = 0.5
+    p_over = prob_result_dist["p_over"]
+    p_under = prob_result_dist["p_under"]
+    p_push = prob_result_dist["p_push"]
+
+    # Normalize (continuous distributions may not sum exactly to 1)
+    total = p_over + p_under
+    if total > 0:
+        p_over /= total
+        p_under /= total
+    else:
+        p_over = 0.5
+        p_under = 0.5
 
     # ── v016: Empirical calibration blend ──────────────────
     # Per-prop blend of theoretical distribution probability with empirical
@@ -1548,6 +1722,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
 
     return {
         "p_over": round(p_over, 4), "p_under": round(p_under, 4),
+        "p_push": round(p_push, 4),
         "pick": pick, "confidence": round(confidence, 4),
         "edge": round(edge, 4), "rating": rating,
         "projection": round(mu, 2), "line": line,
@@ -1570,6 +1745,9 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     b = batter_profile or {}
     p = pitcher_profile or {}
     opp = opp_pitcher_profile or {}
+
+    # Track whether we have real player data vs league-average fallback
+    _has_player_data = bool(b or p)
 
     # Route to correct projection
     route = {
@@ -1676,8 +1854,50 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         prob_result["nb_p_over"] = prob_result.get("p_over")
         prob_result["nb_p_under"] = prob_result.get("p_under")
 
-    return {
+    # ── DATA QUALITY FLAGS ──────────────────────────────────
+    # When player-specific data is missing, the projection is just league
+    # averages or line-as-projection.  Flag this and penalize confidence.
+    result = {
         "player_name": player_name, "stat_type": stat_type,
         "stat_internal": stat_internal, "line": line,
         **proj_result, **prob_result,
     }
+
+    result["has_player_data"] = _has_player_data
+    result["has_opp_data"] = bool(opp)
+    result["has_lineup_pos"] = lineup_pos is not None
+    result["has_park"] = park_team is not None
+
+    if not _has_player_data:
+        # No player stats at all — projection is pure league average / line fallback.
+        # Slash confidence hard: cap at 0.55 max (D-grade territory).
+        raw_conf = result.get("confidence", 0.5)
+        result["confidence"] = min(raw_conf, 0.55)
+        result["rating"] = "D"
+        result["data_warning"] = "no_player_data"
+    else:
+        # Player data exists but context may be incomplete.
+        # Penalize missing context fields (opponent, lineup, park).
+        missing_penalty = 0.0
+        if not opp:
+            missing_penalty += 0.05   # No opposing pitcher data
+        if lineup_pos is None:
+            missing_penalty += 0.03   # No confirmed batting order
+        if park_team is None:
+            missing_penalty += 0.02   # No park factor
+
+        if missing_penalty > 0:
+            raw_conf = result.get("confidence", 0.5)
+            result["confidence"] = max(raw_conf - missing_penalty, 0.50)
+            # Recalculate rating based on penalized confidence
+            c = result["confidence"]
+            if c >= 0.70:
+                result["rating"] = "A"
+            elif c >= 0.62:
+                result["rating"] = "B"
+            elif c >= 0.57:
+                result["rating"] = "C"
+            else:
+                result["rating"] = "D"
+
+    return result

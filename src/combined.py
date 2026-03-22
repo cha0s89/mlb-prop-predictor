@@ -22,6 +22,23 @@ SIGNAL_CONFIRMED = "CONFIRMED"
 SIGNAL_SHARP_ONLY = "SHARP_ONLY"
 SIGNAL_PROJECTION_ONLY = "PROJECTION_ONLY"
 
+# Dynamic ensemble weights from hedge updater
+try:
+    from src.ensemble import get_blend_weights as _get_blend_weights
+    _HAS_ENSEMBLE = True
+except ImportError:
+    _HAS_ENSEMBLE = False
+
+
+def _blend_weights():
+    """Get current sharp/proj blend weights (dynamic or fallback)."""
+    if _HAS_ENSEMBLE:
+        try:
+            return _get_blend_weights()
+        except Exception:
+            pass
+    return 0.65, 0.35
+
 
 def _combined_grade(score: float) -> str:
     """Assign combined grade from score."""
@@ -64,10 +81,13 @@ def score_single_pick(sharp_edge: dict = None, proj_result: dict = None) -> dict
     proj_pick = proj_result.get("pick", "") if has_proj else ""
     proj_rating = proj_result.get("rating", "D") if has_proj else "D"
 
+    # Get dynamic ensemble blend weights (hedge-updated)
+    w_sharp, w_proj = _blend_weights()
+
     # Determine signal type
     if has_sharp and has_proj and sharp_pick == proj_pick:
         signal = SIGNAL_CONFIRMED
-        combined = sharp_edge_val * 0.65 + proj_edge_val * 0.35
+        combined = sharp_edge_val * w_sharp + proj_edge_val * w_proj
         if sharp_edge.get("fanduel_agrees"):
             combined += 0.03
         if sharp_edge.get("num_books", 0) >= 3:
@@ -76,21 +96,21 @@ def score_single_pick(sharp_edge: dict = None, proj_result: dict = None) -> dict
 
     elif has_sharp and has_proj and sharp_pick != proj_pick:
         signal = SIGNAL_SHARP_ONLY
-        combined = sharp_edge_val * 0.80 - proj_edge_val * 0.20
+        combined = sharp_edge_val * (w_sharp + 0.15) - proj_edge_val * (w_proj - 0.15)
         if combined < 0.02:
             return None
         pick = sharp_pick
 
     elif has_sharp and not has_proj:
         signal = SIGNAL_SHARP_ONLY
-        combined = sharp_edge_val * 0.85
+        combined = sharp_edge_val * (w_sharp + 0.20)
         pick = sharp_pick
 
     elif has_proj and not has_sharp:
         signal = SIGNAL_PROJECTION_ONLY
         if proj_rating not in ("A", "B"):
             return None
-        combined = proj_edge_val * 0.60
+        combined = proj_edge_val * (w_proj + 0.25)
         pick = proj_pick
 
     else:
