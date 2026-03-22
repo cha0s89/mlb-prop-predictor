@@ -8,17 +8,30 @@ This module integrates confirmed lineups into the projection system
 by providing context about who's batting when and what pitcher they face.
 
 Data source: MLB Stats API (statsapi.mlb.com) — free, no auth required.
+Uses the v1.1 live feed endpoint for boxscore/lineup data.
 """
 
+import logging
 import requests
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from functools import lru_cache
 
+logger = logging.getLogger(__name__)
+
 MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
+MLB_API_V11 = "https://statsapi.mlb.com/api/v1.1"
 
 # Request timeout to avoid hanging API calls
 REQUEST_TIMEOUT = 10
+
+# In-memory cache for lineup fetches.  Stores results (including None for
+# games that failed or have no lineup data) so we never hit the same game_pk
+# twice in a single run.  Keyed by game_pk.
+_lineup_cache: Dict[int, Optional[dict]] = {}
+
+# Track game_pks that already failed so we log only once per game.
+_failed_game_pks: set = set()
 
 # Team ID to abbreviation mapping (key MLB teams)
 TEAM_ID_TO_ABBR = {
@@ -67,21 +80,30 @@ PA_MULTIPLIERS = {
 # API HELPERS
 # ─────────────────────────────────────────────
 
-def _api_get(endpoint: str, params: dict = None) -> Optional[dict]:
+def _api_get(endpoint: str, params: dict = None,
+             base: str = None, silent: bool = False) -> Optional[dict]:
     """
     Safe GET request to MLB Stats API. Returns parsed JSON or None on failure.
-    Never raises — all errors are caught and logged silently.
+    Never raises — all errors are caught and logged once.
+
+    Args:
+        endpoint: URL path (e.g. "/schedule")
+        params: Query parameters
+        base: Override base URL (defaults to MLB_API_BASE v1)
+        silent: If True, suppress even the single-line error log
     """
-    url = f"{MLB_API_BASE}{endpoint}"
+    url = f"{base or MLB_API_BASE}{endpoint}"
     try:
         resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as e:
-        print(f"[lineups.py] API error for {endpoint}: {e}")
+        if not silent:
+            logger.warning("API error %s: %s", endpoint, e)
         return None
     except ValueError:
-        print(f"[lineups.py] Invalid JSON from {endpoint}")
+        if not silent:
+            logger.warning("Invalid JSON from %s", endpoint)
         return None
 
 
@@ -191,6 +213,11 @@ def fetch_confirmed_lineups(game_pk: int) -> dict:
     """
     Fetch confirmed batting orders for a specific game.
 
+    Uses the v1.1 live feed endpoint which returns boxscore data with
+    confirmed lineups.  Results are cached so repeated calls for the
+    same game_pk are free.  Failed lookups (spring training games
+    without data, 405s, etc.) are cached as empty and logged once.
+
     Args:
         game_pk: MLB game ID
 
@@ -207,21 +234,46 @@ def fetch_confirmed_lineups(game_pk: int) -> dict:
 
         Returns empty dict on failure.
     """
-    # Try the live game feed endpoint first (has confirmed lineups)
-    data = _api_get(f"/game/{game_pk}/linescore")
+    empty = {"away": [], "home": []}
 
-    if not data or "teams" not in data:
-        # Fallback to boxscore endpoint
-        data = _api_get(f"/game/{game_pk}/boxscore")
+    # ── Cache check: return immediately if we've seen this game_pk ──
+    if game_pk in _lineup_cache:
+        return _lineup_cache[game_pk] or empty
 
-        if not data or "teams" not in data:
-            return {"away": [], "home": []}
+    # ── Primary: v1.1 live feed → boxscore ──
+    data = _api_get(
+        f"/game/{game_pk}/feed/live",
+        base=MLB_API_V11,
+        silent=(game_pk in _failed_game_pks),
+    )
 
+    boxscore = None
+    if data and "liveData" in data:
+        boxscore = data.get("liveData", {}).get("boxscore")
+
+    # ── Fallback: v1 boxscore endpoint ──
+    if not boxscore or "teams" not in boxscore:
+        fallback = _api_get(
+            f"/game/{game_pk}/boxscore",
+            silent=(game_pk in _failed_game_pks),
+        )
+        if fallback and "teams" in fallback:
+            boxscore = fallback
+
+    # ── Both failed — cache the miss, log once ──
+    if not boxscore or "teams" not in boxscore:
+        if game_pk not in _failed_game_pks:
+            logger.info("No lineup data for game %s (spring training or not yet posted)", game_pk)
+            _failed_game_pks.add(game_pk)
+        _lineup_cache[game_pk] = None
+        return empty
+
+    # ── Parse the boxscore ──
     result = {"away": [], "home": []}
 
     for side in ["home", "away"]:
         try:
-            team_data = data.get("teams", {}).get(side, {})
+            team_data = boxscore.get("teams", {}).get(side, {})
             players = team_data.get("players", {})
             batting_order = team_data.get("battingOrder", [])
 
@@ -239,9 +291,10 @@ def fetch_confirmed_lineups(game_pk: int) -> dict:
                     "is_starting": True,
                 })
         except Exception as e:
-            print(f"[lineups.py] Error parsing {side} lineup: {e}")
+            logger.warning("Error parsing %s lineup for game %s: %s", side, game_pk, e)
             continue
 
+    _lineup_cache[game_pk] = result
     return result
 
 
@@ -430,8 +483,12 @@ def get_game_context(team_abbrev: str, games: List[dict] = None) -> Optional[dic
         # Get probable pitcher for this team
         pitcher = get_probable_pitcher(team_abbrev, games=[game])
 
-        # Try to fetch venue info from game details if available
-        game_detail = _api_get(f"/game/{game.get('game_pk')}")
+        # Try to fetch venue info from live feed (v1.1)
+        game_detail = _api_get(
+            f"/game/{game.get('game_pk')}/feed/live",
+            base=MLB_API_V11,
+            silent=True,
+        )
         venue = ""
         if game_detail:
             venue = game_detail.get("gameData", {}).get("venue", {}).get("name", "")
@@ -456,12 +513,25 @@ def get_game_context(team_abbrev: str, games: List[dict] = None) -> Optional[dic
 
 
 # ─────────────────────────────────────────────
+# CACHE MANAGEMENT
+# ─────────────────────────────────────────────
+
+def clear_lineup_cache():
+    """Reset the in-memory lineup cache.  Useful at the start of a new run."""
+    _lineup_cache.clear()
+    _failed_game_pks.clear()
+    fetch_todays_games.cache_clear()
+
+
+# ─────────────────────────────────────────────
 # CONVENIENCE: FETCH ALL LINEUPS FOR TODAY
 # ─────────────────────────────────────────────
 
 def fetch_all_lineups() -> dict:
     """
     Fetch confirmed lineups for all games today.
+
+    Results are cached per game_pk — safe to call multiple times.
 
     Returns:
         Dict mapping game_pk -> {away: [...], home: [...]} lineups

@@ -9,6 +9,12 @@ from collections import Counter, defaultdict
 from itertools import combinations
 import math
 
+try:
+    from src.slip_ev import quick_slip_ev, build_correlation_matrix
+    HAS_SLIP_EV = True
+except ImportError:
+    HAS_SLIP_EV = False
+
 
 # Empirical correlation coefficients between MLB prop types
 # Source: TheHammer.bet study of 27,625 games (2010-2021) and BetFirm research
@@ -81,18 +87,56 @@ def estimate_slip_correlation(picks: list[dict]) -> float:
     return correlation_multiplier
 
 
+def correlation_penalty(picks: list[dict]) -> float:
+    """Compute a correlation penalty for a set of picks.
+
+    Uses the empirical correlation matrix to measure how much the picks'
+    outcomes are linked. Lower is better (more independent legs).
+
+    Returns:
+        Float between 0 and 1. 0 = fully independent, 1 = fully correlated.
+    """
+    if len(picks) < 2:
+        return 0.0
+
+    if not HAS_SLIP_EV:
+        # Fallback: count same-team pairs
+        teams = [p.get('team', '') for p in picks]
+        team_counts = Counter(teams)
+        pair_count = sum(c * (c - 1) / 2 for c in team_counts.values())
+        max_pairs = len(picks) * (len(picks) - 1) / 2
+        return pair_count / max_pairs if max_pairs > 0 else 0.0
+
+    # Use the full correlation matrix
+    try:
+        legs = [{
+            "team": p.get("team", ""),
+            "pick": p.get("pick", "MORE"),
+            "stat_type": p.get("stat_internal", p.get("stat_type", "")),
+        } for p in picks]
+        R = build_correlation_matrix(legs)
+        n = len(R)
+        # Average off-diagonal correlation
+        total_corr = sum(abs(R[i][j]) for i in range(n) for j in range(i + 1, n))
+        num_pairs = n * (n - 1) / 2
+        return total_corr / num_pairs if num_pairs > 0 else 0.0
+    except Exception:
+        return 0.0
+
+
 def score_slip_quality(picks: list[dict]) -> float:
     """
     Score a slip's quality on a 0-100 scale based on diversification criteria.
 
-    Scoring breakdown:
-    - Direction balance (MORE/LESS mix): 0-25 points (50/50 is ideal)
-    - Team diversity: 0-25 points (fewer duplicate teams is better)
-    - Average confidence: 0-25 points (higher is better)
-    - Prop type diversity: 0-25 points (fewer duplicate types is better)
+    Scoring breakdown (v018 — correlation-aware):
+    - Direction balance (MORE/LESS mix): 0-20 points (50/50 is ideal)
+    - Team diversity: 0-20 points (fewer duplicate teams is better)
+    - Average confidence: 0-20 points (higher is better)
+    - Prop type diversity: 0-20 points (fewer duplicate types is better)
+    - Low correlation bonus: 0-20 points (less correlated legs = better)
 
     Args:
-        picks: List of prediction dicts, each with keys including 'pick', 'confidence', 'team', 'stat_type'
+        picks: List of prediction dicts
 
     Returns:
         float: Quality score between 0 and 100
@@ -101,43 +145,41 @@ def score_slip_quality(picks: list[dict]) -> float:
         return 0.0
 
     score = 0.0
-
-    # 1. Direction balance (0-25 points)
-    # Ideal: 50% MORE, 50% LESS
-    directions = [p.get('pick') for p in picks]
-    more_count = sum(1 for d in directions if d == 'MORE')
-    less_count = sum(1 for d in directions if d == 'LESS')
     total = len(picks)
 
-    more_pct = more_count / total if total > 0 else 0
-    less_pct = less_count / total if total > 0 else 0
+    # 1. Direction balance (0-20 points)
+    directions = [p.get('pick') for p in picks]
+    more_count = sum(1 for d in directions if d == 'MORE')
 
-    # Penalty from ideal 50/50 split
+    more_pct = more_count / total if total > 0 else 0
     balance_deviation = abs(more_pct - 0.5)
-    direction_score = max(0, 25 * (1 - balance_deviation))
+    direction_score = max(0, 20 * (1 - balance_deviation))
     score += direction_score
 
-    # 2. Team diversity (0-25 points)
-    # Penalize duplicate teams; max 2 from same team is acceptable
+    # 2. Team diversity (0-20 points)
     teams = [p.get('team') for p in picks]
     team_counts = Counter(teams)
     duplicate_penalty = sum(max(0, count - 2) for count in team_counts.values())
-    team_diversity_score = max(0, 25 * (1 - (duplicate_penalty / total)))
+    team_diversity_score = max(0, 20 * (1 - (duplicate_penalty / total)))
     score += team_diversity_score
 
-    # 3. Average confidence (0-25 points)
+    # 3. Average confidence (0-20 points)
     confidences = [p.get('confidence', 0.5) for p in picks]
     avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
-    confidence_score = avg_confidence * 25
+    confidence_score = avg_confidence * 20
     score += confidence_score
 
-    # 4. Prop type diversity (0-25 points)
-    # Penalize stacking same stat_type
+    # 4. Prop type diversity (0-20 points)
     stat_types = [p.get('stat_type') for p in picks]
     type_counts = Counter(stat_types)
     type_penalty = sum(max(0, count - 2) for count in type_counts.values())
-    prop_diversity_score = max(0, 25 * (1 - (type_penalty / total)))
+    prop_diversity_score = max(0, 20 * (1 - (type_penalty / total)))
     score += prop_diversity_score
+
+    # 5. Correlation penalty (0-20 points) — NEW in v018
+    corr = correlation_penalty(picks)
+    correlation_score = 20 * (1 - corr)  # Low correlation = high score
+    score += correlation_score
 
     return min(100, score)
 
@@ -327,8 +369,9 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
     stat_types = list(set(p.get('stat_type') for p in picks))
 
     quality_score = score_slip_quality(picks)
+    corr_pen = correlation_penalty(picks)
 
-    return {
+    result = {
         'picks': picks,
         'avg_confidence': round(avg_confidence, 3),
         'direction_balance': f"{more_count} MORE / {less_count} LESS",
@@ -337,8 +380,25 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
         'risk_level': risk_level,
         'estimated_win_prob': round(win_prob, 4),
         'quality_score': round(quality_score, 1),
+        'correlation_penalty': round(corr_pen, 3),
         'label': None,  # Assigned later
     }
+
+    # v018: Compute MC EV if available for more accurate ranking
+    if HAS_SLIP_EV:
+        try:
+            n = len(picks)
+            entry_type = f"{n}_flex"
+            ev_result = quick_slip_ev(
+                probs=[p.get('confidence', 0.55) for p in picks],
+                entry_type=entry_type,
+            )
+            result['mc_ev_pct'] = ev_result.get('ev_pct', 0)
+            result['mc_win_rate'] = ev_result.get('win_rate', 0)
+        except Exception:
+            pass
+
+    return result
 
 
 def _generate_fallback_slips(
