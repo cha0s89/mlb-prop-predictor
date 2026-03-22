@@ -535,12 +535,12 @@ def _early_season_ip_discount(game_date: date = None) -> float:
     # MLB Opening Day is typically late March / early April.
     # Use April 1 as a rough anchor — actual opening day varies by year.
     year = game_date.year
-    # Season start: use March 20 as earliest possible (2026 is March 26)
-    season_start = date(year, 3, 20)
+    # Opening Day 2026: March 27. Adjust for other years as needed.
+    season_start = date(year, 3, 27)
 
     if game_date < season_start:
-        # Spring Training or pre-season: heavy discount
-        return 0.82
+        # Pre-Opening Day: moderate discount (less aggressive, spring games still happen)
+        return 0.90
 
     days_into_season = (game_date - season_start).days
 
@@ -660,13 +660,9 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     if platoon and platoon.get("k_adjustment"):
         proj *= platoon["k_adjustment"]
 
-    # v015: High-end dampening — backtest shows Q5 projections overshoot by +0.985 Ks.
-    # The multiplicative adjustments (K% × CSW × opp_lineup × ump × platoon) compound
-    # too aggressively for elite pitchers. Apply soft ceiling regression toward 5.5 (median).
-    # This pulls 7+ projections down gently without affecting normal-range projections.
-    if proj > 6.0:
-        excess = proj - 6.0
-        proj = 6.0 + excess * 0.65  # Dampen the excess above 6.0 by 35%
+    # v018: Removed proportional dampening. Instead apply hard cap at 12 Ks to prevent
+    # outliers while allowing elite pitchers to project more accurately.
+    proj = min(proj, 12.0)
 
     # v018: ABS Challenge System adjustment (2026 rule change)
     proj *= abs_adjustment_factor("pitcher_strikeouts")
@@ -893,20 +889,20 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
         stab_avg = int(stab_avg * 0.75)  # 375 instead of 500 for established batters
     reg_avg = _regress(avg, pa, stab_avg, LG["avg"])
 
-    # xBA blend — v015: increased from 30% to 40% weight. xBA is a better predictor
+    # xBA blend — v018: increased from 40% to 50% weight. xBA is a better predictor
     # of future hitting than raw AVG because it strips out BABIP luck. Backtest shows
     # model under-projects hits by 0.18 consistently; stronger Statcast weight helps.
     if xba > 0:
-        reg_avg = reg_avg * 0.60 + xba * 0.40
+        reg_avg = reg_avg * 0.50 + xba * 0.50
 
     # K% adjustment: low K% = more balls in play
     reg_k = _regress(k_rate, pa, STAB["k_rate"], LG["k_rate"])
-    k_adj = 1.0 + (LG["k_rate"] - reg_k) / LG["k_rate"] * 0.15  # v015: 0.12 → 0.15
+    k_adj = 1.0 + (LG["k_rate"] - reg_k) / LG["k_rate"] * 0.25  # v018: 0.15 → 0.25
     reg_avg *= k_adj
 
-    # Contact quality: hard hit rate, EV90 — v015: increased from 0.10 to 0.14
+    # Contact quality: hard hit rate, EV90 — v018: increased from 0.14 to 0.22
     if hard_hit > 0:
-        hh_adj = (hard_hit - LG["hard_hit_pct"]) / LG["hard_hit_pct"] * 0.14
+        hh_adj = (hard_hit - LG["hard_hit_pct"]) / LG["hard_hit_pct"] * 0.22
         reg_avg *= (1 + hh_adj)
 
     # BABIP regression check (if BABIP is way above/below xBA, regression coming)
@@ -1601,7 +1597,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # This preserves backward compatibility with existing weights files
     _DIST_DEFAULTS = {
         "pitcher_strikeouts": ("betabinom", 2.2),
-        "hits": ("negbin", 1.5),
+        "hits": ("negbin", 2.2),
         "total_bases": ("negbin", 2.5),
         "stolen_bases": ("negbin", 2.5),
         "hitter_fantasy_score": ("gamma", 4.0),
@@ -1691,15 +1687,31 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
                 p_over /= total
                 p_under /= total
 
-    edge = abs(p_over - 0.5)
     pick = "MORE" if p_over > 0.5 else "LESS"
-    confidence = max(p_over, p_under)
 
-    if confidence >= 0.70:
+    # Raw probability from distribution
+    raw_prob = max(p_over, p_under)
+
+    # ── MODEL UNCERTAINTY DISCOUNT ─────────────────────────────
+    # Raw CDF probability assumes the projection is perfect truth.
+    # In reality, projections have ~0.3-0.5 standard error.
+    # Backtest shows A-grade picks hit 55% vs 70%+ raw probability —
+    # a ~15pp overconfidence gap. Apply a calibration curve that
+    # compresses extreme probabilities toward 50%.
+    #
+    # Formula: calibrated = 0.50 + (raw - 0.50) × shrinkage
+    # shrinkage < 1.0 pulls everything toward the coinflip baseline.
+    # 0.70 shrinkage: raw 80% → calibrated 71%, raw 75% → 67.5%, raw 60% → 57%
+    MODEL_UNCERTAINTY_SHRINKAGE = 0.70
+    confidence = 0.50 + (raw_prob - 0.50) * MODEL_UNCERTAINTY_SHRINKAGE
+
+    edge = round(abs(confidence - 0.50), 4)
+
+    if confidence >= 0.66:
         rating = "A"
-    elif confidence >= 0.62:
+    elif confidence >= 0.60:
         rating = "B"
-    elif confidence >= 0.57:
+    elif confidence >= 0.55:
         rating = "C"
     else:
         rating = "D"
@@ -1710,15 +1722,6 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     if is_dead_zone:
         rating = "D"
 
-    # Per-prop confidence floors: filter low-confidence picks that backtest shows
-    # are below profitability threshold for that specific prop+direction combo.
-    # These picks get downgraded to "D" so the UI filters them out automatically.
-    # Floors derived from 2025 backtest confidence-bucket analysis (v012).
-    floors = weights.get("per_prop_confidence_floors", {})
-    floor_key = f"{prop_type}_{pick.lower()}"
-    floor = floors.get(floor_key, 0.0)
-    if confidence < floor:
-        rating = "D"
 
     return {
         "p_over": round(p_over, 4), "p_under": round(p_under, 4),

@@ -728,9 +728,7 @@ with tab_edge:
         )
     if _is_preseason:
         st.markdown(
-            f'<div class="warn-strip"><strong>Preseason:</strong> Opening Day is {_days_to_opening} day{"s" if _days_to_opening != 1 else ""} away (March 27). '
-            f'Sharp books won\'t have MLB player props until close to Opening Day. '
-            f'Projection-based analysis is still available from PrizePicks lines.</div>',
+            '<div class="warn-strip"><strong>Pre-Opening Day</strong> — Projection-only mode. Sharp books unavailable until regular season.</div>',
             unsafe_allow_html=True
         )
     else:
@@ -1287,6 +1285,62 @@ with tab_edge:
                 elif not all_edges:
                     st.markdown('<div class="warn-strip"><strong>No sharp lines</strong> — showing projection-only analysis. Add Odds API key for full edge detection.</div>', unsafe_allow_html=True)
 
+                # ── GAME SCORE DIAGNOSTIC ────────────────────────
+                # Aggregate per-team projected runs and hits for sanity check.
+                # If all games project to 3-2, model isn't differentiating matchups.
+                with st.expander("📊 Game Score Projections (diagnostic)", expanded=False):
+                    _game_scores = {}
+                    for p in preds:
+                        _team = p.get("team", "")
+                        _stat = p.get("stat_internal", "")
+                        _proj = _safe_num(p.get("projection"), 0)
+                        if not _team:
+                            continue
+                        if _team not in _game_scores:
+                            _game_scores[_team] = {"runs": [], "hits": [], "hr": [],
+                                                   "opponent": _safe(p.get("opponent"), ""),
+                                                   "opp_pitcher": _safe(p.get("opp_pitcher"), "")}
+                        if _stat == "runs":
+                            _game_scores[_team]["runs"].append(_proj)
+                        elif _stat == "hits":
+                            _game_scores[_team]["hits"].append(_proj)
+                        elif _stat == "home_runs":
+                            _game_scores[_team]["hr"].append(_proj)
+
+                    if _game_scores:
+                        _gs_rows = []
+                        for _tm, _gs in sorted(_game_scores.items()):
+                            _avg_runs = sum(_gs["runs"]) / len(_gs["runs"]) if _gs["runs"] else 0
+                            _avg_hits = sum(_gs["hits"]) / len(_gs["hits"]) if _gs["hits"] else 0
+                            _avg_hr = sum(_gs["hr"]) / len(_gs["hr"]) if _gs["hr"] else 0
+                            _n_players = max(len(_gs["runs"]), len(_gs["hits"]), 1)
+                            # Estimate team total: avg per player × lineup size (9)
+                            _est_team_runs = round(_avg_runs * min(_n_players, 9), 1) if _gs["runs"] else 0
+                            _est_team_hits = round(_avg_hits * min(_n_players, 9), 1) if _gs["hits"] else 0
+                            _gs_rows.append({
+                                "Team": _tm,
+                                "vs": _gs["opponent"],
+                                "Opp SP": _gs["opp_pitcher"],
+                                "Est Runs": _est_team_runs,
+                                "Est Hits": _est_team_hits,
+                                "Avg HR Prob": f"{_avg_hr:.0%}" if _gs["hr"] else "—",
+                                "Players": _n_players,
+                            })
+                        if _gs_rows:
+                            _gs_df = pd.DataFrame(_gs_rows)
+                            st.dataframe(_gs_df, hide_index=True, use_container_width=True)
+                            # Variance check
+                            _run_vals = [r["Est Runs"] for r in _gs_rows if r["Est Runs"] > 0]
+                            if len(_run_vals) >= 4:
+                                _run_std = (sum((x - sum(_run_vals)/len(_run_vals))**2 for x in _run_vals) / len(_run_vals)) ** 0.5
+                                _run_mean = sum(_run_vals) / len(_run_vals)
+                                if _run_std < 0.5:
+                                    st.warning(f"⚠️ Low variance: all teams project {_run_mean:.1f} ± {_run_std:.1f} runs. Model may not be differentiating matchups well.")
+                                else:
+                                    st.caption(f"Run spread: {min(_run_vals):.1f} – {max(_run_vals):.1f} (σ={_run_std:.1f}). {'Good differentiation.' if _run_std > 1.0 else 'Moderate differentiation.'}")
+                    else:
+                        st.caption("No per-team projections available yet.")
+
                 _TRIVIAL_LESS_PROPS = {"stolen_bases", "home_runs"}
                 def _is_trivial(pick: dict) -> bool:
                     return (
@@ -1404,7 +1458,7 @@ with tab_edge:
                     if pick_idx >= 40:
                         break
                     health_icon = {"IL": "🔴", "day-to-day": "🟡", "active": "🟢"}.get(pick_row.get("injury_status", "active"), "🟢")
-                    spring_icon = {"hot": "🔥", "cold": "❄️", "neutral": "—"}.get(pick_row.get("spring_badge", "neutral"), "—")
+                    form_icon = {"hot": "🔥", "cold": "❄️", "neutral": "—"}.get(pick_row.get("spring_badge", "neutral"), "—")
                     trend_icon = {"hot": "🔥", "cold": "❄️", "neutral": "—"}.get(pick_row.get("trend_badge", "neutral"), "—")
                     buy_tag = " 🎯" if pick_row.get("buy_low") else ""
                     _lt = pick_row.get("line_type", "standard")
@@ -1495,7 +1549,7 @@ with tab_edge:
                                 status_parts = []
                                 status_parts.append(f"Health: {health_icon}")
                                 if _spring != "neutral":
-                                    status_parts.append(f"Spring: {spring_icon}")
+                                    status_parts.append(f"Form: {form_icon}")
                                 if _trend != "neutral":
                                     status_parts.append(f"Trend: {trend_icon}")
                                 st.markdown(" · ".join(status_parts))

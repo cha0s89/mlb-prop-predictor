@@ -245,10 +245,7 @@ def get_api_key() -> str:
 
 
 def fetch_mlb_events(api_key: str = None, sport_key: str = None) -> list:
-    """Fetch current MLB events (games) list.
-
-    Falls back to preseason sport key if regular season returns 0 events.
-    """
+    """Fetch current MLB events (games) list."""
     api_key = api_key or get_api_key()
     if not api_key:
         _log.warning("No Odds API key configured — skipping sharp odds")
@@ -265,11 +262,6 @@ def fetch_mlb_events(api_key: str = None, sport_key: str = None) -> list:
         credits = resp.headers.get("x-requests-remaining", "?")
         _log.info("[sharp_odds] Got %d events for %s, credits remaining: %s",
                   len(events), sport, credits)
-
-        # Preseason fallback: if regular season empty and we haven't tried yet
-        if not events and sport == SPORT_KEY and sport_key is None:
-            _log.info("[sharp_odds] No regular season events, trying preseason...")
-            return fetch_mlb_events(api_key, sport_key=SPORT_KEY_PRESEASON)
 
         return events
     except requests.RequestException as e:
