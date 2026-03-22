@@ -3,6 +3,8 @@ __pycache__/
 *.pyo
 .env
 data/*.db
+data/*.db-wal
+data/*.db-shm
 .DS_Store
 *.egg-info/
 dist/
@@ -12,3 +14,4 @@ venv/
 .claude/
 .fuse_hidden*
 delete/
+data/odds_cache/

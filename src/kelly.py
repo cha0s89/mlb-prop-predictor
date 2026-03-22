@@ -175,7 +175,8 @@ def calculate_slip_sizing(
     # Start with product of individual confidences
     joint_prob = 1.0
     for pick in picks:
-        conf = pick.get("confidence", 0.5)
+        conf = pick.get("confidence") or 0.5  # handles None and missing
+        conf = max(0.01, min(0.99, float(conf)))  # clamp to valid range
         joint_prob *= conf
 
     # Apply same-game correlation discount

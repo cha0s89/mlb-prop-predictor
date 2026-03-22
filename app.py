@@ -17,6 +17,7 @@ from src.prizepicks import fetch_prizepicks_mlb_lines
 from src.sharp_odds import (
     fetch_mlb_events, fetch_event_props, extract_sharp_lines,
     find_ev_edges, get_api_usage, get_api_key, PP_TO_ODDS_API,
+    get_credits_remaining, clear_odds_cache, ODDS_CACHE_TTL_SECONDS,
 )
 from src.weather import fetch_game_weather, resolve_team, STADIUMS, get_stat_specific_weather_adjustment
 from src.umpires import get_umpire_k_adjustment, fetch_todays_umpires
@@ -114,14 +115,14 @@ def _cached_weather(team_abbr: str):
     """Weather per stadium — cached 30 min."""
     return fetch_game_weather(team_abbr)
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=ODDS_CACHE_TTL_SECONDS, show_spinner=False)
 def _cached_sharp_events(api_key: str):
-    """Sharp book events list — cached 5 min."""
+    """Sharp book events list — cached 2 hrs (+ disk cache)."""
     return fetch_mlb_events(api_key)
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=ODDS_CACHE_TTL_SECONDS, show_spinner=False)
 def _cached_event_props(event_id: str, api_key: str):
-    """Props for one event — cached 5 min (saves 1 API credit per hit)."""
+    """Props for one event — cached 2 hrs (+ disk cache, saves API credits)."""
     return fetch_event_props(event_id, api_key=api_key)
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -694,15 +695,27 @@ with st.sidebar:
     _sb_key = get_api_key()
     if _sb_key:
         st.success("Odds API key configured")
-        if st.button("Check Credits", key="sb_credits"):
-            _u = get_api_usage(_sb_key)
-            _remaining = _u.get('remaining', 0)
-            _used = _u.get('used', 0)
-            st.info(f"Remaining: **{_remaining}** · Used: **{_used}**")
-            if isinstance(_remaining, (int, float)) and _remaining < 100:
-                st.error(f"⚠️ Only {_remaining} API credits left! Free tier (500/mo) runs out fast with daily use. Consider upgrading.")
-            elif isinstance(_remaining, (int, float)) and _remaining < 250:
-                st.warning(f"API credits getting low ({_remaining} left). ~225 credits per full day of games.")
+        _cached_creds = get_credits_remaining()
+        if _cached_creds >= 0:
+            _cred_color = "🟢" if _cached_creds > 200 else ("🟡" if _cached_creds > 50 else "🔴")
+            st.caption(f"{_cred_color} {_cached_creds} credits remaining")
+        _cred_col1, _cred_col2 = st.columns(2)
+        with _cred_col1:
+            if st.button("Check Credits", key="sb_credits"):
+                _u = get_api_usage(_sb_key)
+                _remaining = _u.get('remaining', 0)
+                _used = _u.get('used', 0)
+                st.info(f"Remaining: **{_remaining}** · Used: **{_used}**")
+                if isinstance(_remaining, (int, float)) and _remaining < 100:
+                    st.error(f"⚠️ Only {_remaining} credits left!")
+                elif isinstance(_remaining, (int, float)) and _remaining < 250:
+                    st.warning(f"Credits getting low ({_remaining})")
+        with _cred_col2:
+            if st.button("🔄 Refresh Odds", key="sb_refresh_odds"):
+                clear_odds_cache()
+                st.cache_data.clear()
+                st.success("Cache cleared — odds will refresh on next load")
+                st.rerun()
     else:
         st.warning("No Odds API key — add `ODDS_API_KEY` to Streamlit Secrets or `.env`")
     st.number_input("Starting Bankroll ($)", min_value=10.0, value=st.session_state.get("starting_bankroll", 100.0), step=10.0, key="sb_bankroll")
@@ -739,8 +752,9 @@ with tab_edge:
             unsafe_allow_html=True
         )
     else:
-        usage = get_api_usage(api_key)
-        st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{usage.get("remaining","?")}</span> credits remaining &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
+        _creds_display = get_credits_remaining()
+        _creds_str = str(_creds_display) if _creds_display >= 0 else "?"
+        st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{_creds_str}</span> credits remaining &nbsp;·&nbsp; Cached 2 hrs &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
 
     with st.spinner("Pulling PrizePicks MLB lines..."):
         try: pp_lines = _cached_pp_lines()
@@ -761,11 +775,23 @@ with tab_edge:
         if has_sharp:
             total_sharp_lines = 0
             events_with_props = 0
+            _skipped_events = 0
             with st.spinner("Fetching sharp lines & devigging..."):
                 events = _cached_sharp_events(api_key)
+                # Smart filter: only fetch props for games with PP lines
+                _pp_teams = set()
+                if not pp_lines.empty and "team" in pp_lines.columns:
+                    _pp_teams = set(pp_lines["team"].dropna().str.lower().unique())
                 for event in (events or [])[:15]:
                     eid = event.get("id","")
                     if not eid: continue
+                    # Skip events where neither team has PP lines
+                    if _pp_teams:
+                        _home = event.get("home_team","").lower()
+                        _away = event.get("away_team","").lower()
+                        if not any(t in _home or t in _away or _home in t or _away in t for t in _pp_teams):
+                            _skipped_events += 1
+                            continue
                     result = _cached_event_props(eid, api_key=api_key)
                     if result and "data" in result:
                         sharp = extract_sharp_lines(result["data"])
@@ -773,7 +799,8 @@ with tab_edge:
                             events_with_props += 1
                             total_sharp_lines += len(sharp)
                         all_edges.extend(find_ev_edges(pp_lines, sharp, min_ev_pct=0.25))
-            st.caption(f"Scanned {len(events or [])} events · {events_with_props} had props · {total_sharp_lines} sharp lines · {len(all_edges)} edges")
+            _skip_msg = f" · {_skipped_events} skipped (no PP lines)" if _skipped_events else ""
+            st.caption(f"Scanned {len(events or [])} events · {events_with_props} had props · {total_sharp_lines} sharp lines · {len(all_edges)} edges{_skip_msg}")
 
         if all_edges:
             all_edges.sort(key=lambda x: x["edge_pct"], reverse=True)
@@ -1025,10 +1052,12 @@ with tab_edge:
 
             prog = st.progress(0, text="Running projections...")
             total = len(pp_lines)
+            _pred_errors = 0
             for i, (_, row) in enumerate(pp_lines.iterrows()):
+              try:
                 prog.progress((i + 1) / total, text=f"Projecting {i + 1}/{total}...")
                 team = row.get("team","")
-                stat_int = row["stat_internal"]
+                stat_int = row.get("stat_internal", "")
                 wx = None
                 if team:
                     r = resolve_team(team)
@@ -1240,7 +1269,16 @@ with tab_edge:
                     p["edge_capped"] = True
 
                 preds.append(p)
+              except Exception as _pred_exc:
+                _pred_errors += 1
+                if _pred_errors <= 3:
+                    import logging; logging.getLogger("app").warning(
+                        "Prediction error for %s/%s: %s",
+                        row.get("player_name","?"), row.get("stat_type","?"), _pred_exc
+                    )
             prog.empty()
+            if _pred_errors:
+                st.caption(f"⚠️ {_pred_errors} prop(s) skipped due to data issues")
 
             # v018: Cross-prop consistency checks (TB >= Hits, etc.)
             if preds:

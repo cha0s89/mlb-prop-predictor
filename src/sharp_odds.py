@@ -244,14 +244,103 @@ def get_api_key() -> str:
     return key
 
 
+## ── Disk-based cache for API responses ──────────────────────────────
+#  Saves credits by persisting responses to JSON files with timestamps.
+#  Survives Streamlit reruns, app restarts, and dyno cycling.
+
+_ODDS_CACHE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "data", "odds_cache"
+)
+os.makedirs(_ODDS_CACHE_DIR, exist_ok=True)
+
+# Default TTL: 2 hours — prop odds don't move fast enough to justify 5 min
+ODDS_CACHE_TTL_SECONDS = 7200
+
+# Budget guard: stop fetching when below this threshold
+MIN_CREDITS_THRESHOLD = 50
+
+# Track remaining credits in-memory (updated on every API response)
+_last_known_credits: dict = {"remaining": None}
+
+
+def _cache_path(key: str) -> str:
+    """Get filesystem path for a cache entry."""
+    safe_key = key.replace("/", "_").replace(":", "_")
+    return os.path.join(_ODDS_CACHE_DIR, f"{safe_key}.json")
+
+
+def _read_cache(key: str, ttl: int = ODDS_CACHE_TTL_SECONDS):
+    """Read a cached API response if it exists and is fresh enough."""
+    path = _cache_path(key)
+    try:
+        with open(path) as f:
+            entry = json.load(f)
+        cached_at = entry.get("cached_at", 0)
+        age = datetime.now().timestamp() - cached_at
+        if age < ttl:
+            _log.info("[sharp_odds] CACHE HIT for %s (age: %ds)", key, int(age))
+            return entry.get("data")
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+    return None
+
+
+def _write_cache(key: str, data) -> None:
+    """Write an API response to disk cache."""
+    path = _cache_path(key)
+    try:
+        with open(path, "w") as f:
+            json.dump({"cached_at": datetime.now().timestamp(), "data": data}, f)
+    except Exception as e:
+        _log.warning("[sharp_odds] Failed to write cache for %s: %s", key, e)
+
+
+def get_credits_remaining() -> int:
+    """Return last known credits remaining, or -1 if unknown."""
+    val = _last_known_credits.get("remaining")
+    if val is None:
+        return -1
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return -1
+
+
+def clear_odds_cache() -> int:
+    """Clear all cached odds files. Returns number of files removed."""
+    count = 0
+    try:
+        for fname in os.listdir(_ODDS_CACHE_DIR):
+            if fname.endswith(".json"):
+                os.remove(os.path.join(_ODDS_CACHE_DIR, fname))
+                count += 1
+    except Exception:
+        pass
+    _log.info("[sharp_odds] Cleared %d cache files", count)
+    return count
+
+
 def fetch_mlb_events(api_key: str = None, sport_key: str = None) -> list:
-    """Fetch current MLB events (games) list."""
+    """Fetch current MLB events (games) list. Uses disk cache."""
     api_key = api_key or get_api_key()
     if not api_key:
         _log.warning("No Odds API key configured — skipping sharp odds")
         return []
 
     sport = sport_key or SPORT_KEY
+    cache_key = f"events_{sport}_{datetime.now().strftime('%Y-%m-%d')}"
+
+    # Check disk cache first
+    cached = _read_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    # Budget guard
+    creds = get_credits_remaining()
+    if 0 <= creds < MIN_CREDITS_THRESHOLD:
+        _log.warning("[sharp_odds] Only %d credits left — skipping events fetch", creds)
+        return []
+
     url = f"{ODDS_API_BASE}/sports/{sport}/events"
     _log.info("[sharp_odds] GET %s", url)
 
@@ -260,9 +349,11 @@ def fetch_mlb_events(api_key: str = None, sport_key: str = None) -> list:
         resp.raise_for_status()
         events = resp.json()
         credits = resp.headers.get("x-requests-remaining", "?")
+        _last_known_credits["remaining"] = credits
         _log.info("[sharp_odds] Got %d events for %s, credits remaining: %s",
                   len(events), sport, credits)
 
+        _write_cache(cache_key, events)
         return events
     except requests.RequestException as e:
         _log.error("[sharp_odds] ERROR fetching events from %s: %s", url, e)
@@ -272,11 +363,24 @@ def fetch_mlb_events(api_key: str = None, sport_key: str = None) -> list:
 def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) -> dict:
     """
     Fetch player prop odds for a specific MLB game.
-    Each call costs 1 API credit.
+    Each call costs 1 API credit. Uses disk cache to avoid repeat calls.
     """
     api_key = api_key or get_api_key()
     if not api_key:
         _log.warning("[sharp_odds] No API key — skipping props for event %s", event_id)
+        return {}
+
+    cache_key = f"props_{event_id}_{datetime.now().strftime('%Y-%m-%d')}"
+
+    # Check disk cache first
+    cached = _read_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    # Budget guard
+    creds = get_credits_remaining()
+    if 0 <= creds < MIN_CREDITS_THRESHOLD:
+        _log.warning("[sharp_odds] Only %d credits left — skipping event %s", creds, event_id)
         return {}
 
     if markets is None:
@@ -298,6 +402,7 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
         )
         resp.raise_for_status()
         remaining = resp.headers.get("x-requests-remaining", "?")
+        _last_known_credits["remaining"] = remaining
         data = resp.json()
         n_books = len(data.get("bookmakers", []))
         _log.info("[sharp_odds] Event %s: %d bookmakers, credits remaining: %s",
@@ -310,7 +415,9 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
         except Exception:
             pass
 
-        return {"data": data, "remaining_credits": remaining}
+        result = {"data": data, "remaining_credits": remaining}
+        _write_cache(cache_key, result)
+        return result
     except requests.RequestException as e:
         _log.error("[sharp_odds] ERROR fetching props for event %s: %s", event_id, e)
         return {}
