@@ -11,10 +11,9 @@ import pandas as pd
 import numpy as np
 import json
 import plotly.graph_objects as go
-from pathlib import Path
 from datetime import datetime, date, timedelta
 
-from src.prizepicks import fetch_prizepicks_mlb_lines, get_available_stat_types
+from src.prizepicks import fetch_prizepicks_mlb_lines
 from src.sharp_odds import (
     fetch_mlb_events, fetch_event_props, extract_sharp_lines,
     find_ev_edges, get_api_usage, get_api_key, PP_TO_ODDS_API,
@@ -37,15 +36,15 @@ from src.slips import (
     GOBLIN_PAYOUTS, DEMON_PAYOUTS, get_payout_table,
 )
 from src.autograder import auto_grade_date, auto_grade_yesterday
-from src.autolearn import run_adjustment_cycle, load_current_weights, get_weight_history
+from src.autolearn import run_adjustment_cycle, load_current_weights
 from src.spring import (
     get_player_injury_status, get_spring_form_multiplier,
     fetch_spring_training_stats, fetch_injuries, fetch_recent_transactions,
 )
 from src.trends import get_batter_trend
-from src.explain import build_explanation, format_explanation_text
+from src.explain import build_explanation
 from src.combined import score_picks, SIGNAL_CONFIRMED, SIGNAL_SHARP_ONLY, SIGNAL_PROJECTION_ONLY
-from src.slip_warnings import analyze_slip_correlation, format_warnings_streamlit
+from src.slip_warnings import analyze_slip_correlation
 from src.lineups import (
     fetch_todays_games, get_batting_order_position, get_pa_multiplier,
     get_game_context, get_probable_pitcher, fetch_confirmed_lineups,
@@ -56,13 +55,13 @@ from src.database import (
     get_projection_history, init_projected_stats_table,
     get_calibration_data,
 )
-from src.kelly import half_kelly, calculate_slip_sizing
-from src.parlay_suggest import suggest_slips, score_slip_quality
-from src.drift import check_model_health, compute_crps_batch, compute_ece
+from src.kelly import calculate_slip_sizing
+from src.parlay_suggest import suggest_slips
+# drift module available for nightly cycle (not used in UI)
 from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matrix
-from src.board_logger import log_board_snapshot, mark_as_bet
-from src.line_snapshots import snapshot_pp_lines, detect_stale_lines, get_line_movement_summary
-from src.consistency import enforce_consistency, flag_inconsistencies
+from src.board_logger import log_board_snapshot
+from src.line_snapshots import snapshot_pp_lines
+from src.consistency import enforce_consistency
 
 
 # ─────────────────────────────────────────────
@@ -672,7 +671,29 @@ st.markdown(f"""<div class="hero-wrapper">
   </div>
 </div>""", unsafe_allow_html=True)
 
-tab_edge, tab_slips, tab_picks, tab_dash, tab_grade, tab_setup = st.tabs(["🎯 FIND EDGES", "🎫 MY SLIPS", "📋 ALL LINES", "📊 DASHBOARD", "✅ GRADE", "⚙️ SETUP"])
+# ── Sidebar: Config & Status ──
+with st.sidebar:
+    st.markdown("### Settings")
+    _sb_key = get_api_key()
+    if _sb_key:
+        st.success("Odds API key configured")
+        if st.button("Check Credits", key="sb_credits"):
+            _u = get_api_usage(_sb_key)
+            st.info(f"Remaining: **{_u.get('remaining','?')}** · Used: **{_u.get('used','?')}**")
+    else:
+        st.warning("No Odds API key — add `ODDS_API_KEY` to Streamlit Secrets or `.env`")
+    st.number_input("Starting Bankroll ($)", min_value=10.0, value=st.session_state.get("starting_bankroll", 100.0), step=10.0, key="sb_bankroll")
+    st.session_state["starting_bankroll"] = st.session_state.get("sb_bankroll", 100.0)
+
+    # Quick accuracy snapshot
+    _sb_stats = get_accuracy_stats()
+    if _sb_stats["total"] > 0:
+        st.markdown("### Record")
+        _sb_acc = _sb_stats["accuracy"]
+        st.metric("Accuracy", f"{_sb_acc:.1f}%", delta=f"{_sb_acc - 55:.1f}% vs break-even")
+        st.caption(f"{_sb_stats['wins']}W – {_sb_stats['losses']}L ({_sb_stats['total']} picks)")
+
+tab_edge, tab_slips, tab_grade = st.tabs(["🎯 FIND EDGES", "🎫 MY SLIPS", "✅ GRADE"])
 
 with tab_edge:
     api_key = get_api_key()
@@ -1229,41 +1250,6 @@ with tab_edge:
                 elif not all_edges:
                     st.markdown('<div class="warn-strip"><strong>No sharp lines</strong> — showing projection-only analysis. Add Odds API key for full edge detection.</div>', unsafe_allow_html=True)
 
-                with st.expander("Betting Rules & Bankroll Guide", expanded=False):
-                    rc1, rc2 = st.columns(2)
-                    with rc1:
-                        st.markdown("**BET THESE PROPS**")
-                        st.markdown(
-                            "- Pitcher Strikeouts (MORE and LESS)\n"
-                            "- Hitter Fantasy Score (MORE and LESS)\n"
-                            "- Total Bases MORE\n"
-                            "- Hits (MORE and LESS)\n"
-                            "- Hits+Runs+RBIs (H+R+RBI)\n"
-                            "- Batter Strikeouts"
-                        )
-                        st.markdown("**AVOID THESE**")
-                        st.markdown(
-                            "- Total Bases LESS (44% — not worth it)\n"
-                            "- Home Runs LESS (rarely offered)\n"
-                            "- SB LESS 0.5 (not offered)"
-                        )
-                    with rc2:
-                        st.markdown("**SLIP RULES**")
-                        st.markdown(
-                            "- Mix 2–3 MORE + 2–3 LESS per slip\n"
-                            "- Max 2 picks per team per slip\n"
-                            "- Min B grade — never take D-grade\n"
-                            "- Prefer 5-Pick or 6-Pick Flex\n"
-                            "- Avoid 2-Pick or 3-Pick Power Play"
-                        )
-                        st.markdown("**BANKROLL**")
-                        st.markdown(
-                            "- 1–2% of bankroll per slip\n"
-                            "- Max 5 slips per day\n"
-                            "- Break-even: 5-pick = 54.2%, 6-pick = 52.9%\n"
-                            "- Stop if down 10% in a day"
-                        )
-
                 _TRIVIAL_LESS_PROPS = {"stolen_bases", "home_runs"}
                 def _is_trivial(pick: dict) -> bool:
                     return (
@@ -1809,445 +1795,6 @@ with tab_slips:
     else:
         st.info("No slips yet. Create one above or from the Find Edges tab.")
 
-with tab_picks:
-    st.markdown('<div class="section-hdr">All PrizePicks MLB Lines</div>', unsafe_allow_html=True)
-    if pp_lines.empty:
-        st.info("No lines available right now. Lines usually post by 10 AM ET.")
-    else:
-        st.markdown(f'<div class="info-strip"><span class="hl">{len(pp_lines)}</span> props on the board today</div>', unsafe_allow_html=True)
-        s = st.text_input("Search player", "", key="s2", placeholder="Type player name...")
-        sf = st.multiselect("Filter prop types", get_available_stat_types(pp_lines), default=get_available_stat_types(pp_lines), key="sf2")
-        fa = pp_lines.copy()
-        if s: fa = fa[fa["player_name"].str.contains(s, case=False, na=False)]
-        if sf: fa = fa[fa["stat_type"].isin(sf)]
-        da = fa[["player_name","team","stat_type","line","start_time"]].copy()
-        da.columns = ["Player","Team","Prop","Line","Time"]
-        if "Time" in da.columns: da["Time"] = pd.to_datetime(da["Time"], errors="coerce").dt.strftime("%-I:%M %p")
-        st.dataframe(da, hide_index=True, use_container_width=True)
-
-with tab_dash:
-    st.markdown('<div class="section-hdr">Performance Dashboard</div>', unsafe_allow_html=True)
-    stats = get_accuracy_stats()
-    if stats["total"]==0:
-        st.info("No graded picks yet. Use the Grade tab to log results after games.")
-    else:
-        acc=stats["accuracy"]
-        acc_cls = "good" if acc>=0.55 else ("ok" if acc>=0.50 else "bad")
-        target_hit = acc >= 0.542
-        da1, da2 = st.columns([1, 2])
-        with da1:
-            st.markdown(f'''<div style="text-align:center;padding:1.5rem 1rem;background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:14px;">
-                <div class="acc-big {acc_cls}">{pct(acc)}</div>
-                <div class="acc-label">Overall Accuracy</div>
-                <div style="margin-top:0.8rem;font-size:0.75rem;color:rgba(232,236,241,0.4);">{stats["wins"]}W · {stats["losses"]}L · {stats["total"]} graded</div>
-                <div style="margin-top:0.5rem;">
-                    <span style="font-size:0.72rem;padding:0.2rem 0.6rem;border-radius:20px;{"background:rgba(0,200,83,0.12);color:#00C853" if target_hit else "background:rgba(255,68,68,0.1);color:#FF4444"}">
-                        {"✓ Above 54.2% target" if target_hit else "✗ Below 54.2% target"}
-                    </span>
-                </div>
-            </div>''', unsafe_allow_html=True)
-        with da2:
-            st.markdown("**Accuracy by Grade**")
-            grade_rows = []
-            for r in "ABCD":
-                gr = stats.get('by_rating', {}).get(r, {})
-                gr_acc = gr.get('accuracy', 0)
-                gr_w = gr.get('wins', 0)
-                gr_t = gr.get('total', 0)
-                gr_l = gr_t - gr_w
-                bar_w = int(gr_acc * 100)
-                bar_cls = "high" if gr_acc > 0.55 else ("med" if gr_acc > 0.50 else "low")
-                grade_rows.append(f'''<div style="display:flex;align-items:center;gap:0.8rem;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">
-                    <span class="badge badge-{r.lower()}" style="width:20px;text-align:center">{r}</span>
-                    <div style="flex:1"><div class="conf-track"><div class="conf-fill {bar_cls}" style="width:{bar_w}%"></div></div></div>
-                    <span style="font-family:JetBrains Mono,monospace;font-size:0.8rem;color:#E8ECF1;min-width:45px">{pct(gr_acc)}</span>
-                    <span style="font-size:0.72rem;color:rgba(232,236,241,0.35);min-width:55px">{gr_w}W-{gr_l}L</span>
-                </div>''')
-            st.markdown("".join(grade_rows), unsafe_allow_html=True)
-
-            st.markdown("**More vs Less**")
-            dir_cols = st.columns(2)
-            for i, d in enumerate(["MORE", "LESS"]):
-                dv = stats.get('by_direction', {}).get(d, {})
-                d_acc = dv.get('accuracy', 0)
-                d_w = dv.get('wins', 0)
-                d_t = dv.get('total', 0)
-                d_color = "#00C853" if d == "MORE" else "#FF4444"
-                with dir_cols[i]:
-                    st.markdown(f'<div class="card"><div class="lbl">{d}</div><div class="val" style="color:{d_color}">{pct(d_acc)}</div><div class="sub">{d_w}W-{d_t-d_w}L</div></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="section-hdr">Model Tuning &amp; Weight History</div>', unsafe_allow_html=True)
-    tune_col1, tune_col2 = st.columns(2)
-    with tune_col1:
-        if st.button("Run Model Tuning", type="secondary"):
-            with st.spinner("Analyzing graded picks and adjusting weights..."):
-                try:
-                    result = run_adjustment_cycle(min_sample=25)
-                    if result.get("adjusted"):
-                        st.success(f"Weights adjusted! New version: {result.get('version_new', '?')}")
-                        if result.get("changes"):
-                            for ch in result["changes"][:5]:
-                                st.markdown(f"- {ch.get('description', ch)}")
-                    else:
-                        st.info(result.get("reason", "No adjustments needed"))
-                except Exception as e:
-                    st.error(f"Tuning failed: {e}")
-    with tune_col2:
-        try:
-            history = get_weight_history()
-            if history:
-                st.markdown(f"**{len(history)} adjustments** in history")
-                for h in history[-3:]:
-                    st.caption(f"{h.get('timestamp', '?')}: {h.get('description', 'adjustment')}")
-        except Exception:
-            st.caption("No adjustment history yet")
-
-    # ── NIGHTLY SELF-IMPROVEMENT CYCLE ────────────────────────
-    st.markdown('<div class="section-hdr">Self-Improvement Cycle</div>', unsafe_allow_html=True)
-
-    ni_col1, ni_col2 = st.columns([1, 3])
-    with ni_col1:
-        if st.button("Run Nightly Update", type="primary", help="Grade today's picks, update weights, check drift"):
-            with st.spinner("Running self-improvement cycle..."):
-                try:
-                    from src.nightly import run_nightly_cycle
-                    nightly_res = run_nightly_cycle()
-                    st.session_state["nightly_results"] = nightly_res
-                except Exception as e:
-                    st.error(f"Nightly cycle failed: {e}")
-
-    if "nightly_results" in st.session_state:
-        nr = st.session_state["nightly_results"]
-
-        # Grading summary
-        grading = nr.get("phase_results", {}).get("grading", {})
-        if grading.get("total_graded", 0) > 0:
-            g_w = grading.get("wins", 0)
-            g_l = grading.get("losses", 0)
-            g_t = grading.get("total_graded", 0)
-            g_acc = g_w / g_t if g_t else 0
-            gm1, gm2, gm3, gm4 = st.columns(4)
-            gm1.metric("Graded", g_t)
-            gm2.metric("Record", f"{g_w}W-{g_l}L")
-            gm3.metric("Hit Rate", f"{g_acc:.1%}")
-            gm4.metric("Pending", grading.get("pending", 0))
-
-        # Metrics from autolearn
-        metrics = nr.get("phase_results", {}).get("metrics", {})
-        if metrics.get("brier_score") is not None:
-            mm1, mm2, mm3 = st.columns(3)
-            mm1.metric("Brier Score", f"{metrics['brier_score']:.4f}",
-                        help="Lower is better. 0.25 = coin flip.")
-            mm2.metric("Log Loss", f"{metrics.get('log_loss', 0):.4f}")
-            mm3.metric("Accuracy", f"{metrics.get('accuracy_before', 0):.1%}" if metrics.get("accuracy_before") else "—")
-
-        # Weight update
-        w_info = nr.get("phase_results", {}).get("weights", {})
-        if w_info.get("updated"):
-            st.success(f"Ensemble weights updated — sharp: {w_info['new_weights'].get('sharp_odds', 0):.0%} / "
-                       f"projection: {w_info['new_weights'].get('projection', 0):.0%} / "
-                       f"form: {w_info['new_weights'].get('recent_form', 0):.0%}")
-        elif w_info.get("reason"):
-            st.info(f"Weights not updated: {w_info['reason']}")
-
-        # Drift alerts
-        for alert in nr.get("drift_alerts", []):
-            if isinstance(alert, dict):
-                st.warning(f"Drift: {alert.get('prop_type', '?')} degraded {alert.get('degradation_pct', '?')}%")
-            else:
-                st.warning(f"Drift: {alert}")
-
-        # Calibration warnings
-        for warn in nr.get("calibration_warnings", []):
-            st.warning(f"Miscalibrated {warn['bin']}: predicted {warn['predicted']:.1%} vs actual {warn['actual']:.1%} (n={warn['n']})")
-
-        # Errors
-        for err in nr.get("errors", []):
-            st.error(err)
-
-    # ── MODEL HEALTH (historical) ──────────────────────────
-    st.markdown('<div class="section-hdr">Model Health (14-day trend)</div>', unsafe_allow_html=True)
-    try:
-        from src.nightly import get_nightly_history
-        health_rows = get_nightly_history(days=14)
-        if health_rows:
-            health_df = pd.DataFrame(health_rows)
-            if "accuracy" in health_df.columns and health_df["accuracy"].notna().any():
-                chart_df = health_df[["date", "accuracy", "brier"]].dropna(subset=["accuracy"]).set_index("date")
-                st.line_chart(chart_df)
-
-            # Current ensemble weights
-            try:
-                w_path = Path("data/weights/current.json")
-                if w_path.exists():
-                    with open(w_path) as f:
-                        cw = json.load(f)
-                    ew = cw.get("ensemble_weights", {})
-                    if ew:
-                        ew_str = " · ".join(f"{k}: {v:.0%}" for k, v in ew.items())
-                        st.caption(f"Current ensemble weights: {ew_str}")
-            except Exception:
-                pass
-        else:
-            st.caption("No nightly logs yet. Run the nightly update after games finish (~11 PM ET).")
-    except Exception:
-        st.caption("No nightly logs yet.")
-
-    st.markdown('<div class="section-hdr">Backtest Accuracy — v017 (Played Games Only)</div>', unsafe_allow_html=True)
-    _bt_rows = [
-        {"Prop": "Hits LESS 1.5",        "W": 19494, "Total": 26875, "Accuracy": 0.725},
-        {"Prop": "Pitcher Ks MORE 4.5",   "W":   353, "Total":   507, "Accuracy": 0.696},
-        {"Prop": "Pitcher Ks LESS 4.5",   "W":   297, "Total":   429, "Accuracy": 0.692},
-        {"Prop": "TB LESS 1.5",           "W":   185, "Total":   281, "Accuracy": 0.658},
-        {"Prop": "FS LESS 7.5",           "W":  1058, "Total":  1715, "Accuracy": 0.617},
-        {"Prop": "FS MORE 7.5",           "W":   139, "Total":   232, "Accuracy": 0.599},
-    ]
-    _bt_html = []
-    for _r in _bt_rows:
-        _acc = _r["Accuracy"]
-        _color = "#00C853" if _acc >= 0.60 else ("#F9A825" if _acc >= 0.57 else "#FF4444")
-        _bar_w = int(_acc * 100)
-        _bt_html.append(
-            f'<div style="display:flex;align-items:center;gap:0.8rem;padding:0.45rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
-            f'<span style="min-width:220px;font-size:0.82rem;color:#E8ECF1;">{_r["Prop"]}</span>'
-            f'<div style="flex:1"><div class="conf-track"><div class="conf-fill" style="width:{_bar_w}%;background:{_color};border-radius:4px;height:8px;"></div></div></div>'
-            f'<span style="font-family:JetBrains Mono,monospace;font-size:0.85rem;min-width:52px;color:{_color};font-weight:600">{_acc:.1%}</span>'
-            f'<span style="font-size:0.72rem;color:rgba(232,236,241,0.35);min-width:100px">{_r["W"]:,}W / {_r["Total"]:,}</span>'
-            f'</div>'
-        )
-    st.markdown("".join(_bt_html), unsafe_allow_html=True)
-    st.caption("Green ≥60% · Yellow 57–60% · Red <57% · Source: 2025 full-season backtest (v017, 128K+ predictions)")
-
-    # ── Accuracy Transparency Panel ──
-    st.markdown('<div class="section-hdr">Accuracy Transparency — How We Prove It</div>', unsafe_allow_html=True)
-    _transp_html = f'''<div style="background:linear-gradient(145deg,#0d1828,#091020);border:1px solid rgba(0,200,83,0.08);border-radius:14px;padding:1.2rem 1.4rem;margin-bottom:1rem;">
-        <div style="display:flex;gap:2rem;flex-wrap:wrap;">
-            <div style="flex:1;min-width:200px;">
-                <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">Backtest Verified</div>
-                <div style="font-family:JetBrains Mono,monospace;font-weight:700;font-size:2rem;color:#00C853;line-height:1;">71.7%</div>
-                <div style="font-size:0.75rem;color:rgba(232,236,241,0.4);margin-top:0.3rem;">30,039 picks · Full 2025 season</div>
-                <div style="font-size:0.7rem;color:rgba(232,236,241,0.3);margin-top:0.2rem;">Walk-forward: no future data leakage</div>
-            </div>
-            <div style="flex:1;min-width:200px;">
-                <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">Model Architecture</div>
-                <div style="font-size:0.8rem;color:#E8ECF1;line-height:1.7;">
-                    <span style="color:#4da6ff;">Layer 1:</span> Bayesian projections<br>
-                    <span style="color:#00C853;">Layer 2:</span> Empirical calibration<br>
-                    <span style="color:#FFB300;">Layer 3:</span> Confidence floor filtering
-                </div>
-            </div>
-            <div style="flex:1;min-width:200px;">
-                <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">Self-Learning</div>
-                <div style="font-size:0.8rem;color:#E8ECF1;line-height:1.7;">
-                    <span style="color:rgba(232,236,241,0.5);">Calibration rebuild:</span> every 100+ picks<br>
-                    <span style="color:rgba(232,236,241,0.5);">Floor re-optimization:</span> every 200+ picks<br>
-                    <span style="color:rgba(232,236,241,0.5);">Kill switch:</span> auto-rollback at &lt;48%
-                </div>
-            </div>
-        </div>
-        <div style="margin-top:1rem;padding-top:0.8rem;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:1.5rem;flex-wrap:wrap;">
-            <div style="font-size:0.72rem;color:rgba(232,236,241,0.35);">
-                <span style="color:rgba(0,200,83,0.6);font-weight:600;">128K+</span> calibration predictions
-            </div>
-            <div style="font-size:0.72rem;color:rgba(232,236,241,0.35);">
-                <span style="color:rgba(77,166,255,0.6);font-weight:600;">10+</span> contextual factors per pick
-            </div>
-            <div style="font-size:0.72rem;color:rgba(232,236,241,0.35);">
-                <span style="color:rgba(255,179,0,0.6);font-weight:600;">Every</span> pick tracked & graded
-            </div>
-        </div>
-    </div>'''
-    st.markdown(_transp_html, unsafe_allow_html=True)
-
-    # ── Projection Accuracy (v018: track projected values vs actuals) ──
-    st.markdown('<div class="section-hdr">Projection Accuracy — Live Results</div>', unsafe_allow_html=True)
-    try:
-        _proj_acc = get_projection_accuracy(days_back=30)
-        if _proj_acc and _proj_acc.get("total_graded", 0) > 0:
-            _pa1, _pa2, _pa3 = st.columns(3)
-            _overall = _proj_acc.get("overall_accuracy", 0)
-            _cls = "good" if _overall >= 65 else ("ok" if _overall >= 57 else "bad")
-            with _pa1:
-                st.markdown(f'<div class="acc-big {_cls}">{_overall:.1f}%</div><div class="acc-label">Live Pick Accuracy (30d)</div>', unsafe_allow_html=True)
-            with _pa2:
-                st.metric("Total Graded", f"{_proj_acc.get('total_graded', 0):,}")
-            with _pa3:
-                _avg_err = _proj_acc.get("avg_projection_error", 0)
-                st.metric("Avg Projection Error", f"{_avg_err:.2f}" if _avg_err else "—")
-
-            # Per-prop breakdown
-            _by_prop = _proj_acc.get("by_prop", {})
-            if _by_prop:
-                _prop_html = []
-                for _pname, _pdata in sorted(_by_prop.items(), key=lambda x: x[1].get("accuracy", 0), reverse=True):
-                    _pacc = _pdata.get("accuracy", 0)
-                    _pclr = "#00C853" if _pacc >= 60 else ("#FFB300" if _pacc >= 57 else "#FF4444")
-                    _pw = int(_pacc)
-                    _prop_html.append(
-                        f'<div style="display:flex;align-items:center;gap:0.8rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
-                        f'<span style="min-width:200px;font-size:0.8rem;color:#E8ECF1;">{_pname.replace("_"," ").title()}</span>'
-                        f'<div style="flex:1"><div class="conf-track"><div class="conf-fill" style="width:{_pw}%;background:{_pclr};border-radius:4px;height:6px;"></div></div></div>'
-                        f'<span style="font-family:JetBrains Mono;font-size:0.82rem;min-width:48px;color:{_pclr};font-weight:600">{_pacc:.1f}%</span>'
-                        f'<span style="font-size:0.7rem;color:rgba(232,236,241,0.35);">{_pdata.get("total", 0)} picks</span>'
-                        f'</div>'
-                    )
-                st.markdown("".join(_prop_html), unsafe_allow_html=True)
-        else:
-            st.caption("No graded projections yet. Grade results in the Grade tab to see live accuracy tracking.")
-    except Exception:
-        st.caption("Projection accuracy tracking will appear here once games are graded.")
-
-    # ── Calibration & Proper Scoring Rules ──
-    st.markdown('<div class="section-hdr">Model Calibration — Brier Score &amp; Reliability</div>', unsafe_allow_html=True)
-    try:
-        _cal = get_calibration_data(days_back=30)
-        if _cal and _cal.get("total", 0) > 10:
-            _cal_c1, _cal_c2 = st.columns(2)
-            with _cal_c1:
-                _brier = _cal.get("brier_score", 0)
-                _ll = _cal.get("log_loss", 0)
-                _brier_cls = "#00C853" if _brier < 0.23 else ("#FFB300" if _brier < 0.25 else "#FF4444")
-                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;">
-                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Proper Scoring Rules</div>
-                    <div style="display:flex;gap:2rem;">
-                        <div>
-                            <div style="font-size:0.7rem;color:rgba(232,236,241,0.4);">Brier Score</div>
-                            <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:{_brier_cls};">{_brier:.4f}</div>
-                            <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Lower is better · 0.25 = coin flip</div>
-                        </div>
-                        <div>
-                            <div style="font-size:0.7rem;color:rgba(232,236,241,0.4);">Log Loss</div>
-                            <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:#E8ECF1;">{_ll:.4f}</div>
-                            <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Lower is better · 0.693 = coin flip</div>
-                        </div>
-                    </div>
-                </div>''', unsafe_allow_html=True)
-            with _cal_c2:
-                _buckets = _cal.get("buckets", [])
-                if _buckets:
-                    st.markdown('''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;">
-                        <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Reliability Diagram</div>''', unsafe_allow_html=True)
-                    _rel_html = []
-                    for _b in _buckets:
-                        _pred = _b.get("predicted_mean", 0) * 100
-                        _actual = _b.get("actual_rate", 0) * 100
-                        _cnt = _b.get("count", 0)
-                        _diff = _actual - _pred
-                        _diff_clr = "#00C853" if abs(_diff) < 3 else ("#FFB300" if abs(_diff) < 5 else "#FF4444")
-                        _rel_html.append(
-                            f'<div style="display:flex;align-items:center;gap:0.6rem;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.78rem;">'
-                            f'<span style="min-width:60px;color:rgba(232,236,241,0.5);">Pred {_pred:.0f}%</span>'
-                            f'<span style="min-width:65px;font-family:JetBrains Mono;color:#E8ECF1;font-weight:600;">Act {_actual:.1f}%</span>'
-                            f'<span style="min-width:50px;font-family:JetBrains Mono;color:{_diff_clr};font-size:0.72rem;">{_diff:+.1f}%</span>'
-                            f'<span style="font-size:0.68rem;color:rgba(232,236,241,0.25);">n={_cnt}</span>'
-                            f'</div>'
-                        )
-                    st.markdown("".join(_rel_html) + '</div>', unsafe_allow_html=True)
-                else:
-                    st.caption("Not enough data for calibration buckets yet.")
-        else:
-            st.caption("Calibration data requires 10+ graded picks. Keep grading!")
-    except Exception:
-        st.caption("Calibration data will appear here once enough games are graded.")
-
-    # ── Model Health — Regime Change Detection (CUSUM) ──
-    st.markdown('<div class="section-hdr">Model Health — Regime Change Detection</div>', unsafe_allow_html=True)
-    try:
-        _graded_df = get_graded_predictions(90)
-        if not _graded_df.empty and len(_graded_df) >= 20:
-            _health_preds = []
-            for _, _hr in _graded_df.iterrows():
-                _health_preds.append({
-                    "result": _hr.get("result", "L"),
-                    "confidence": float(_hr.get("confidence", 0.5)) if _hr.get("confidence") else 0.5,
-                    "stat_type": _hr.get("stat_type", "unknown"),
-                })
-            _health = check_model_health(_health_preds, min_sample=20)
-
-            _health_icon = "🟢" if _health.get("healthy") else "🔴"
-            _health_label = "Healthy" if _health.get("healthy") else "Degraded"
-            _health_color = "#00C853" if _health.get("healthy") else "#FF4444"
-
-            _h1, _h2, _h3 = st.columns(3)
-            with _h1:
-                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;text-align:center;">
-                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">System Status</div>
-                    <div style="font-size:1.8rem;">{_health_icon}</div>
-                    <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.1rem;color:{_health_color};">{_health_label}</div>
-                </div>''', unsafe_allow_html=True)
-            with _h2:
-                _ob = _health.get("overall_brier")
-                _ob_str = f"{_ob:.4f}" if _ob else "—"
-                _ob_clr = "#00C853" if _ob and _ob < 0.23 else ("#FFB300" if _ob and _ob < 0.25 else "#FF4444")
-                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;text-align:center;">
-                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">Live Brier Score</div>
-                    <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:{_ob_clr};">{_ob_str}</div>
-                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Target &lt; 0.22</div>
-                </div>''', unsafe_allow_html=True)
-            with _h3:
-                _oa = _health.get("overall_accuracy")
-                _oa_str = f"{_oa:.1%}" if _oa else "—"
-                _oa_clr = "#00C853" if _oa and _oa >= 0.55 else ("#FFB300" if _oa and _oa >= 0.50 else "#FF4444")
-                st.markdown(f'''<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:1rem;text-align:center;">
-                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.4rem;">Live Accuracy (90d)</div>
-                    <div style="font-family:JetBrains Mono;font-weight:700;font-size:1.4rem;color:{_oa_clr};">{_oa_str}</div>
-                    <div style="font-size:0.65rem;color:rgba(232,236,241,0.25);">Target ≥ 54.2%</div>
-                </div>''', unsafe_allow_html=True)
-
-            # Show alerts
-            _alerts = _health.get("alerts", [])
-            if _alerts:
-                for _alert in _alerts:
-                    if "CRITICAL" in _alert:
-                        st.error(_alert)
-                    elif "REGIME" in _alert:
-                        st.warning(f"⚠️ {_alert}")
-                    else:
-                        st.warning(_alert)
-            else:
-                st.caption("✅ No alerts — all metrics within normal range.")
-
-            # Per-prop breakdown
-            _bp = _health.get("by_prop", {})
-            if _bp:
-                _bp_rows = []
-                for _ptype, _pinfo in sorted(_bp.items(), key=lambda x: x[1].get("accuracy", 0)):
-                    _pacc = _pinfo.get("accuracy", 0)
-                    _pclr = "#00C853" if _pacc >= 0.55 else ("#FFB300" if _pacc >= 0.50 else "#FF4444")
-                    _pw = int(_pacc * 100)
-                    _bp_rows.append(
-                        f'<div style="display:flex;align-items:center;gap:0.8rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.78rem;">'
-                        f'<span style="min-width:180px;color:#E8ECF1;">{_ptype.replace("_"," ").title()}</span>'
-                        f'<div style="flex:1"><div class="conf-track"><div class="conf-fill" style="width:{_pw}%;background:{_pclr};border-radius:4px;height:6px;"></div></div></div>'
-                        f'<span style="font-family:JetBrains Mono;font-size:0.82rem;min-width:48px;color:{_pclr};font-weight:600">{_pacc:.1%}</span>'
-                        f'<span style="font-size:0.68rem;color:rgba(232,236,241,0.25);">{_pinfo.get("total",0)} picks</span>'
-                        f'</div>'
-                    )
-                st.markdown(
-                    f'<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:0.8rem 1rem;margin-top:0.5rem;">'
-                    f'<div style="font-size:0.65rem;color:rgba(232,236,241,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Per-Prop Health</div>'
-                    f'{"".join(_bp_rows)}</div>',
-                    unsafe_allow_html=True
-                )
-
-            if _health.get("regime_change"):
-                st.markdown(f'''<div style="background:rgba(255,68,68,0.08);border:1px solid rgba(255,68,68,0.25);border-radius:10px;padding:0.8rem 1rem;margin-top:0.6rem;">
-                    <div style="font-size:0.75rem;color:#FF4444;font-weight:600;">⚠️ Regime Change Detected</div>
-                    <div style="font-size:0.72rem;color:rgba(232,236,241,0.5);margin-top:0.3rem;">CUSUM analysis detected a statistically significant shift in model performance. Consider pausing bets and running model tuning.</div>
-                </div>''', unsafe_allow_html=True)
-        else:
-            st.caption("Need 20+ graded picks for health monitoring. Keep grading!")
-    except Exception as _he:
-        st.caption(f"Health monitoring will appear here once games are graded. ({_he})")
-
-    st.markdown('<div class="section-hdr">Daily Log — Last 14 Days</div>', unsafe_allow_html=True)
-    _log_rows = get_daily_log_summary(14)
-    if _log_rows:
-        _log_df = pd.DataFrame(_log_rows)
-        st.dataframe(_log_df, hide_index=True, use_container_width=True)
-    else:
-        st.caption("No daily logs yet — logs are created automatically when you lock in picks.")
-
 with tab_grade:
     st.markdown('<div class="section-hdr">Grade Results</div>', unsafe_allow_html=True)
 
@@ -2339,162 +1886,3 @@ with tab_grade:
             unsafe_allow_html=True
         )
 
-with tab_setup:
-    st.markdown('<div class="section-hdr">Opening Day Checklist</div>', unsafe_allow_html=True)
-
-    import os as _os, json as _json
-    _checks = []
-
-    _api_key = get_api_key()
-    _checks.append(("Odds API key configured", bool(_api_key), "Add ODDS_API_KEY to Streamlit Secrets or .env"))
-
-    _credits_remaining = None
-    if _api_key:
-        try:
-            _usage = get_api_usage(_api_key)
-            _credits_remaining = _usage.get("remaining", "?")
-            _credits_ok = isinstance(_credits_remaining, int) and _credits_remaining > 50
-            _checks.append((f"API credits remaining: {_credits_remaining}", _credits_ok, "Running low — consider upgrading"))
-        except Exception:
-            _checks.append(("API credits remaining", False, "Could not fetch usage"))
-    else:
-        _checks.append(("API credits remaining", False, "No API key set"))
-
-    _bat_cache = _os.path.join(_os.path.dirname(__file__), "data", "batting_stats_cache.csv")
-    if _os.path.exists(_bat_cache):
-        try:
-            _bat_df = pd.read_csv(_bat_cache)
-            _bat_count = len(_bat_df)
-            _checks.append((f"Batting cache loaded: {_bat_count} players", _bat_count >= 50, "Run cache refresh"))
-        except Exception:
-            _checks.append(("Batting cache loaded", False, "Cache file exists but couldn't be read"))
-    else:
-        _checks.append(("FanGraphs batting cache", False, "No cache — run the app once with internet"))
-
-    _pit_cache = _os.path.join(_os.path.dirname(__file__), "data", "pitching_stats_cache.csv")
-    if _os.path.exists(_pit_cache):
-        try:
-            _pit_df = pd.read_csv(_pit_cache)
-            _pit_count = len(_pit_df)
-            _checks.append((f"Pitching cache loaded: {_pit_count} pitchers", _pit_count >= 20, "Run cache refresh"))
-        except Exception:
-            _checks.append(("Pitching cache loaded", False, "Cache file exists but couldn't be read"))
-    else:
-        _checks.append(("FanGraphs pitching cache", False, "No cache — run the app once with internet"))
-
-    _weights_path = _os.path.join(_os.path.dirname(__file__), "data", "weights", "current.json")
-    if _os.path.exists(_weights_path):
-        try:
-            with open(_weights_path) as _wf:
-                _wdata = _json.load(_wf)
-            _wver = _wdata.get("version", "unknown")
-            _checks.append((f"Model weights: {_wver}", True, ""))
-        except Exception:
-            _checks.append(("Model weights: current.json", False, "File exists but couldn't be parsed"))
-    else:
-        _checks.append(("Model weights (current.json)", False, "Using predictor defaults"))
-
-    _bt_path = _os.path.join(_os.path.dirname(__file__), "data", "backtest", "backtest_2025_report.json")
-    if _os.path.exists(_bt_path):
-        try:
-            with open(_bt_path) as _bf:
-                _bt = _json.load(_bf)
-            _bt_acc = _bt.get("overall_accuracy", _bt.get("accuracy", None))
-            _bt_label = f"Backtest accuracy: {_bt_acc*100:.1f}%" if _bt_acc else "Backtest complete (accuracy unknown)"
-            _checks.append((_bt_label, True, ""))
-        except Exception:
-            _checks.append(("Backtest report", False, "File exists but couldn't be parsed"))
-    else:
-        _checks.append(("Backtest 2025 report", False, "Not yet run"))
-
-    try:
-        _pp_test = _cached_pp_lines()
-        _pp_ok = not _pp_test.empty
-        _checks.append((f"PrizePicks API reachable ({len(_pp_test)} props today)" if _pp_ok else "PrizePicks API reachable (0 props)", _pp_ok, "Check PrizePicks API or network"))
-    except Exception as _e:
-        _checks.append(("PrizePicks API reachable", False, f"Error: {_e}"))
-
-    _ready = sum(1 for _, ok, _ in _checks if ok)
-    _total_checks = len(_checks)
-    st.caption(f"**{_ready}/{_total_checks} checks passing** — Opening Day is March 27")
-    for _label, _ok, _hint in _checks:
-        _icon = "✅" if _ok else "❌"
-        if _hint and not _ok:
-            st.markdown(f"{_icon} {_label} — *{_hint}*")
-        else:
-            st.markdown(f"{_icon} {_label}")
-    st.markdown("---")
-    st.markdown('<div class="section-hdr">Configuration</div>', unsafe_allow_html=True)
-
-    setup_c1, setup_c2 = st.columns(2)
-    with setup_c1:
-        st.markdown("""
-**Step 1 — Get API Key**
-
-Free at [the-odds-api.com](https://the-odds-api.com) · 500 req/month · No credit card required
-
-**Step 2 — Add to Streamlit Secrets**
-```
-ODDS_API_KEY = "your_key_here"
-```
-
-**Step 3 — Daily Workflow**
-1. Open app **before 10 AM ET** — best edge window
-2. Go to **Find Edges** — lines auto-load
-3. Focus on **A + B grades**, pitcher K props first
-4. Build a **5 or 6 pick Flex** on PrizePicks
-5. After games → **Grade** tab to log results
-6. **Dashboard** tracks your edge over time
-""")
-
-    with setup_c2:
-        st.markdown("**Entry Type Cheat Sheet**")
-        st.markdown("""
-<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-<thead><tr>
-  <th style="text-align:left;padding:0.5rem 0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);color:rgba(232,236,241,0.4);font-weight:600;text-transform:uppercase;font-size:0.65rem;letter-spacing:1.5px">Entry Type</th>
-  <th style="text-align:center;padding:0.5rem 0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);color:rgba(232,236,241,0.4);font-weight:600;text-transform:uppercase;font-size:0.65rem;letter-spacing:1.5px">Break-even</th>
-  <th style="text-align:center;padding:0.5rem 0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);color:rgba(232,236,241,0.4);font-weight:600;text-transform:uppercase;font-size:0.65rem;letter-spacing:1.5px">Verdict</th>
-</tr></thead>
-<tbody>
-<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
-  <td style="padding:0.55rem 0.8rem;color:#E8ECF1;font-weight:500">6-Pick Flex</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:#E8ECF1">52.9%</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;color:#00C853;font-weight:700">✓ Best Value</td>
-</tr>
-<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
-  <td style="padding:0.55rem 0.8rem;color:#E8ECF1;font-weight:500">5-Pick Flex</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:#E8ECF1">54.2%</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;color:#00C853;font-weight:700">✓ Use This</td>
-</tr>
-<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
-  <td style="padding:0.55rem 0.8rem;color:rgba(232,236,241,0.5)">2-Pick Power</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:rgba(232,236,241,0.5)">57.7%</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;color:#FF4444">✗ Avoid</td>
-</tr>
-<tr>
-  <td style="padding:0.55rem 0.8rem;color:rgba(232,236,241,0.5)">3-Pick Power</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;font-family:JetBrains Mono,monospace;color:rgba(232,236,241,0.5)">59.8%</td>
-  <td style="padding:0.55rem 0.8rem;text-align:center;color:#FF4444">✗ Never</td>
-</tr>
-</tbody></table>
-
-<div style="margin-top:1rem;padding:0.8rem 1rem;background:rgba(0,200,83,0.05);border:1px solid rgba(0,200,83,0.1);border-radius:8px;font-size:0.8rem;color:rgba(232,236,241,0.6);">
-  <strong style="color:#00C853">Why this beats Rotowire:</strong><br>
-  Rotowire tries to out-predict the market. This tool catches when PrizePicks lags behind sharp books. You're not smarter than Vegas — you're <em>faster</em>.
-</div>
-""", unsafe_allow_html=True)
-
-    st.markdown('<div class="section-hdr">Bankroll</div>', unsafe_allow_html=True)
-    br_val = st.number_input("Starting bankroll ($)", min_value=1.0, value=st.session_state.get("starting_bankroll", 100.0), step=10.0, key="br_input")
-    if br_val != st.session_state.get("starting_bankroll", 100.0):
-        st.session_state["starting_bankroll"] = br_val
-        st.success(f"Starting bankroll set to ${br_val:.2f}")
-
-    st.markdown("---")
-    if st.button("Check API Credits"):
-        k=get_api_key()
-        if k:
-            u=get_api_usage(k)
-            st.info(f"Remaining: **{u.get('remaining','?')}** · Used: **{u.get('used','?')}**")
-        else: st.warning("No API key set.")
