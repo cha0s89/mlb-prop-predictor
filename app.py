@@ -18,6 +18,7 @@ from src.sharp_odds import (
     fetch_mlb_events, fetch_event_props, extract_sharp_lines,
     find_ev_edges, get_api_usage, get_api_key, PP_TO_ODDS_API,
     get_credits_remaining, clear_odds_cache, ODDS_CACHE_TTL_SECONDS,
+    has_cached_odds_today, get_cache_age_minutes,
 )
 from src.weather import fetch_game_weather, resolve_team, STADIUMS, get_stat_specific_weather_adjustment
 from src.umpires import get_umpire_k_adjustment, fetch_todays_umpires
@@ -696,9 +697,18 @@ with st.sidebar:
     if _sb_key:
         st.success("Odds API key configured")
         _cached_creds = get_credits_remaining()
+        _cache_age = get_cache_age_minutes()
+        _has_cache = has_cached_odds_today()
         if _cached_creds >= 0:
             _cred_color = "🟢" if _cached_creds > 200 else ("🟡" if _cached_creds > 50 else "🔴")
             st.caption(f"{_cred_color} {_cached_creds} credits remaining")
+        if _has_cache and _cache_age >= 0:
+            _hrs = _cache_age // 60
+            _mins = _cache_age % 60
+            _age_str = f"{_hrs}h {_mins}m" if _hrs else f"{_mins}m"
+            st.caption(f"📦 Odds cached ({_age_str} ago)")
+        elif not _has_cache:
+            st.caption("📦 No cached odds — will fetch on first load")
         _cred_col1, _cred_col2 = st.columns(2)
         with _cred_col1:
             if st.button("Check Credits", key="sb_credits"):
@@ -714,7 +724,7 @@ with st.sidebar:
             if st.button("🔄 Refresh Odds", key="sb_refresh_odds"):
                 clear_odds_cache()
                 st.cache_data.clear()
-                st.success("Cache cleared — odds will refresh on next load")
+                st.success("Cache cleared — refreshing...")
                 st.rerun()
     else:
         st.warning("No Odds API key — add `ODDS_API_KEY` to Streamlit Secrets or `.env`")
@@ -754,7 +764,9 @@ with tab_edge:
     else:
         _creds_display = get_credits_remaining()
         _creds_str = str(_creds_display) if _creds_display >= 0 else "?"
-        st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{_creds_str}</span> credits remaining &nbsp;·&nbsp; Cached 2 hrs &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
+        _age_display = get_cache_age_minutes()
+        _age_msg = f"Cached {_age_display}m ago" if _age_display >= 0 else "First fetch on load"
+        st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{_creds_str}</span> credits remaining &nbsp;·&nbsp; {_age_msg} &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
 
     with st.spinner("Pulling PrizePicks MLB lines..."):
         try: pp_lines = _cached_pp_lines()
@@ -1332,7 +1344,7 @@ with tab_edge:
 
                 # ── GAME SCORE DIAGNOSTIC ────────────────────────
                 # Aggregate per-team projected runs and hits for sanity check.
-                # If all games project to 3-2, model isn't differentiating matchups.
+                # Sources: standalone runs/hits props + HRR combo breakdowns.
                 with st.expander("📊 Game Score Projections (diagnostic)", expanded=False):
                     _game_scores = {}
                     for p in preds:
@@ -1342,34 +1354,47 @@ with tab_edge:
                         if not _team:
                             continue
                         if _team not in _game_scores:
-                            _game_scores[_team] = {"runs": [], "hits": [], "hr": [],
+                            _game_scores[_team] = {"runs": [], "hits": [], "hr_proj": [],
+                                                   "players": set(),
                                                    "opponent": _safe(p.get("opponent"), ""),
                                                    "opp_pitcher": _safe(p.get("opp_pitcher"), "")}
+                        _game_scores[_team]["players"].add(p.get("player", ""))
                         if _stat == "runs":
                             _game_scores[_team]["runs"].append(_proj)
                         elif _stat == "hits":
                             _game_scores[_team]["hits"].append(_proj)
                         elif _stat == "home_runs":
-                            _game_scores[_team]["hr"].append(_proj)
+                            _game_scores[_team]["hr_proj"].append(_proj)
+                        elif _stat == "hits_runs_rbis":
+                            # Extract component breakdowns from HRR combo
+                            # (hits_proj/runs_proj are top-level keys from generate_prediction)
+                            _h = _safe_num(p.get("hits_proj"), 0)
+                            _r = _safe_num(p.get("runs_proj"), 0)
+                            if _h > 0:
+                                _game_scores[_team]["hits"].append(_h)
+                            if _r > 0:
+                                _game_scores[_team]["runs"].append(_r)
 
                     if _game_scores:
                         _gs_rows = []
                         for _tm, _gs in sorted(_game_scores.items()):
                             _avg_runs = sum(_gs["runs"]) / len(_gs["runs"]) if _gs["runs"] else 0
                             _avg_hits = sum(_gs["hits"]) / len(_gs["hits"]) if _gs["hits"] else 0
-                            _avg_hr = sum(_gs["hr"]) / len(_gs["hr"]) if _gs["hr"] else 0
-                            _n_players = max(len(_gs["runs"]), len(_gs["hits"]), 1)
-                            # Estimate team total: avg per player × lineup size (9)
-                            _est_team_runs = round(_avg_runs * min(_n_players, 9), 1) if _gs["runs"] else 0
-                            _est_team_hits = round(_avg_hits * min(_n_players, 9), 1) if _gs["hits"] else 0
+                            _avg_hr = sum(_gs["hr_proj"]) / len(_gs["hr_proj"]) if _gs["hr_proj"] else 0
+                            _n_players = len(_gs["players"] - {""})
+                            _n_run_sources = len(_gs["runs"])
+                            _n_hit_sources = len(_gs["hits"])
+                            # Estimate team total: avg per player × lineup (9)
+                            _est_team_runs = round(_avg_runs * 9, 1) if _gs["runs"] else 0
+                            _est_team_hits = round(_avg_hits * 9, 1) if _gs["hits"] else 0
                             _gs_rows.append({
                                 "Team": _tm,
                                 "vs": _gs["opponent"],
                                 "Opp SP": _gs["opp_pitcher"],
                                 "Est Runs": _est_team_runs,
                                 "Est Hits": _est_team_hits,
-                                "Avg HR Prob": f"{_avg_hr:.0%}" if _gs["hr"] else "—",
-                                "Players": _n_players,
+                                "Avg HR Proj": f"{_avg_hr:.2f}" if _gs["hr_proj"] else "—",
+                                "# Players": _n_players if _n_players else "—",
                             })
                         if _gs_rows:
                             _gs_df = pd.DataFrame(_gs_rows)

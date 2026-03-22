@@ -520,15 +520,55 @@ def fetch_recent_transactions(days_back: int = 3) -> list[dict]:
 
 def fetch_mlb_news(max_items: int = 15) -> list[dict]:
     """
-    Fetch MLB news headlines from the MLB editorial API.
-    Returns list of dicts with: title, snippet, url, date, image_url
-    Falls back gracefully if the API is unavailable.
+    Fetch MLB news headlines with snippets from MLB editorial APIs.
+    Tries multiple endpoints to ensure snippets/blurbs are included.
+    Returns list of dicts with: title, snippet, url, date
     """
     import xml.etree.ElementTree as ET
 
     news_items = []
 
-    # Try MLB RSS feed first
+    # Primary: MLB content API (has blurbs/snippets)
+    try:
+        resp = requests.get(
+            "https://content.mlb.com/api/v2.4/feed/home",
+            params={"language": "en", "limit": max_items},
+            timeout=8,
+            headers={"User-Agent": "MLB-Prop-Predictor/1.0"},
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            for item in data.get("items", [])[:max_items]:
+                title = item.get("headline", item.get("title", ""))
+                snippet = item.get("blurb", item.get("subhead", item.get("summary", "")))
+                if not snippet:
+                    snippet = item.get("description", "")
+                snippet = re.sub(r"<[^>]+>", "", snippet).strip()
+                if len(snippet) > 200:
+                    snippet = snippet[:197] + "..."
+                url = item.get("url", "")
+                if url and not url.startswith("http"):
+                    url = f"https://www.mlb.com{url}"
+                date_str = item.get("date", "")
+                if date_str and len(date_str) >= 10:
+                    try:
+                        dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+                        date_str = dt.strftime("%b %d, %Y")
+                    except Exception:
+                        pass
+                if title:
+                    news_items.append({
+                        "title": title,
+                        "snippet": snippet,
+                        "url": url,
+                        "date": date_str,
+                    })
+            if news_items:
+                return news_items
+    except Exception as e:
+        print(f"[spring.py] MLB content API failed: {e}")
+
+    # Fallback 1: RSS feed (always has titles, sometimes has descriptions)
     try:
         resp = requests.get(
             "https://www.mlb.com/feeds/news/rss.xml",
@@ -543,12 +583,10 @@ def fetch_mlb_news(max_items: int = 15) -> list[dict]:
                 link = item.findtext("link", "")
                 pub_date = item.findtext("pubDate", "")
 
-                # Clean up description — strip HTML tags for snippet
                 snippet = re.sub(r"<[^>]+>", "", desc).strip()
                 if len(snippet) > 200:
                     snippet = snippet[:197] + "..."
 
-                # Parse date
                 date_str = ""
                 if pub_date:
                     try:
@@ -569,7 +607,7 @@ def fetch_mlb_news(max_items: int = 15) -> list[dict]:
     except Exception as e:
         print(f"[spring.py] RSS feed failed: {e}")
 
-    # Fallback: MLB Stats API editorial content
+    # Fallback 2: MLB Stats API editorial
     try:
         resp = requests.get(
             "https://statsapi.mlb.com/api/v1/news",
@@ -593,20 +631,11 @@ def fetch_mlb_news(max_items: int = 15) -> list[dict]:
                         date_str = dt.strftime("%b %d, %Y")
                     except Exception:
                         pass
-                img = article.get("image", {})
-                img_url = ""
-                if isinstance(img, dict):
-                    for cut in img.get("cuts", []):
-                        if isinstance(cut, dict) and cut.get("width", 0) >= 200:
-                            img_url = cut.get("src", "")
-                            break
-
                 news_items.append({
                     "title": title,
                     "snippet": snippet,
                     "url": url,
                     "date": date_str,
-                    "image_url": img_url,
                 })
     except Exception as e:
         print(f"[spring.py] News API fallback failed: {e}")

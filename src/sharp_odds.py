@@ -253,8 +253,10 @@ _ODDS_CACHE_DIR = os.path.join(
 )
 os.makedirs(_ODDS_CACHE_DIR, exist_ok=True)
 
-# Default TTL: 2 hours — prop odds don't move fast enough to justify 5 min
-ODDS_CACHE_TTL_SECONDS = 7200
+# Default TTL: 8 hours — one fetch per session, refresh manually via button.
+# Prop odds move slowly for player props; no need to burn credits re-fetching.
+# User can hit "Refresh Odds" in sidebar anytime for fresh data.
+ODDS_CACHE_TTL_SECONDS = 28800  # 8 hours
 
 # Budget guard: stop fetching when below this threshold
 MIN_CREDITS_THRESHOLD = 50
@@ -421,6 +423,37 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
     except requests.RequestException as e:
         _log.error("[sharp_odds] ERROR fetching props for event %s: %s", event_id, e)
         return {}
+
+
+def has_cached_odds_today() -> bool:
+    """Check if we already have cached odds data for today.
+    Used by app.py to decide whether to auto-fetch or skip."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    events_key = f"events_{SPORT_KEY}_{today}"
+    cached_events = _read_cache(events_key)
+    if cached_events and len(cached_events) > 0:
+        # Check if we also have at least one event's props cached
+        for event in cached_events[:3]:
+            eid = event.get("id", "")
+            if eid:
+                props_key = f"props_{eid}_{today}"
+                if _read_cache(props_key) is not None:
+                    return True
+    return False
+
+
+def get_cache_age_minutes() -> int:
+    """Return age of the oldest cache entry in minutes, or -1 if no cache."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    events_key = f"events_{SPORT_KEY}_{today}"
+    path = _cache_path(events_key)
+    try:
+        with open(path) as f:
+            entry = json.load(f)
+        age = datetime.now().timestamp() - entry.get("cached_at", 0)
+        return int(age / 60)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return -1
 
 
 def american_to_implied_prob(american: int) -> float:

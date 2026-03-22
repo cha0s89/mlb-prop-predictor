@@ -185,9 +185,46 @@ def _phase2_compute_metrics() -> dict:
 
 
 def _phase3_update_weights() -> dict:
-    """Run Hedge-style ensemble weight update with safety checks."""
-    raw = update_ensemble_weights(learning_rate=0.1, min_samples=20, lookback_days=14)
-    # Returns: old_weights, new_weights, accuracies, updated, reason
+    """Run Hedge-style ensemble weight update with safety checks.
+
+    Uses conservative defaults: low learning rate (0.05), high min samples (50),
+    requires data from 3+ distinct game days, and uses per-day averaging to
+    prevent outlier blowout games from skewing the signal.
+    """
+    # Check if we should skip — only update weights every 3+ days to avoid
+    # overfitting to small sample noise (e.g. one 17-4 blowout day)
+    conn = get_connection()
+    try:
+        last_update = conn.execute("""
+            SELECT date FROM ensemble_history
+            ORDER BY date DESC LIMIT 1
+        """).fetchone()
+        if last_update:
+            from datetime import datetime
+            last_dt = datetime.strptime(last_update[0], "%Y-%m-%d").date()
+            days_since = (datetime.now().date() - last_dt).days
+            if days_since < 3:
+                conn.close()
+                return {
+                    "old_weights": {},
+                    "new_weights": {},
+                    "updated": False,
+                    "reason": f"Too soon since last update ({days_since}d < 3d min interval)",
+                }
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    raw = update_ensemble_weights(
+        learning_rate=0.05,
+        min_samples=50,
+        lookback_days=14,
+        min_days=3,
+    )
     return raw
 
 

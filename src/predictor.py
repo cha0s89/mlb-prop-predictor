@@ -183,8 +183,8 @@ LG = {
     "babip": 0.296, "woba": 0.310, "wrc_plus": 100,
     "k_rate": 22.7, "bb_rate": 8.3,
     "hr_per_pa": 0.033, "sb_per_game": 0.18,
-    "rbi_per_game": 0.92, "runs_per_game": 0.98,
-    "hits_per_game": 1.44, "tb_per_game": 2.35,
+    "rbi_per_game": 0.49, "runs_per_game": 0.49,
+    "hits_per_game": 0.93, "tb_per_game": 1.50,
     # Statcast batting
     "exit_velo": 88.5, "hard_hit_pct": 37.0, "barrel_rate": 7.5,
     "sweet_spot_pct": 32.0, "ev90": 105.0,

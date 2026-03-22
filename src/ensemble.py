@@ -102,17 +102,23 @@ def record_signal_outcome(player_name: str, stat_type: str,
 def compute_source_accuracy(days: int = 14) -> Dict:
     """Compute accuracy of each signal source over the last N days.
 
+    Uses per-day averaging to prevent outlier game days (e.g. 17-4 blowouts)
+    from dominating the signal. Each day's accuracy is weighted equally
+    regardless of how many props were graded that day.
+
     Returns:
-        Dict with sharp_accuracy, projection_accuracy, and sample counts
+        Dict with sharp_accuracy, projection_accuracy, sample counts, and distinct_days
     """
     conn = get_connection()
     df = pd.read_sql_query("""
-        SELECT sharp_correct, projection_correct, outcome
+        SELECT date, sharp_correct, projection_correct, outcome
         FROM signal_outcomes
         WHERE date >= date('now', ? || ' days')
         AND outcome IS NOT NULL
     """, conn, params=(f"-{days}",))
     conn.close()
+
+    distinct_days = df["date"].nunique() if not df.empty else 0
 
     result = {
         "sharp_accuracy": 0.5,
@@ -120,29 +126,33 @@ def compute_source_accuracy(days: int = 14) -> Dict:
         "sharp_n": 0,
         "projection_n": 0,
         "total_n": len(df),
+        "distinct_days": distinct_days,
     }
 
     if df.empty:
         return result
 
-    # Sharp accuracy (where we had sharp signal)
+    # Per-day averaging: compute each day's accuracy, then average across days.
+    # This prevents a single high-volume outlier day from skewing the signal.
     sharp_df = df[df["sharp_correct"].notna()]
     if len(sharp_df) > 0:
-        result["sharp_accuracy"] = float(sharp_df["sharp_correct"].mean())
+        daily_sharp = sharp_df.groupby("date")["sharp_correct"].mean()
+        result["sharp_accuracy"] = float(daily_sharp.mean())
         result["sharp_n"] = len(sharp_df)
 
-    # Projection accuracy (where we had projection signal)
     proj_df = df[df["projection_correct"].notna()]
     if len(proj_df) > 0:
-        result["projection_accuracy"] = float(proj_df["projection_correct"].mean())
+        daily_proj = proj_df.groupby("date")["projection_correct"].mean()
+        result["projection_accuracy"] = float(daily_proj.mean())
         result["projection_n"] = len(proj_df)
 
     return result
 
 
-def update_ensemble_weights(learning_rate: float = 0.1,
-                            min_samples: int = 20,
-                            lookback_days: int = 14) -> Dict:
+def update_ensemble_weights(learning_rate: float = 0.05,
+                            min_samples: int = 50,
+                            lookback_days: int = 14,
+                            min_days: int = 3) -> Dict:
     """Run the hedge-style weight update.
 
     Uses Multiplicative Weights Update:
@@ -153,9 +163,10 @@ def update_ensemble_weights(learning_rate: float = 0.1,
     downweighted. The learning rate controls how fast adaptation happens.
 
     Args:
-        learning_rate: eta — how fast to adapt (0.05 to 0.20 recommended)
-        min_samples: Minimum graded picks before updating
+        learning_rate: eta — how fast to adapt (default 0.05 for stability)
+        min_samples: Minimum graded picks before updating (default 50)
         lookback_days: Days of data to consider
+        min_days: Minimum distinct game days required (prevents outlier days from dominating)
 
     Returns:
         Dict with old_weights, new_weights, accuracies, and whether update was applied
@@ -186,10 +197,15 @@ def update_ensemble_weights(learning_rate: float = 0.1,
         "reason": "",
     }
 
-    # Check if we have enough data
+    # Check if we have enough data (both volume and spread across days)
     total_n = accuracy["total_n"]
+    distinct_days = accuracy.get("distinct_days", 0)
     if total_n < min_samples:
-        result["reason"] = f"Insufficient data ({total_n} < {min_samples} min)"
+        result["reason"] = f"Insufficient data ({total_n} < {min_samples} min picks)"
+        result["new_weights"] = old_weights
+        return result
+    if distinct_days < min_days:
+        result["reason"] = f"Insufficient day spread ({distinct_days} < {min_days} min days)"
         result["new_weights"] = old_weights
         return result
 

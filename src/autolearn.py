@@ -50,17 +50,20 @@ WEIGHTS_DIR = Path("data/weights")
 CURRENT_WEIGHTS_PATH = WEIGHTS_DIR / "current.json"
 WEIGHT_HISTORY_PATH = WEIGHTS_DIR / "weight_history.json"
 
-# Maximum percentage change per adjustment cycle (±10%)
-MAX_ADJUSTMENT_PCT = 0.10
+# Maximum percentage change per adjustment cycle (±5% — conservative)
+MAX_ADJUSTMENT_PCT = 0.05
 
 # Minimum graded picks required before any adjustment
-MIN_SAMPLE_DEFAULT = 25
+MIN_SAMPLE_DEFAULT = 50
+
+# Minimum distinct game days required (prevents outlier days from dominating)
+MIN_DAYS_DEFAULT = 3
 
 # Kill switch: rollback if accuracy falls below this after an adjustment
 KILL_SWITCH_THRESHOLD = 0.48
 
 # Minimum picks to evaluate kill switch after a new weight version
-KILL_SWITCH_EVAL_SIZE = 25
+KILL_SWITCH_EVAL_SIZE = 30
 
 
 # ═══════════════════════════════════════════════════════
@@ -1490,6 +1493,21 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
         result["reason"] = (
             f"Insufficient data: {total} graded picks, need {min_sample}. "
             "No adjustments made."
+        )
+        result["version_new"] = current_version
+        logger.info(result["reason"])
+        return result
+
+    # Check distinct game days — prevents outlier days from driving adjustments
+    distinct_days = 0
+    if "game_date" in wl.columns:
+        distinct_days = wl["game_date"].nunique()
+    elif "date" in wl.columns:
+        distinct_days = wl["date"].nunique()
+    if 0 < distinct_days < MIN_DAYS_DEFAULT:
+        result["reason"] = (
+            f"Insufficient day spread: {distinct_days} days, need {MIN_DAYS_DEFAULT}. "
+            "Single outlier days should not drive weight changes."
         )
         result["version_new"] = current_version
         logger.info(result["reason"])
