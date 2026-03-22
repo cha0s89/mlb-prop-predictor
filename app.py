@@ -92,6 +92,30 @@ def _safe_num(val, fallback=0.0):
         return fallback
 
 
+def _utc_to_pst(iso_str: str) -> str:
+    """Convert an ISO-8601 UTC timestamp to a friendly PST/PDT string.
+
+    Examples:
+        '2026-03-27T22:05:00Z' → 'Mar 27 3:05 PM PDT'
+        '' → ''
+    """
+    if not iso_str:
+        return ""
+    try:
+        from datetime import timezone, timedelta as _td
+        dt = pd.Timestamp(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.tz_localize("UTC")
+        # US Pacific: UTC-7 during DST (mid-Mar to early Nov), UTC-8 otherwise
+        # MLB regular season is almost entirely during DST, so use PDT (-7)
+        pst_offset = _td(hours=-7)
+        dt_pst = dt.astimezone(timezone(pst_offset))
+        suffix = "PDT"
+        return dt_pst.strftime(f"%b %-d %-I:%M %p {suffix}")
+    except Exception:
+        return iso_str
+
+
 # ─────────────────────────────────────────────
 # CACHED WRAPPERS — eliminate redundant API calls across Streamlit reruns
 # ─────────────────────────────────────────────
@@ -102,9 +126,14 @@ def _cached_pp_lines():
     return fetch_prizepicks_mlb_lines()
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _cached_todays_games():
-    """MLB schedule + probable pitchers — cached 1 hr."""
-    return fetch_todays_games()
+def _cached_todays_games(game_dates: tuple = None):
+    """MLB schedule + probable pitchers — cached 1 hr.
+
+    Args:
+        game_dates: Tuple of date strings (YYYY-MM-DD) to fetch.
+                    Uses tuple (not list) for Streamlit cache hashability.
+    """
+    return fetch_todays_games(game_dates=list(game_dates) if game_dates else None)
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _cached_umpires():
@@ -929,9 +958,21 @@ with tab_edge:
                     r = resolve_team(t)
                     if r and r in STADIUMS:
                         teams_in_slate.add(r)
-            # Fetch today's games for lineup/batting order data
+            # Extract actual game dates from PrizePicks data (may be future dates
+            # like Opening Day), NOT today's date which could be spring training.
+            _pp_game_dates = set()
+            if "start_time" in pp_lines.columns:
+                for _st in pp_lines["start_time"].dropna():
+                    try:
+                        _pp_game_dates.add(pd.Timestamp(_st).strftime("%Y-%m-%d"))
+                    except Exception:
+                        pass
+            if not _pp_game_dates:
+                from datetime import datetime as _dt
+                _pp_game_dates = {_dt.now().strftime("%Y-%m-%d")}
+            # Fetch games for the actual dates PP has props for
             try:
-                todays_games = _cached_todays_games()
+                todays_games = _cached_todays_games(game_dates=tuple(sorted(_pp_game_dates)))
             except Exception:
                 todays_games = []
 
@@ -1255,7 +1296,7 @@ with tab_edge:
                 if r_team and r_team in game_context_cache:
                     gctx = game_context_cache[r_team]
                     p["opponent"] = gctx.get("opponent", "")
-                    p["game_time"] = gctx.get("game_time", "")
+                    p["game_time"] = _utc_to_pst(gctx.get("game_time", ""))
                     # Opposing pitcher name from the pre-built lookup
                     if r_team in opp_pitcher_lookup:
                         p["opp_pitcher"] = opp_pitcher_lookup[r_team].get("name", "")
@@ -1360,11 +1401,15 @@ with tab_edge:
                         if not _team:
                             continue
                         if _team not in _game_scores:
+                            _r_team = resolve_team(_team) if _team else None
+                            _pf = PARK_FACTORS.get(_r_team, 100) if _r_team else 100
                             _game_scores[_team] = {"runs": [], "hits": [], "hr_proj": [],
                                                    "players": set(),
                                                    "opponent": _safe(p.get("opponent"), ""),
-                                                   "opp_pitcher": _safe(p.get("opp_pitcher"), "")}
-                        _game_scores[_team]["players"].add(p.get("player", ""))
+                                                   "opp_pitcher": _safe(p.get("opp_pitcher"), ""),
+                                                   "game_time": _safe(p.get("game_time"), ""),
+                                                   "park_factor": _pf}
+                        _game_scores[_team]["players"].add(p.get("player_name", ""))
                         if _stat == "runs":
                             _game_scores[_team]["runs"].append(_proj)
                         elif _stat == "hits":
@@ -1393,10 +1438,14 @@ with tab_edge:
                             # Estimate team total: avg per player × lineup (9)
                             _est_team_runs = round(_avg_runs * 9, 1) if _gs["runs"] else 0
                             _est_team_hits = round(_avg_hits * 9, 1) if _gs["hits"] else 0
+                            _pf_val = _gs.get("park_factor", 100)
+                            _pf_str = f"{_pf_val}" if _pf_val != 100 else "100"
                             _gs_rows.append({
                                 "Team": _tm,
                                 "vs": _gs["opponent"],
                                 "Opp SP": _gs["opp_pitcher"],
+                                "Game": _gs.get("game_time", ""),
+                                "Park": _pf_str,
                                 "Est Runs": _est_team_runs,
                                 "Est Hits": _est_team_hits,
                                 "Avg HR Proj": f"{_avg_hr:.2f}" if _gs["hr_proj"] else "—",
@@ -1566,7 +1615,10 @@ with tab_edge:
                                 _gt = _safe(pick_row.get("game_time"), "")
                                 ctx_lines = []
                                 if _opp != "—":
-                                    ctx_lines.append(f"**vs** {_opp}")
+                                    _opp_str = f"**vs** {_opp}"
+                                    if _gt and _gt != "—":
+                                        _opp_str += f"  ·  {_gt}"
+                                    ctx_lines.append(_opp_str)
                                 if _opp_p != "—":
                                     ctx_lines.append(f"**Opp Pitcher:** {_opp_p}")
                                 if _bat_ord:

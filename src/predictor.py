@@ -918,17 +918,21 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
         reg_avg = reg_avg * (1 - bvp_weight) + bvp_avg * bvp_weight
 
     # v018: Log5 matchup adjustment for opposing pitcher
-    # Uses pitcher's hit-allowed rate vs batter AVG with league context
+    # Uses pitcher's hit-allowed rate vs batter AVG with league context.
+    # IMPORTANT: Both Log5 inputs must be rates in the SAME direction (hit rates).
     if opp_p:
         opp_whip = opp_p.get("whip", LG["whip"])
         opp_fip = opp_p.get("fip", LG["fip"])
-        # Estimate pitcher's hit-allowed rate from WHIP
-        # WHIP = (H + BB) / IP, so H/IP ≈ WHIP - BB/9*9
-        opp_h_rate = max(0.15, min(0.35, 1.0 - (opp_fip / 15.0)))  # Approximate
+        opp_bb9 = opp_p.get("bb9", LG["bb9"])
+        # Derive pitcher's hit-allowed rate from WHIP:
+        #   H/IP = WHIP - BB/IP;  h_rate_per_BF = H/IP / BF_per_IP
+        # Average pitcher: WHIP 1.28, BB9 3.22 → H/IP=0.92, h_rate=0.92/4.3≈.214
+        opp_h_per_ip = max(0.5, opp_whip - opp_bb9 / 9.0)
+        opp_h_rate = min(0.35, max(0.15, opp_h_per_ip / LG["bf_per_ip"]))
         matchup_avg = log5_rate(
-            1.0 - opp_h_rate,  # pitcher prevention rate
-            reg_avg,            # batter hit rate
-            LG["avg"]           # league AVG
+            opp_h_rate,   # pitcher hit-ALLOWED rate (same scale as batter AVG)
+            reg_avg,       # batter hit rate
+            LG["avg"]      # league AVG
         )
         # Blend: 60% Log5, 40% old quality method for stability
         opp_quality = (opp_whip / LG["whip"] * 0.6 + opp_fip / LG["fip"] * 0.4)

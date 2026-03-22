@@ -134,10 +134,13 @@ def _normalize_team_abbr(team_input: str) -> Optional[str]:
 # TODAY'S GAMES
 # ─────────────────────────────────────────────
 
-@lru_cache(maxsize=1)
-def fetch_todays_games() -> List[dict]:
+def fetch_todays_games(game_dates: List[str] = None) -> List[dict]:
     """
-    Fetch today's MLB game schedule with probable pitchers.
+    Fetch MLB game schedule with probable pitchers for given dates.
+
+    Args:
+        game_dates: List of date strings (YYYY-MM-DD) to fetch.
+                    Defaults to today if not provided.
 
     Returns a list of game dicts, each containing:
         - game_pk: unique game ID
@@ -156,51 +159,62 @@ def fetch_todays_games() -> List[dict]:
 
     Returns empty list if API fails.
     """
-    today = datetime.now().strftime("%Y-%m-%d")
+    if not game_dates:
+        game_dates = [datetime.now().strftime("%Y-%m-%d")]
 
-    data = _api_get(
-        "/schedule",
-        params={
-            "sportId": 1,
-            "date": today,
-            "hydrate": "probablePitcher,linescore,team",
-        }
-    )
-
-    if not data or "dates" not in data:
-        return []
+    # Deduplicate dates
+    unique_dates = sorted(set(game_dates))
 
     games = []
-    for date_entry in data.get("dates", []):
-        for game in date_entry.get("games", []):
-            try:
-                home_team = game.get("teams", {}).get("home", {})
-                away_team = game.get("teams", {}).get("away", {})
+    seen_pks = set()
+    for gdate in unique_dates:
+        data = _api_get(
+            "/schedule",
+            params={
+                "sportId": 1,
+                "date": gdate,
+                "hydrate": "probablePitcher,linescore,team",
+            }
+        )
 
-                home_pitcher = home_team.get("probablePitcher", {})
-                away_pitcher = away_team.get("probablePitcher", {})
+        if not data or "dates" not in data:
+            continue
 
-                home_abbr = home_team.get("team", {}).get("abbreviation", "")
-                away_abbr = away_team.get("team", {}).get("abbreviation", "")
+        for date_entry in data.get("dates", []):
+            for game in date_entry.get("games", []):
+                try:
+                    gpk = game.get("gamePk")
+                    if gpk in seen_pks:
+                        continue
+                    seen_pks.add(gpk)
 
-                games.append({
-                    "game_pk": game.get("gamePk"),
-                    "game_time": game.get("gameDate", ""),
-                    "status": game.get("status", {}).get("detailedState", ""),
-                    "home_team": home_abbr,
-                    "away_team": away_abbr,
-                    "home_team_name": home_team.get("team", {}).get("name", ""),
-                    "away_team_name": away_team.get("team", {}).get("name", ""),
-                    "home_pitcher_name": home_pitcher.get("fullName", "TBD"),
-                    "home_pitcher_id": home_pitcher.get("id"),
-                    "home_pitcher_hand": home_pitcher.get("pitchHand", {}).get("code", ""),
-                    "away_pitcher_name": away_pitcher.get("fullName", "TBD"),
-                    "away_pitcher_id": away_pitcher.get("id"),
-                    "away_pitcher_hand": away_pitcher.get("pitchHand", {}).get("code", ""),
-                })
-            except Exception as e:
-                print(f"[lineups.py] Error parsing game: {e}")
-                continue
+                    home_team = game.get("teams", {}).get("home", {})
+                    away_team = game.get("teams", {}).get("away", {})
+
+                    home_pitcher = home_team.get("probablePitcher", {})
+                    away_pitcher = away_team.get("probablePitcher", {})
+
+                    home_abbr = home_team.get("team", {}).get("abbreviation", "")
+                    away_abbr = away_team.get("team", {}).get("abbreviation", "")
+
+                    games.append({
+                        "game_pk": gpk,
+                        "game_time": game.get("gameDate", ""),
+                        "status": game.get("status", {}).get("detailedState", ""),
+                        "home_team": home_abbr,
+                        "away_team": away_abbr,
+                        "home_team_name": home_team.get("team", {}).get("name", ""),
+                        "away_team_name": away_team.get("team", {}).get("name", ""),
+                        "home_pitcher_name": home_pitcher.get("fullName", "TBD"),
+                        "home_pitcher_id": home_pitcher.get("id"),
+                        "home_pitcher_hand": home_pitcher.get("pitchHand", {}).get("code", ""),
+                        "away_pitcher_name": away_pitcher.get("fullName", "TBD"),
+                        "away_pitcher_id": away_pitcher.get("id"),
+                        "away_pitcher_hand": away_pitcher.get("pitchHand", {}).get("code", ""),
+                    })
+                except Exception as e:
+                    print(f"[lineups.py] Error parsing game: {e}")
+                    continue
 
     return games
 
