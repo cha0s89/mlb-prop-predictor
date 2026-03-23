@@ -10,19 +10,13 @@ from collections import Counter
 from typing import Optional
 
 from src.slip_ev import build_correlation_matrix, simulate_slip_ev
+from src.slips import PAYOUTS
 
 
-# PrizePicks payout multipliers (imported from slips.py logic)
+# Single source of truth: perfect-hit payout per entry type comes from slips.py.
 PAYOUT_MULTIPLIERS = {
-    "2_power": 3.0,
-    "3_power": 6.0,
-    "4_power": 10.0,
-    "5_power": 20.0,
-    "6_power": 25.0,
-    "3_flex": 3.0,
-    "4_flex": 6.0,
-    "5_flex": 10.0,
-    "6_flex": 12.5,
+    entry_type: max((float(mult) for mult in payout_table.values()), default=1.0)
+    for entry_type, payout_table in PAYOUTS.items()
 }
 
 # Correlation discount for same-game picks (picks on same game are correlated)

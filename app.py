@@ -40,6 +40,7 @@ from src.slips import (
 )
 from src.autograder import auto_grade_date, auto_grade_yesterday
 from src.autolearn import run_adjustment_cycle, load_current_weights
+from src.nightly import run_nightly_cycle
 from src.spring import (
     apply_seasonal_spring_blend,
     get_player_injury_status, get_spring_form_multiplier,
@@ -450,12 +451,62 @@ st.markdown("""
 
     /* === MOBILE === */
     @media (max-width: 768px) {
+        .stApp [data-testid="block-container"] { padding-left: 0.8rem; padding-right: 0.8rem; }
         .stApp [data-testid="stDataFrame"] { overflow-x: auto !important; }
-        .stApp [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+        .stApp [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+            gap: 0.6rem !important;
+        }
+        .stApp [data-testid="column"] {
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+        .stApp [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            overflow-x: auto;
+            scrollbar-width: none;
+            gap: 0.3rem;
+        }
+        .stApp [data-testid="stTabs"] [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
+        .stApp [data-testid="stTabs"] [data-baseweb="tab"] {
+            flex: 0 0 auto;
+            min-height: 44px;
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        .hero-wrapper {
+            padding: 1rem 1rem 0.95rem 1rem;
+            border-radius: 12px;
+        }
+        .hero-wrapper::after { width: 45%; }
         .hero-logo { font-size: 1.35rem; }
+        .hero-sub { font-size: 0.74rem; }
+        .hero-meta { gap: 0.55rem; margin-top: 0.8rem; }
+        .hero-meta-pill { font-size: 0.68rem; }
+        .section-hdr { font-size: 0.64rem; letter-spacing: 1.6px; margin-top: 1.2rem; }
         .card .val { font-size: 1.25rem; }
-        .stApp button[kind="secondary"], .stApp [data-testid="stTab"] { min-height: 44px; }
+        .card { padding: 0.85rem 0.95rem; }
+        .info-strip, .warn-strip, .alert-strip { padding: 0.7rem 0.8rem; font-size: 0.76rem; }
         .pick-card { padding: 0.8rem 0.9rem; }
+        .pick-card-header,
+        .pick-card-row,
+        .pick-card-conf,
+        .factor-bar,
+        .grade-feed-row {
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 0.35rem 0.5rem;
+        }
+        .pick-card-player,
+        .gfr-player {
+            width: 100%;
+        }
+        .pick-card-team { width: 100%; }
+        .factor-bar .f-name,
+        .factor-bar .f-impact {
+            min-width: 0;
+        }
+        .bp-name { white-space: normal; }
+        .stApp input, .stApp textarea, .stApp [data-baseweb="select"] { font-size: 16px !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -2257,7 +2308,12 @@ with tab_edge:
                     except Exception:
                         pass
 
-                    slip_type = st.selectbox("Slip type", ["6_flex", "5_flex", "4_flex", "3_power", "2_power"], key="slip_type_select")
+                    slip_type = st.selectbox(
+                        "Slip type",
+                        ["6_flex", "5_flex", "4_flex", "3_power", "2_power"],
+                        index=0,
+                        key="slip_type_select",
+                    )
                     slip_amt = st.number_input("Wager ($)", min_value=1.0, value=5.0, step=1.0, key="slip_amt_select")
                     _num_needed = int(slip_type[0])
 
@@ -2573,7 +2629,7 @@ with tab_slips:
             st.plotly_chart(fig, width="stretch")
     with st.expander("Create New Slip"):
         sl_date = st.date_input("Game date", value=date.today(), key="slip_date")
-        sl_type = st.selectbox("Entry type", ["5_flex", "6_flex", "4_flex", "3_power", "2_power"])
+        sl_type = st.selectbox("Entry type", ["6_flex", "5_flex", "4_flex", "3_power", "2_power"], index=0)
         sl_amount = st.number_input("Entry amount ($)", min_value=1.0, value=5.0, step=1.0)
         num = int(sl_type[0])
         st.caption(f"Break-even: {BREAKEVEN.get(sl_type, 0.55)*100:.1f}%")
@@ -2706,6 +2762,29 @@ with tab_grade:
 with tab_qa:
     st.markdown('<div class="section-hdr">Model QA Dashboard</div>', unsafe_allow_html=True)
     qa_days = st.selectbox("Evaluation window", [7, 14, 30, 60, 90], index=2, key="qa_window")
+    qa_run_col, qa_date_col = st.columns([1, 2])
+    with qa_date_col:
+        qa_run_date = st.date_input(
+            "Nightly update date",
+            value=date.today() - timedelta(days=1),
+            key="qa_nightly_date",
+        )
+    with qa_run_col:
+        st.markdown('<div style="height:1.7rem"></div>', unsafe_allow_html=True)
+        if st.button("Run Nightly Update", key="qa_run_nightly"):
+            with st.spinner("Running nightly cycle..."):
+                try:
+                    nightly_result = run_nightly_cycle(qa_run_date.isoformat())
+                    grading = nightly_result.get("phase_results", {}).get("grading", {})
+                    metrics = nightly_result.get("phase_results", {}).get("metrics", {})
+                    st.success(
+                        f"Nightly cycle complete: {grading.get('total_graded', 0)} picks graded, "
+                        f"{grading.get('projected_stats_graded', 0)} tracked rows updated."
+                    )
+                    if metrics.get("reason"):
+                        st.caption(metrics["reason"])
+                except Exception as exc:
+                    st.error(f"Nightly cycle failed: {exc}")
 
     qa_projection = get_projection_diagnostics(days_back=qa_days)
     qa_accuracy = get_projection_accuracy(days_back=qa_days)

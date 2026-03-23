@@ -206,6 +206,15 @@ def compute_batter_profile(season_stats: pd.Series, recent_sc: pd.DataFrame) -> 
     profile["k_rate"] = float(season_stats.get("K%", 0.0)) if isinstance(season_stats.get("K%"), (int, float)) else 0.0
     profile["bb_rate"] = float(season_stats.get("BB%", 0.0)) if isinstance(season_stats.get("BB%"), (int, float)) else 0.0
     profile["woba"] = float(season_stats.get("wOBA", 0.000))
+    profile["wrc_plus"] = float(season_stats.get("wRC+", 0.0)) if isinstance(season_stats.get("wRC+"), (int, float)) else 0.0
+    profile["xwoba"] = float(season_stats.get("xwOBA", 0.000)) if isinstance(season_stats.get("xwOBA"), (int, float)) else 0.0
+    profile["g"] = int(season_stats.get("G", 0))
+    profile["h"] = int(season_stats.get("H", 0))
+    profile["bb"] = int(season_stats.get("BB", 0))
+    profile["r"] = int(season_stats.get("R", 0))
+    profile["rbi"] = int(season_stats.get("RBI", 0))
+    profile["2b"] = int(season_stats.get("2B", season_stats.get("2b", 0)))
+    profile["3b"] = int(season_stats.get("3B", season_stats.get("3b", 0)))
     profile["hr"] = int(season_stats.get("HR", 0))
     profile["sb"] = int(season_stats.get("SB", 0))
 
@@ -266,7 +275,11 @@ def compute_pitcher_profile(season_stats: pd.Series, recent_sc: pd.DataFrame) ->
             ])
             profile["recent_swstr_pct"] = float(swstr_events.sum() / total_pitches * 100) if total_pitches > 0 else 0.0
 
-            chase_pitches = recent_sc[recent_sc.get("zone", pd.Series()).isin([11, 12, 13, 14]) if "zone" in recent_sc.columns else pd.Series(dtype=bool)]
+            if "zone" in recent_sc.columns:
+                chase_mask = recent_sc["zone"].isin([11, 12, 13, 14]).fillna(False)
+            else:
+                chase_mask = pd.Series(False, index=recent_sc.index, dtype=bool)
+            chase_pitches = recent_sc[chase_mask]
             if len(chase_pitches) > 0 and "description" in chase_pitches.columns:
                 profile["recent_chase_rate"] = float(
                     chase_pitches["description"].str.contains("swinging").sum() / len(chase_pitches) * 100

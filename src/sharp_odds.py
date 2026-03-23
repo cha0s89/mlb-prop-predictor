@@ -16,6 +16,7 @@ import json
 from datetime import datetime
 from scipy.optimize import brentq
 from src.distributions import compute_probabilities
+from src.slips import get_payout_table
 
 
 import logging
@@ -837,15 +838,21 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
             else:
                 rating = "D"
 
-            # EV calculation using official March 2026 PrizePicks payouts
-            # 5-pick Flex: 10x (5/5), 2x (4/5), 0.4x (3/5)
+            # EV calculation uses the shared payout tables from slips.py.
             from scipy.special import comb
             p, q = fair_prob, 1 - fair_prob
-            ev_5pick = (p**5 * 10 + comb(5,4)*p**4*q * 2 +
-                        comb(5,3)*p**3*q**2 * 0.4) - 1
-            # 6-pick Flex: 12.5x (6/6), 2x (5/6), 0.4x (4/6)
-            ev_6pick = (p**6 * 12.5 + comb(6,5)*p**5*q * 2 +
-                        comb(6,4)*p**4*q**2 * 0.4) - 1
+            payout_5 = get_payout_table("5_flex")
+            payout_6 = get_payout_table("6_flex")
+            ev_5pick = (
+                p**5 * payout_5.get(5, 0)
+                + comb(5, 4) * p**4 * q * payout_5.get(4, 0)
+                + comb(5, 3) * p**3 * q**2 * payout_5.get(3, 0)
+            ) - 1
+            ev_6pick = (
+                p**6 * payout_6.get(6, 0)
+                + comb(6, 5) * p**5 * q * payout_6.get(5, 0)
+                + comb(6, 4) * p**4 * q**2 * payout_6.get(4, 0)
+            ) - 1
 
             edges.append({
                 "player_name": pp_row["player_name"],

@@ -8,6 +8,7 @@ from src.predictor import (
     generate_prediction,
     project_batter_hits,
     project_batter_home_runs,
+    project_hits_runs_rbis,
     project_batter_runs,
     project_batter_rbis,
     project_batter_strikeouts,
@@ -146,9 +147,24 @@ class SyntheticProjectionSanityTests(unittest.TestCase):
         self.assertGreater(project_batter_hits(ELITE_BATTER)["projection"], project_batter_hits(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_runs(ELITE_BATTER)["projection"], project_batter_runs(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_rbis(ELITE_BATTER)["projection"], project_batter_rbis(TERRIBLE_BATTER)["projection"])
+        self.assertGreater(project_hits_runs_rbis(ELITE_BATTER)["projection"], project_hits_runs_rbis(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_home_runs(ELITE_BATTER)["projection"], project_batter_home_runs(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_total_bases(ELITE_BATTER)["projection"], project_batter_total_bases(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_stolen_bases(ELITE_BATTER)["projection"], project_batter_stolen_bases(TERRIBLE_BATTER)["projection"])
+
+    def test_hrrbi_gap_is_material_for_star_vs_scrub(self):
+        elite = project_hits_runs_rbis(ELITE_BATTER, lineup_pos=3)["projection"]
+        terrible = project_hits_runs_rbis(TERRIBLE_BATTER, lineup_pos=8)["projection"]
+        self.assertGreater(elite - terrible, 1.0)
+
+    def test_lineup_position_moves_runs_and_rbi_opportunity(self):
+        leadoff_runs = project_batter_runs(ELITE_BATTER, lineup_pos=1)["projection"]
+        cleanup_runs = project_batter_runs(ELITE_BATTER, lineup_pos=4)["projection"]
+        leadoff_rbi = project_batter_rbis(ELITE_BATTER, lineup_pos=1)["projection"]
+        cleanup_rbi = project_batter_rbis(ELITE_BATTER, lineup_pos=4)["projection"]
+
+        self.assertGreater(leadoff_runs, cleanup_runs)
+        self.assertGreater(cleanup_rbi, leadoff_rbi)
 
     def test_elite_batter_strikes_out_less_than_terrible_batter(self):
         elite_k = project_batter_strikeouts(ELITE_BATTER)["projection"]
