@@ -57,13 +57,19 @@ from src.matchups import get_platoon_split_adjustment
 from src.database import (
     save_projected_stats, get_projection_accuracy,
     get_projection_history, init_projected_stats_table,
-    get_calibration_data,
+    get_calibration_data, get_projection_diagnostics,
 )
 from src.kelly import calculate_slip_sizing
 from src.parlay_suggest import suggest_slips
 # drift module available for nightly cycle (not used in UI)
 from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matrix
-from src.board_logger import log_board_snapshot, mark_as_bet
+from src.board_logger import (
+    log_board_snapshot,
+    mark_as_bet,
+    ensure_shadow_sample,
+    get_board_stats,
+    get_shadow_sample_stats,
+)
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
 
@@ -922,7 +928,9 @@ with st.sidebar:
         )
         st.caption(f"{_sb_stats['wins']}W – {_sb_stats['losses']}L ({_sb_stats['total']} picks)")
 
-tab_edge, tab_news, tab_slips, tab_grade = st.tabs(["🎯 FIND EDGES", "📰 NEWS", "🎫 MY SLIPS", "✅ GRADE"])
+tab_edge, tab_news, tab_slips, tab_grade, tab_qa = st.tabs(
+    ["🎯 FIND EDGES", "📰 NEWS", "🎫 MY SLIPS", "✅ GRADE", "📈 MODEL QA"]
+)
 
 with tab_edge:
     api_key = get_api_key()
@@ -1577,6 +1585,18 @@ with tab_edge:
                     log_board_snapshot(preds, edges=all_edges)
                 except Exception:
                     pass
+                shadow_sample_results = []
+                try:
+                    for _game_date in sorted({
+                        p.get("game_date", date.today().isoformat())
+                        for p in preds
+                        if p.get("game_date")
+                    }):
+                        shadow_sample_results.append(
+                            ensure_shadow_sample(_game_date, sample_size=50)
+                        )
+                except Exception:
+                    shadow_sample_results = []
 
                 pdf = pd.DataFrame(preds).sort_values("confidence", ascending=False)
 
@@ -1596,6 +1616,14 @@ with tab_edge:
                     st.markdown(f'<div class="info-strip"><span class="hl">{confirmed_count}</span> picks confirmed by both sharp books and projection model</div>', unsafe_allow_html=True)
                 elif not all_edges:
                     st.markdown('<div class="warn-strip"><strong>No sharp lines</strong> — showing projection-only analysis. Add Odds API key for full edge detection.</div>', unsafe_allow_html=True)
+
+                if shadow_sample_results:
+                    _shadow_locked = sum(r.get("selected_now", 0) for r in shadow_sample_results)
+                    _shadow_total = sum(r.get("shadow_sample_size", 0) for r in shadow_sample_results)
+                    st.caption(
+                        f"Shadow QA sample locked: {_shadow_total} props across {len(shadow_sample_results)} game date(s)"
+                        + (f" ({_shadow_locked} newly selected this run)." if _shadow_locked else ".")
+                    )
 
                 top_plays = _derive_top_plays(scored_all, pdf)
                 _render_top_plays(top_plays)
@@ -2524,3 +2552,203 @@ with tab_grade:
             f'<div style="background:linear-gradient(145deg,#0d1526,#0a1020);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:0.5rem 0.8rem;overflow:hidden">{"".join(feed_rows[:20])}</div>',
             unsafe_allow_html=True
         )
+
+with tab_qa:
+    st.markdown('<div class="section-hdr">Model QA Dashboard</div>', unsafe_allow_html=True)
+    qa_days = st.selectbox("Evaluation window", [7, 14, 30, 60, 90], index=2, key="qa_window")
+
+    qa_projection = get_projection_diagnostics(days_back=qa_days)
+    qa_accuracy = get_projection_accuracy(days_back=qa_days)
+    qa_calibration = get_calibration_data(days_back=qa_days)
+    qa_board = get_board_stats(days=qa_days)
+    qa_shadow = get_shadow_sample_stats(days=qa_days)
+    qa_weights = load_current_weights()
+
+    model_version = qa_weights.get("version", "unknown")
+    st.caption(
+        f"Window: last {qa_days} days | Active weights: {model_version} | "
+        "Bias is actual minus projection, so positive means the model ran low."
+    )
+
+    q1, q2, q3, q4 = st.columns(4)
+    with q1:
+        total_proj = qa_projection.get("total", 0)
+        st.markdown(
+            f'<div class="card"><div class="lbl">Graded Projections</div><div class="val">{total_proj}</div><div class="sub">Full board tracking</div></div>',
+            unsafe_allow_html=True,
+        )
+    with q2:
+        mae_val = qa_projection.get("mae")
+        mae_str = f"{mae_val:.3f}" if isinstance(mae_val, (int, float)) else "-"
+        st.markdown(
+            f'<div class="card"><div class="lbl">MAE</div><div class="val">{mae_str}</div><div class="sub">Average absolute error</div></div>',
+            unsafe_allow_html=True,
+        )
+    with q3:
+        rmse_val = qa_projection.get("rmse")
+        rmse_str = f"{rmse_val:.3f}" if isinstance(rmse_val, (int, float)) else "-"
+        st.markdown(
+            f'<div class="card"><div class="lbl">RMSE</div><div class="val">{rmse_str}</div><div class="sub">Punishes larger misses</div></div>',
+            unsafe_allow_html=True,
+        )
+    with q4:
+        shadow_acc = qa_shadow.get("accuracy")
+        shadow_str = f"{shadow_acc * 100:.1f}%" if isinstance(shadow_acc, (int, float)) else "-"
+        st.markdown(
+            f'<div class="card card-b"><div class="lbl">Shadow Accuracy</div><div class="val b">{shadow_str}</div><div class="sub">{qa_shadow.get("graded", 0)} graded shadow picks</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    q5, q6, q7, q8 = st.columns(4)
+    with q5:
+        acc_val = qa_accuracy.get("accuracy")
+        acc_str = f"{acc_val * 100:.1f}%" if isinstance(acc_val, (int, float)) else "-"
+        st.markdown(
+            f'<div class="card"><div class="lbl">Pick Accuracy</div><div class="val">{acc_str}</div><div class="sub">Projected picks only</div></div>',
+            unsafe_allow_html=True,
+        )
+    with q6:
+        brier_val = qa_accuracy.get("brier_score")
+        brier_str = f"{brier_val:.3f}" if isinstance(brier_val, (int, float)) else "-"
+        st.markdown(
+            f'<div class="card"><div class="lbl">Brier</div><div class="val">{brier_str}</div><div class="sub">Lower is better</div></div>',
+            unsafe_allow_html=True,
+        )
+    with q7:
+        bias_val = qa_projection.get("bias")
+        bias_cls = "g" if isinstance(bias_val, (int, float)) and abs(bias_val) < 0.1 else ("r" if isinstance(bias_val, (int, float)) else "")
+        bias_str = f"{bias_val:+.3f}" if isinstance(bias_val, (int, float)) else "-"
+        st.markdown(
+            f'<div class="card"><div class="lbl">Bias</div><div class="val {bias_cls}">{bias_str}</div><div class="sub">Actual - projection</div></div>',
+            unsafe_allow_html=True,
+        )
+    with q8:
+        sel_bias = qa_board.get("selection_bias")
+        sel_str = f"{sel_bias * 100:+.1f}pp" if isinstance(sel_bias, (int, float)) else "-"
+        st.markdown(
+            f'<div class="card"><div class="lbl">Bet Selection Bias</div><div class="val">{sel_str}</div><div class="sub">Bet accuracy - non-bet accuracy</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    if qa_projection.get("total", 0) == 0:
+        st.info("No graded projection history yet. Once nightly grading runs on tracked dates, this tab will fill in.")
+    else:
+        st.markdown('<div class="section-hdr">Calibration</div>', unsafe_allow_html=True)
+        cal_df = pd.DataFrame(qa_calibration.get("buckets", []))
+        if not cal_df.empty:
+            cal_fig = go.Figure()
+            cal_fig.add_trace(go.Scatter(
+                x=[0.50, 0.75],
+                y=[0.50, 0.75],
+                mode="lines",
+                name="Perfect",
+                line=dict(color="rgba(255,255,255,0.25)", dash="dash"),
+            ))
+            cal_fig.add_trace(go.Scatter(
+                x=cal_df["predicted_mean"],
+                y=cal_df["actual_rate"],
+                mode="lines+markers+text",
+                text=cal_df["bucket"],
+                textposition="top center",
+                name="Observed",
+                line=dict(color="#4da6ff", width=3),
+                marker=dict(size=9, color="#00C853"),
+            ))
+            cal_fig.update_layout(
+                template="plotly_dark",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=10, r=10, t=20, b=10),
+                height=280,
+                xaxis_title="Predicted confidence",
+                yaxis_title="Actual win rate",
+                xaxis=dict(range=[0.49, 0.76]),
+                yaxis=dict(range=[0.40, 0.80]),
+            )
+            st.plotly_chart(cal_fig, width="stretch")
+            cal_display = cal_df.copy()
+            cal_display["predicted_mean"] = cal_display["predicted_mean"].map(lambda x: f"{x * 100:.1f}%")
+            cal_display["actual_rate"] = cal_display["actual_rate"].map(lambda x: f"{x * 100:.1f}%")
+            cal_display.columns = ["Bucket", "Predicted", "Actual", "Count"]
+            st.dataframe(cal_display, hide_index=True, width="stretch")
+        else:
+            st.caption("Not enough graded picks for a calibration curve in this window.")
+
+        st.markdown('<div class="section-hdr">Residuals By Prop</div>', unsafe_allow_html=True)
+        by_prop_rows = []
+        for prop_type, stats in sorted(qa_projection.get("by_stat_type", {}).items()):
+            board_prop = qa_board.get("by_prop", {}).get(prop_type, {})
+            shadow_prop = qa_shadow.get("by_prop", {}).get(prop_type, {})
+            by_prop_rows.append({
+                "Prop": prop_type,
+                "Count": stats.get("count", 0),
+                "MAE": stats.get("mae"),
+                "RMSE": stats.get("rmse"),
+                "Bias": stats.get("bias"),
+                "Accuracy": stats.get("accuracy"),
+                "Board Acc": board_prop.get("accuracy"),
+                "Shadow Acc": shadow_prop.get("accuracy"),
+            })
+        if by_prop_rows:
+            by_prop_df = pd.DataFrame(by_prop_rows).sort_values(["MAE", "Count"], ascending=[False, False])
+            for _col in ["MAE", "RMSE", "Bias"]:
+                by_prop_df[_col] = by_prop_df[_col].map(lambda x: f"{x:+.3f}" if _col == "Bias" and isinstance(x, (int, float)) else (f"{x:.3f}" if isinstance(x, (int, float)) else "-"))
+            for _col in ["Accuracy", "Board Acc", "Shadow Acc"]:
+                by_prop_df[_col] = by_prop_df[_col].map(lambda x: f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "-")
+            st.dataframe(by_prop_df, hide_index=True, width="stretch")
+
+        st.markdown('<div class="section-hdr">Board Coverage</div>', unsafe_allow_html=True)
+        bc1, bc2, bc3, bc4 = st.columns(4)
+        with bc1:
+            board_all = qa_board.get("accuracy_all")
+            st.metric("Board Accuracy", f"{board_all * 100:.1f}%" if isinstance(board_all, (int, float)) else "-")
+        with bc2:
+            bet_acc = qa_board.get("accuracy_bet")
+            st.metric("Bet Accuracy", f"{bet_acc * 100:.1f}%" if isinstance(bet_acc, (int, float)) else "-")
+        with bc3:
+            non_bet_acc = qa_board.get("accuracy_nobet")
+            st.metric("Non-Bet Accuracy", f"{non_bet_acc * 100:.1f}%" if isinstance(non_bet_acc, (int, float)) else "-")
+        with bc4:
+            st.metric("Shadow Pending", str(qa_shadow.get("pending", 0)))
+
+        st.markdown('<div class="section-hdr">Worst Misses</div>', unsafe_allow_html=True)
+        worst_df = pd.DataFrame(qa_projection.get("worst_misses", []))
+        if not worst_df.empty:
+            worst_df = worst_df.rename(columns={
+                "game_date": "Date",
+                "player_name": "Player",
+                "team": "Team",
+                "stat_type": "Prop",
+                "projected_value": "Projection",
+                "actual_value": "Actual",
+                "error": "Bias",
+                "line": "Line",
+                "pick": "Pick",
+                "confidence": "Confidence",
+            })
+            for _col in ["Projection", "Actual", "Bias", "Line"]:
+                worst_df[_col] = worst_df[_col].map(lambda x: f"{x:+.3f}" if _col == "Bias" and isinstance(x, (int, float)) else (f"{x:.3f}" if isinstance(x, (int, float)) else "-"))
+            worst_df["Confidence"] = worst_df["Confidence"].map(lambda x: f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "-")
+            st.dataframe(worst_df, hide_index=True, width="stretch")
+
+        st.markdown('<div class="section-hdr">Shadow Sample Review</div>', unsafe_allow_html=True)
+        shadow_rows_df = pd.DataFrame(qa_shadow.get("recent_rows", []))
+        if not shadow_rows_df.empty:
+            shadow_rows_df = shadow_rows_df.rename(columns={
+                "date": "Date",
+                "player_name": "Player",
+                "team": "Team",
+                "prop_type": "Prop",
+                "line": "Line",
+                "direction": "Pick",
+                "confidence": "Confidence",
+                "actual_stat": "Actual",
+                "outcome": "Outcome",
+                "was_bet": "Was Bet",
+            })
+            shadow_rows_df["Confidence"] = shadow_rows_df["Confidence"].map(lambda x: f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "-")
+            shadow_rows_df["Outcome"] = shadow_rows_df["Outcome"].map(lambda x: "W" if x == 1 else ("L" if x == 0 else "Pending"))
+            shadow_rows_df["Was Bet"] = shadow_rows_df["Was Bet"].map(lambda x: "Yes" if x == 1 else "No")
+            st.dataframe(shadow_rows_df, hide_index=True, width="stretch")
+        else:
+            st.caption("Shadow sample rows will appear here after the board has been logged and graded.")

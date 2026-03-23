@@ -536,6 +536,88 @@ def get_projection_accuracy(days_back: int = 30) -> dict:
     }
 
 
+def get_projection_diagnostics(days_back: int = 30) -> dict:
+    """Return residual-based diagnostics for graded projected stats."""
+    conn = get_connection()
+    graded = pd.read_sql_query(
+        """
+        SELECT game_date, player_name, team, stat_type, projected_value, actual_value,
+               line, pick, confidence, rating, was_correct
+        FROM projected_stats
+        WHERE actual_value IS NOT NULL
+          AND game_date >= date('now', '-' || ? || ' days')
+        ORDER BY game_date DESC, player_name ASC
+        """,
+        conn,
+        params=(days_back,),
+    )
+    conn.close()
+
+    if graded.empty:
+        return {
+            "total": 0,
+            "mae": None,
+            "rmse": None,
+            "bias": None,
+            "accuracy": None,
+            "by_stat_type": {},
+            "worst_misses": [],
+            "daily_summary": [],
+        }
+
+    graded = graded.copy()
+    graded["error"] = graded["actual_value"] - graded["projected_value"]
+    graded["abs_error"] = graded["error"].abs()
+    graded["sq_error"] = graded["error"] ** 2
+
+    overall = {
+        "total": int(len(graded)),
+        "mae": float(graded["abs_error"].mean()),
+        "rmse": float(np.sqrt(graded["sq_error"].mean())),
+        "bias": float(graded["error"].mean()),
+        "accuracy": float(graded["was_correct"].dropna().mean()) if graded["was_correct"].notna().any() else None,
+    }
+
+    by_stat_type = {}
+    for stat_type, subset in graded.groupby("stat_type"):
+        by_stat_type[stat_type] = {
+            "count": int(len(subset)),
+            "mae": float(subset["abs_error"].mean()),
+            "rmse": float(np.sqrt(subset["sq_error"].mean())),
+            "bias": float(subset["error"].mean()),
+            "accuracy": float(subset["was_correct"].dropna().mean()) if subset["was_correct"].notna().any() else None,
+        }
+
+    worst = (
+        graded.sort_values("abs_error", ascending=False)
+        .head(15)[[
+            "game_date", "player_name", "team", "stat_type",
+            "projected_value", "actual_value", "error", "line", "pick", "confidence"
+        ]]
+        .to_dict("records")
+    )
+
+    daily_summary = []
+    for game_date, subset in graded.groupby("game_date"):
+        daily_summary.append({
+            "game_date": game_date,
+            "count": int(len(subset)),
+            "mae": float(subset["abs_error"].mean()),
+            "rmse": float(np.sqrt(subset["sq_error"].mean())),
+            "bias": float(subset["error"].mean()),
+            "accuracy": float(subset["was_correct"].dropna().mean()) if subset["was_correct"].notna().any() else None,
+        })
+
+    daily_summary.sort(key=lambda row: row["game_date"], reverse=True)
+
+    return {
+        **overall,
+        "by_stat_type": by_stat_type,
+        "worst_misses": worst,
+        "daily_summary": daily_summary,
+    }
+
+
 def get_projection_history(player_name: str, stat_type: str, limit: int = 20) -> list:
     """Get recent projections vs actuals for a player and stat type.
 

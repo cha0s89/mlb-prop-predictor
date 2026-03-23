@@ -9,12 +9,42 @@ Tables:
   daily_board — one row per evaluated prop/direction
 """
 
+import hashlib
 import sqlite3
 import pandas as pd
-from datetime import date, datetime
-from typing import Optional, List, Dict
+import numpy as np
+from datetime import date, datetime, timezone
+from typing import List, Dict
 
 from src.database import get_connection, resolve_game_date
+
+
+def _ensure_column(conn, table_name: str, column_name: str, column_def: str) -> None:
+    cols = {
+        row[1]
+        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in cols:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+
+
+def _confidence_bucket(confidence: float) -> str:
+    if confidence is None:
+        return "50-55%"
+    if confidence < 0.55:
+        return "50-55%"
+    if confidence < 0.60:
+        return "55-60%"
+    if confidence < 0.65:
+        return "60-65%"
+    if confidence < 0.70:
+        return "65-70%"
+    return "70%+"
+
+
+def _shadow_seed(game_date: str) -> int:
+    digest = hashlib.md5(str(game_date).encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
 
 
 def init_board_table():
@@ -42,6 +72,9 @@ def init_board_table():
             model_version TEXT,
             line_type TEXT DEFAULT 'standard',
             edge_source TEXT,
+            is_shadow_sample INTEGER DEFAULT 0,
+            shadow_bucket TEXT,
+            shadow_selected_at TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -50,6 +83,9 @@ def init_board_table():
         CREATE INDEX IF NOT EXISTS idx_board_prop ON daily_board(prop_type);
         CREATE INDEX IF NOT EXISTS idx_board_outcome ON daily_board(outcome);
     """)
+    _ensure_column(conn, "daily_board", "is_shadow_sample", "INTEGER DEFAULT 0")
+    _ensure_column(conn, "daily_board", "shadow_bucket", "TEXT")
+    _ensure_column(conn, "daily_board", "shadow_selected_at", "TEXT")
     conn.execute("""
         DELETE FROM daily_board
         WHERE id NOT IN (
@@ -235,6 +271,199 @@ def get_board_stats(days: int = 30) -> Dict:
             }
             for prop, p_df in df.groupby("prop_type")
         },
+    }
+
+
+def ensure_shadow_sample(game_date: str, sample_size: int = 50) -> Dict:
+    """Select a stable, stratified random QA sample from the daily board."""
+    conn = get_connection()
+    df = pd.read_sql_query(
+        """
+        SELECT id, prop_type, direction, confidence, line, line_type, is_shadow_sample
+        FROM daily_board
+        WHERE date = ?
+        ORDER BY id
+        """,
+        conn,
+        params=(game_date,),
+    )
+
+    if df.empty:
+        conn.close()
+        return {
+            "game_date": game_date,
+            "available": 0,
+            "shadow_sample_size": 0,
+            "selected_now": 0,
+            "status": "no_rows",
+        }
+
+    target = min(sample_size, len(df))
+    existing = df[df["is_shadow_sample"] == 1].copy()
+    if len(existing) >= target:
+        conn.close()
+        return {
+            "game_date": game_date,
+            "available": int(len(df)),
+            "shadow_sample_size": int(len(existing)),
+            "selected_now": 0,
+            "status": "already_selected",
+        }
+
+    remaining = df[df["is_shadow_sample"] != 1].copy()
+    if remaining.empty:
+        conn.close()
+        return {
+            "game_date": game_date,
+            "available": int(len(df)),
+            "shadow_sample_size": int(len(existing)),
+            "selected_now": 0,
+            "status": "no_remaining_rows",
+        }
+
+    seed = _shadow_seed(game_date)
+    rng = np.random.default_rng(seed)
+    remaining["confidence_bucket"] = remaining["confidence"].apply(_confidence_bucket)
+    remaining["line_bucket"] = remaining["line"].apply(lambda x: "0.5" if x <= 0.5 else ("1.5-2.5" if x <= 2.5 else "3.0+"))
+    remaining["shadow_bucket"] = remaining.apply(
+        lambda row: f"{row['prop_type']}|{row['direction']}|{row['confidence_bucket']}|{row['line_bucket']}",
+        axis=1,
+    )
+    remaining["_rand"] = rng.random(len(remaining))
+
+    needed = target - len(existing)
+    selected_parts = []
+
+    strata = (
+        remaining.groupby("shadow_bucket", dropna=False)
+        .size()
+        .reset_index(name="count")
+    )
+    if not strata.empty:
+        strata["_rand"] = rng.random(len(strata))
+        strata = strata.sort_values(["count", "_rand"], ascending=[False, True])
+        for stratum in strata["shadow_bucket"].tolist():
+            if sum(len(part) for part in selected_parts) >= needed:
+                break
+            group = remaining[remaining["shadow_bucket"] == stratum].sort_values("_rand")
+            if not group.empty:
+                selected_parts.append(group.head(1))
+
+    selected_df = pd.concat(selected_parts, ignore_index=True) if selected_parts else remaining.iloc[0:0].copy()
+    if len(selected_df) < needed:
+        selected_ids = set(selected_df["id"].tolist())
+        pool = remaining[~remaining["id"].isin(selected_ids)].copy()
+        if not pool.empty:
+            stratum_sizes = pool.groupby("shadow_bucket")["id"].transform("count").clip(lower=1)
+            weights = 1.0 / stratum_sizes
+            fill_n = min(needed - len(selected_df), len(pool))
+            fill_df = pool.sample(
+                n=fill_n,
+                weights=weights,
+                random_state=seed,
+                replace=False,
+            )
+            selected_df = pd.concat([selected_df, fill_df], ignore_index=True)
+
+    selected_df = selected_df.drop_duplicates(subset=["id"]).head(needed)
+    if selected_df.empty:
+        conn.close()
+        return {
+            "game_date": game_date,
+            "available": int(len(df)),
+            "shadow_sample_size": int(len(existing)),
+            "selected_now": 0,
+            "status": "selection_failed",
+        }
+
+    selected_at = datetime.now(timezone.utc).isoformat()
+    conn.executemany(
+        """
+        UPDATE daily_board
+        SET is_shadow_sample = 1,
+            shadow_bucket = ?,
+            shadow_selected_at = ?
+        WHERE id = ?
+        """,
+        [
+            (row["shadow_bucket"], selected_at, int(row["id"]))
+            for _, row in selected_df.iterrows()
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "game_date": game_date,
+        "available": int(len(df)),
+        "shadow_sample_size": int(len(existing) + len(selected_df)),
+        "selected_now": int(len(selected_df)),
+        "status": "selected",
+    }
+
+
+def get_shadow_sample_stats(days: int = 30) -> Dict:
+    """Return QA metrics for the stratified random shadow sample."""
+    conn = get_connection()
+    df = pd.read_sql_query(
+        """
+        SELECT date, player_name, team, prop_type, line, direction, confidence,
+               grade, projection, actual_stat, outcome, shadow_bucket, was_bet
+        FROM daily_board
+        WHERE date >= date('now', ? || ' days')
+          AND is_shadow_sample = 1
+        ORDER BY date DESC, id DESC
+        """,
+        conn,
+        params=(f"-{days}",),
+    )
+    conn.close()
+
+    if df.empty:
+        return {
+            "total_sampled": 0,
+            "graded": 0,
+            "pending": 0,
+            "accuracy": None,
+            "by_prop": {},
+            "by_confidence_bucket": [],
+            "recent_rows": [],
+        }
+
+    graded = df[df["outcome"].notna()].copy()
+    graded["confidence_bucket"] = graded["confidence"].apply(_confidence_bucket)
+    accuracy = float(graded["outcome"].mean()) if not graded.empty else None
+
+    by_prop = {}
+    if not graded.empty:
+        for prop_type, subset in graded.groupby("prop_type"):
+            by_prop[prop_type] = {
+                "count": int(len(subset)),
+                "accuracy": float(subset["outcome"].mean()),
+            }
+
+    by_conf = []
+    if not graded.empty:
+        for bucket, subset in graded.groupby("confidence_bucket"):
+            by_conf.append({
+                "bucket": bucket,
+                "count": int(len(subset)),
+                "predicted_mean": float(subset["confidence"].mean()),
+                "actual_rate": float(subset["outcome"].mean()),
+            })
+        by_conf.sort(key=lambda row: row["bucket"])
+
+    recent_cols = ["date", "player_name", "team", "prop_type", "line", "direction", "confidence", "actual_stat", "outcome", "was_bet"]
+    recent_rows = df[recent_cols].head(25).to_dict("records")
+
+    return {
+        "total_sampled": int(len(df)),
+        "graded": int(len(graded)),
+        "pending": int(len(df) - len(graded)),
+        "accuracy": accuracy,
+        "by_prop": by_prop,
+        "by_confidence_bucket": by_conf,
+        "recent_rows": recent_rows,
     }
 
 

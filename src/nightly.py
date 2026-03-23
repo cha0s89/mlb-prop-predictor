@@ -25,8 +25,8 @@ from src.autolearn import run_adjustment_cycle
 from src.ensemble import update_ensemble_weights
 from src.drift import check_model_health
 from src.clv import compute_clv_stats
-from src.board_logger import get_board_stats
-from src.database import get_connection, get_graded_predictions
+from src.board_logger import get_board_stats, ensure_shadow_sample, get_shadow_sample_stats
+from src.database import get_connection, get_graded_predictions, get_projection_diagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,14 @@ def run_nightly_cycle(target_date: str = None) -> dict:
         "drift_alerts": [],
         "calibration_warnings": [],
     }
+
+    # Shadow QA sample should exist for every board date so we can track an
+    # unbiased daily slice even if the app was only run once.
+    try:
+        results["phase_results"]["shadow_sample"] = ensure_shadow_sample(target_date, sample_size=50)
+    except Exception as e:
+        logger.error("Shadow sample selection failed: %s", e, exc_info=True)
+        results["errors"].append(f"Shadow sample selection failed: {e}")
 
     # ── PHASE 1: AUTO-GRADE ──────────────────────────────────
     try:
@@ -166,8 +174,18 @@ def _phase2_compute_metrics() -> dict:
 
     # Also get board-level stats (all props, not just bets)
     board = {}
+    projection_diag = {}
+    shadow = {}
     try:
         board = get_board_stats(days=30)
+    except Exception:
+        pass
+    try:
+        projection_diag = get_projection_diagnostics(days_back=30)
+    except Exception:
+        pass
+    try:
+        shadow = get_shadow_sample_stats(days=30)
     except Exception:
         pass
 
@@ -183,6 +201,8 @@ def _phase2_compute_metrics() -> dict:
         "kill_switch": raw.get("kill_switch", {}),
         "changes": raw.get("changes", []),
         "board_stats": board,
+        "projection_diagnostics": projection_diag,
+        "shadow_sample": shadow,
     }
 
 
