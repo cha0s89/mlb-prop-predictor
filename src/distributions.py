@@ -260,9 +260,7 @@ def prob_over_gamma(line: float, mu: float, var_ratio: float) -> float:
     """P(X >= line) using Gamma CDF with continuity correction."""
     if mu <= 0:
         return 0.0
-    var = mu * var_ratio
-    shape = (mu ** 2) / max(var, 0.01)
-    scale = max(var, 0.01) / max(mu, 0.001)
+    shape, scale = gamma_shape_scale(mu, var_ratio)
     return float(1 - gamma.cdf(line + 0.5, shape, scale=scale))
 
 
@@ -270,9 +268,7 @@ def prob_under_gamma(line: float, mu: float, var_ratio: float) -> float:
     """P(X <= line) using Gamma CDF with continuity correction."""
     if mu <= 0:
         return 1.0
-    var = mu * var_ratio
-    shape = (mu ** 2) / max(var, 0.01)
-    scale = max(var, 0.01) / max(mu, 0.001)
+    shape, scale = gamma_shape_scale(mu, var_ratio)
     return float(gamma.cdf(line - 0.5, shape, scale=scale))
 
 
@@ -280,14 +276,136 @@ def prob_under_gamma(line: float, mu: float, var_ratio: float) -> float:
 
 def prob_over_normal(line: float, mu: float, var_ratio: float) -> float:
     """P(X >= line) using Normal CDF with continuity correction."""
-    sigma = max(np.sqrt(mu * var_ratio), 0.25)
+    sigma = normal_sigma(mu, var_ratio)
     return float(1 - norm.cdf(line + 0.5, loc=mu, scale=sigma))
 
 
 def prob_under_normal(line: float, mu: float, var_ratio: float) -> float:
     """P(X <= line) using Normal CDF with continuity correction."""
-    sigma = max(np.sqrt(mu * var_ratio), 0.25)
+    sigma = normal_sigma(mu, var_ratio)
     return float(norm.cdf(line - 0.5, loc=mu, scale=sigma))
+
+
+def gamma_shape_scale(mu: float, var_ratio: float) -> tuple[float, float]:
+    """Return shape/scale parameters for a Gamma distribution."""
+    var = max(mu * var_ratio, 0.01)
+    shape = (mu ** 2) / var
+    scale = var / max(mu, 0.001)
+    return shape, scale
+
+
+def normal_sigma(mu: float, var_ratio: float) -> float:
+    """Return sigma for approximately normal props."""
+    return max(np.sqrt(max(mu, 0.01) * var_ratio), 0.25)
+
+
+def is_discrete_distribution(dist_type: str) -> bool:
+    """Return True when the routed distribution is discrete."""
+    return dist_type in {"betabinom", "negbin", "poisson", "binary"}
+
+
+def _distribution_cdf(value: float, mu: float, dist_type: str,
+                      var_ratio: float = 1.5, phi: float = 25,
+                      n_batters: int = None,
+                      bb_alpha: float = None, bb_beta: float = None) -> float:
+    """Internal CDF helper used by percentile/tail calculations."""
+    if dist_type == "betabinom":
+        if bb_alpha is not None and bb_beta is not None and n_batters:
+            return float(betabinom.cdf(value, n_batters, bb_alpha, bb_beta))
+        if n_batters and n_batters > 0 and mu > 0:
+            k_rate = mu / n_batters
+            alpha, beta = betabinom_params(k_rate, phi)
+            return float(betabinom.cdf(value, n_batters, alpha, beta))
+        return float(poisson.cdf(value, mu))
+
+    if dist_type == "negbin":
+        params = negbin_from_mu(mu, var_ratio)
+        if params is None:
+            return float(poisson.cdf(value, mu))
+        return float(nbinom.cdf(value, params[0], params[1]))
+
+    if dist_type == "poisson":
+        return float(poisson.cdf(value, mu))
+
+    if dist_type == "gamma":
+        shape, scale = gamma_shape_scale(mu, var_ratio)
+        return float(gamma.cdf(value, shape, scale=scale))
+
+    if dist_type == "normal":
+        sigma = normal_sigma(mu, var_ratio)
+        return float(norm.cdf(value, loc=mu, scale=sigma))
+
+    if dist_type == "binary":
+        p_one = min(1.0, max(0.0, mu))
+        if value < 0:
+            return 0.0
+        if value < 1:
+            return 1.0 - p_one
+        return 1.0
+
+    return float(poisson.cdf(value, mu))
+
+
+def distribution_quantile(prob: float, mu: float, dist_type: str,
+                          var_ratio: float = 1.5, phi: float = 25,
+                          n_batters: int = None,
+                          bb_alpha: float = None, bb_beta: float = None) -> float:
+    """Return a percentile/quantile for the configured distribution."""
+    q = min(max(float(prob), 0.0), 1.0)
+
+    if dist_type == "betabinom":
+        if bb_alpha is not None and bb_beta is not None and n_batters:
+            return float(betabinom.ppf(q, n_batters, bb_alpha, bb_beta))
+        if n_batters and n_batters > 0 and mu > 0:
+            k_rate = mu / n_batters
+            alpha, beta = betabinom_params(k_rate, phi)
+            return float(betabinom.ppf(q, n_batters, alpha, beta))
+        return float(poisson.ppf(q, mu))
+
+    if dist_type == "negbin":
+        params = negbin_from_mu(mu, var_ratio)
+        if params is None:
+            return float(poisson.ppf(q, mu))
+        return float(nbinom.ppf(q, params[0], params[1]))
+
+    if dist_type == "poisson":
+        return float(poisson.ppf(q, mu))
+
+    if dist_type == "gamma":
+        shape, scale = gamma_shape_scale(mu, var_ratio)
+        return float(gamma.ppf(q, shape, scale=scale))
+
+    if dist_type == "normal":
+        sigma = normal_sigma(mu, var_ratio)
+        return float(norm.ppf(q, loc=mu, scale=sigma))
+
+    if dist_type == "binary":
+        p_one = min(1.0, max(0.0, mu))
+        return 0.0 if q <= (1.0 - p_one) else 1.0
+
+    return float(poisson.ppf(q, mu))
+
+
+def prob_at_least(threshold: float, mu: float, dist_type: str,
+                  var_ratio: float = 1.5, phi: float = 25,
+                  n_batters: int = None,
+                  bb_alpha: float = None, bb_beta: float = None) -> float:
+    """Return P(X >= threshold) with inclusive semantics."""
+    if is_discrete_distribution(dist_type):
+        cutoff = np.ceil(threshold) - 1
+        return float(1.0 - _distribution_cdf(cutoff, mu, dist_type, var_ratio, phi, n_batters, bb_alpha, bb_beta))
+    return float(1.0 - _distribution_cdf(threshold, mu, dist_type, var_ratio, phi, n_batters, bb_alpha, bb_beta))
+
+
+def prob_at_most(threshold: float, mu: float, dist_type: str,
+                 var_ratio: float = 1.5, phi: float = 25,
+                 n_batters: int = None,
+                 bb_alpha: float = None, bb_beta: float = None) -> float:
+    """Return P(X <= threshold) with inclusive semantics."""
+    if is_discrete_distribution(dist_type):
+        cutoff = np.floor(threshold)
+        return float(_distribution_cdf(cutoff, mu, dist_type, var_ratio, phi, n_batters, bb_alpha, bb_beta))
+    return float(_distribution_cdf(threshold, mu, dist_type, var_ratio, phi, n_batters, bb_alpha, bb_beta))
 
 
 # === UNIFIED PROBABILITY ROUTER ===

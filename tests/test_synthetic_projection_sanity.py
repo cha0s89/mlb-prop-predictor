@@ -204,6 +204,65 @@ class SyntheticProjectionSanityTests(unittest.TestCase):
             expected_pick = "MORE" if result["p_over"] >= result["p_under"] else "LESS"
             self.assertEqual(result["pick"], expected_pick)
 
+    def test_tail_metrics_are_present_and_ordered(self):
+        result = generate_prediction(
+            player_name=ELITE_BATTER["name"],
+            stat_type="Total Bases",
+            stat_internal="total_bases",
+            line=1.5,
+            batter_profile=ELITE_BATTER,
+            lineup_pos=2,
+        )
+
+        self.assertLessEqual(result["p10"], result["p50"])
+        self.assertLessEqual(result["p50"], result["p90"])
+        self.assertIn(result["breakout_watch"], {"Low", "Medium", "High"})
+        self.assertIn(result["dud_risk"], {"Low", "Medium", "High"})
+        self.assertGreaterEqual(result["breakout_prob"], 0.0)
+        self.assertLessEqual(result["breakout_prob"], 1.0)
+        self.assertGreaterEqual(result["dud_prob"], 0.0)
+        self.assertLessEqual(result["dud_prob"], 1.0)
+
+    def test_elite_batter_has_more_ceiling_and_less_dud_risk_than_terrible_batter(self):
+        elite = generate_prediction(
+            player_name=ELITE_BATTER["name"],
+            stat_type="Total Bases",
+            stat_internal="total_bases",
+            line=1.5,
+            batter_profile=ELITE_BATTER,
+            lineup_pos=2,
+        )
+        terrible = generate_prediction(
+            player_name=TERRIBLE_BATTER["name"],
+            stat_type="Total Bases",
+            stat_internal="total_bases",
+            line=1.5,
+            batter_profile=TERRIBLE_BATTER,
+            lineup_pos=8,
+        )
+
+        self.assertGreater(elite["breakout_prob"], terrible["breakout_prob"])
+        self.assertLess(elite["dud_prob"], terrible["dud_prob"])
+
+    def test_elite_pitcher_has_better_low_er_tail_than_terrible_pitcher(self):
+        elite = generate_prediction(
+            player_name=ELITE_PITCHER["name"],
+            stat_type="Earned Runs",
+            stat_internal="earned_runs",
+            line=2.5,
+            pitcher_profile=ELITE_PITCHER,
+        )
+        terrible = generate_prediction(
+            player_name=TERRIBLE_PITCHER["name"],
+            stat_type="Earned Runs",
+            stat_internal="earned_runs",
+            line=2.5,
+            pitcher_profile=TERRIBLE_PITCHER,
+        )
+
+        self.assertGreater(elite["breakout_prob"], terrible["breakout_prob"])
+        self.assertLess(elite["dud_prob"], terrible["dud_prob"])
+
     def test_half_line_count_props_can_legitimately_project_above_line_and_still_be_less(self):
         result = generate_prediction(
             player_name=TERRIBLE_BATTER["name"],

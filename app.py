@@ -1937,6 +1937,27 @@ with tab_edge:
                         edge_val = _safe_num(pick_row.get('edge'), 0) * 100
                         edge_pct = f"{edge_val:.1f}%"
                         proj = _safe_num(pick_row.get('projection'), 0)
+                        breakout_watch = _safe(pick_row.get("breakout_watch"), "Low")
+                        dud_risk = _safe(pick_row.get("dud_risk"), "Low")
+                        tail_badges = []
+                        if breakout_watch in ("Medium", "High"):
+                            tail_color = "#00C853" if breakout_watch == "High" else "#29B6F6"
+                            tail_badges.append(
+                                f'<span style="font-size:0.64rem;padding:0.12rem 0.35rem;border-radius:999px;'
+                                f'background:rgba(0,200,83,0.10);color:{tail_color};border:1px solid rgba(0,200,83,0.20);">'
+                                f'Ceiling {breakout_watch}</span>'
+                            )
+                        if dud_risk in ("Medium", "High"):
+                            dud_color = "#FFB300" if dud_risk == "Medium" else "#FF5252"
+                            tail_badges.append(
+                                f'<span style="font-size:0.64rem;padding:0.12rem 0.35rem;border-radius:999px;'
+                                f'background:rgba(255,82,82,0.10);color:{dud_color};border:1px solid rgba(255,82,82,0.18);">'
+                                f'Dud {dud_risk}</span>'
+                            )
+                        tail_badges_html = (
+                            f'<div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.45rem;">{"".join(tail_badges)}</div>'
+                            if tail_badges else ""
+                        )
 
                         pick_card_html = f'''<div class="pick-card {pick_cls}">
                             <div class="pick-card-header">
@@ -1955,6 +1976,7 @@ with tab_edge:
                                 <div class="conf-track" style="flex:1"><div class="conf-fill {"high" if conf_val>0.6 else ("med" if conf_val>0.52 else "low")}" style="width:{min(conf_pct,100)}%"></div></div>
                                 <span class="pick-card-conf-label">{conf_pct}%</span>
                             </div>
+                            {tail_badges_html}
                         </div>'''
                         st.markdown(pick_card_html, unsafe_allow_html=True)
 
@@ -2005,6 +2027,29 @@ with tab_edge:
                                 diff_color = "#00C853" if (diff > 0 and pick_row["pick"] == "MORE") or (diff < 0 and pick_row["pick"] == "LESS") else "#FF4444"
                                 st.markdown(f'**{pick_row["stat_type"]}:** <span style="font-family:JetBrains Mono;font-weight:700;color:{diff_color}">{proj_val:.2f}</span> vs line {line_val}  ({"+" if diff>=0 else ""}{diff:.2f})', unsafe_allow_html=True)
                                 st.markdown(f"**Confidence:** {conf_pct}% · **Edge:** +{edge_pct}")
+                                p10_val = _safe_num(pick_row.get("p10"), proj_val)
+                                p50_val = _safe_num(pick_row.get("p50"), proj_val)
+                                p90_val = _safe_num(pick_row.get("p90"), proj_val)
+                                st.markdown(f"**Distribution:** P10 {p10_val:.2f} · Median {p50_val:.2f} · P90 {p90_val:.2f}")
+                                breakout_prob = _safe_num(pick_row.get("breakout_prob"), 0.0) * 100
+                                dud_prob = _safe_num(pick_row.get("dud_prob"), 0.0) * 100
+                                breakout_target = pick_row.get("breakout_target")
+                                dud_target = pick_row.get("dud_target")
+                                tail_lines = []
+                                if breakout_target is not None:
+                                    tail_lines.append(
+                                        f"**Breakout Watch:** {breakout_watch} ({breakout_prob:.1f}% for "
+                                        + (f"{pick_row['stat_type']} >= {breakout_target}" if _si not in ('earned_runs', 'walks_allowed', 'hits_allowed', 'batter_strikeouts') else f"{pick_row['stat_type']} <= {breakout_target}")
+                                        + ")"
+                                    )
+                                if dud_target is not None:
+                                    tail_lines.append(
+                                        f"**Dud Risk:** {dud_risk} ({dud_prob:.1f}% for "
+                                        + (f"{pick_row['stat_type']} <= {dud_target}" if _si not in ('earned_runs', 'walks_allowed', 'hits_allowed', 'batter_strikeouts') else f"{pick_row['stat_type']} >= {dud_target}")
+                                        + ")"
+                                    )
+                                if tail_lines:
+                                    st.markdown("  \n".join(tail_lines))
                                 if _bat_ord:
                                     _pa_mult = _safe_num(pick_row.get('pa_multiplier'), 1.0)
                                     st.markdown(f"**PA Multiplier:** {_pa_mult:.2f}x (lineup spot #{_bat_ord})")

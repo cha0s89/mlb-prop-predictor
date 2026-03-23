@@ -6,7 +6,13 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.offline_tuner import evaluate_floors, optimize_confidence_floors
+from src.autolearn import get_baseline_weights
+from src.offline_tuner import (
+    evaluate_floors,
+    evaluate_model_weights,
+    optimize_confidence_floors,
+    optimize_model_parameters,
+)
 
 
 class OfflineTunerTests(unittest.TestCase):
@@ -60,6 +66,50 @@ class OfflineTunerTests(unittest.TestCase):
         self.assertEqual(report["available"], 2)
         self.assertAlmostEqual(report["coverage_pct"], 0.5, places=3)
         self.assertAlmostEqual(report["accuracy"], 1.0, places=3)
+
+    def test_model_tuner_pushes_offset_toward_systematic_underprojection(self):
+        rows = []
+        for i in range(220):
+            rows.append({
+                "game_date": pd.Timestamp("2025-04-01") + pd.Timedelta(days=i // 10),
+                "prop_type": "hits",
+                "projection": 0.90,
+                "line": 1.5,
+                "actual": 1.30 + (0.2 if i % 2 else -0.1),
+            })
+        train_df = pd.DataFrame(rows)
+        train_df["actual_over"] = (train_df["actual"] > train_df["line"]).astype(float)
+
+        tuned = optimize_model_parameters(train_df, get_baseline_weights())
+
+        self.assertGreater(tuned["weights"]["prop_type_offsets"]["hits"], 0.0)
+
+    def test_model_weight_evaluation_returns_projection_and_probability_metrics(self):
+        df = pd.DataFrame([
+            {
+                "game_date": pd.Timestamp("2025-06-01"),
+                "prop_type": "total_bases",
+                "projection": 1.8,
+                "line": 1.5,
+                "actual": 3.0,
+                "actual_over": 1.0,
+            },
+            {
+                "game_date": pd.Timestamp("2025-06-01"),
+                "prop_type": "total_bases",
+                "projection": 1.1,
+                "line": 1.5,
+                "actual": 0.0,
+                "actual_over": 0.0,
+            },
+        ])
+
+        metrics = evaluate_model_weights(df, get_baseline_weights())
+
+        self.assertEqual(metrics["rows"], 2)
+        self.assertIn("log_loss", metrics)
+        self.assertIn("mae", metrics)
+        self.assertIn("total_bases", metrics["by_prop"])
 
 
 if __name__ == "__main__":

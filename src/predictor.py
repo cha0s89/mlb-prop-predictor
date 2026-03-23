@@ -44,15 +44,60 @@ from src import distributions
 _WEIGHTS_CACHE = {}
 _CALIBRATION_CACHE = {}
 
-# v017: Per-prop empirical calibration blend weights.
-# Optimized via grid search on 128K+ backtest predictions.
-# Hits: theoretical already optimal. TB/FS/PK: empirical blend improves
-# accuracy by correcting distribution model biases and dead zones.
-CALIBRATION_BLEND_WEIGHTS = {
+DEFAULT_CALIBRATION_BLEND_WEIGHTS = {
     "hits": 0.0,                    # Theoretical optimal (72.5%)
     "total_bases": 0.90,            # 56.1% → 65.8% with empirical + floors
-    "pitcher_strikeouts": 0.50,     # 69.4% → 70.9% with 50% empirical blend
+    "pitcher_strikeouts": 0.0,
     "hitter_fantasy_score": 1.0,    # 58.0% → 61.7% with full empirical
+}
+DEFAULT_CONFIDENCE_SHRINKAGE = 0.70
+
+DIST_DEFAULTS = {
+    "pitcher_strikeouts": ("betabinom", 2.2),
+    "hits": ("negbin", 2.2),
+    "total_bases": ("negbin", 2.5),
+    "stolen_bases": ("negbin", 2.5),
+    "hitter_fantasy_score": ("gamma", 4.0),
+    "earned_runs": ("negbin", 2.2),
+    "batter_strikeouts": ("negbin", 1.4),
+    "walks_allowed": ("negbin", 1.6),
+    "hits_allowed": ("negbin", 1.5),
+    "rbis": ("negbin", 1.8),
+    "runs": ("negbin", 1.7),
+    "walks": ("negbin", 1.5),
+    "singles": ("negbin", 1.3),
+    "doubles": ("negbin", 1.6),
+    "pitching_outs": ("normal", 1.3),
+    "hits_runs_rbis": ("normal", 1.5),
+    "home_runs": ("negbin", 2.0),
+}
+
+TAIL_SIGNAL_DEFAULTS = {
+    "label_thresholds": {
+        "breakout_medium": 0.10,
+        "breakout_high": 0.20,
+        "dud_medium": 0.20,
+        "dud_high": 0.35,
+    },
+    "prop_thresholds": {
+        "hits": {"good_over": 3, "bad_under": 0},
+        "total_bases": {"good_over": 4, "bad_under": 0},
+        "home_runs": {"good_over": 2, "bad_under": 0},
+        "rbis": {"good_over": 3, "bad_under": 0},
+        "runs": {"good_over": 2, "bad_under": 0},
+        "stolen_bases": {"good_over": 2, "bad_under": 0},
+        "walks": {"good_over": 2, "bad_under": 0},
+        "singles": {"good_over": 2, "bad_under": 0},
+        "doubles": {"good_over": 2, "bad_under": 0},
+        "hitter_fantasy_score": {"good_over": 14, "bad_under": 3},
+        "hits_runs_rbis": {"good_over": 4, "bad_under": 0},
+        "pitcher_strikeouts": {"good_over": 8, "bad_under": 4},
+        "pitching_outs": {"good_over": 21, "bad_under": 15},
+        "earned_runs": {"good_under": 1, "bad_over": 4},
+        "walks_allowed": {"good_under": 1, "bad_over": 3},
+        "hits_allowed": {"good_under": 4, "bad_over": 8},
+        "batter_strikeouts": {"good_under": 0, "bad_over": 3},
+    },
 }
 
 
@@ -88,6 +133,84 @@ def _load_calibration() -> dict:
     except (FileNotFoundError, json.JSONDecodeError):
         pass
     return _CALIBRATION_CACHE
+
+
+def _get_calibration_blend_weights(weights: Optional[dict] = None) -> dict:
+    """Return configured empirical blend weights with safe defaults."""
+    weights = weights or _load_weights()
+    configured = weights.get("calibration_blend_weights")
+    if not configured:
+        configured = weights.get("metadata", {}).get("calibration_blend_weights", {})
+
+    merged = dict(DEFAULT_CALIBRATION_BLEND_WEIGHTS)
+    if isinstance(configured, dict):
+        for key, value in configured.items():
+            try:
+                merged[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+    return merged
+
+
+def _get_confidence_shrinkage(prop_type: str, weights: Optional[dict] = None) -> float:
+    """Return the configured confidence shrinkage for this prop."""
+    weights = weights or _load_weights()
+    raw = weights.get("confidence_shrinkage", DEFAULT_CONFIDENCE_SHRINKAGE)
+    if isinstance(raw, dict):
+        raw = raw.get(prop_type, raw.get("default", DEFAULT_CONFIDENCE_SHRINKAGE))
+    try:
+        shrinkage = float(raw)
+    except (TypeError, ValueError):
+        shrinkage = DEFAULT_CONFIDENCE_SHRINKAGE
+    return max(0.30, min(1.10, shrinkage))
+
+
+def get_distribution_config(prop_type: str, weights: Optional[dict] = None) -> dict:
+    """Return the active distribution config for a prop."""
+    weights = weights or _load_weights()
+    dist_params = weights.get("distribution_params", {})
+    variance_ratios = weights.get("variance_ratios", {})
+    prop_dist = dist_params.get(prop_type, {})
+    dist_type = prop_dist.get("type", "negbin")
+
+    if not prop_dist and prop_type in DIST_DEFAULTS:
+        dist_type, default_vr = DIST_DEFAULTS[prop_type]
+    else:
+        default_vr = 1.5
+
+    return {
+        "dist_type": dist_type,
+        "var_ratio": prop_dist.get("vr", variance_ratios.get(prop_type, default_vr)),
+        "phi": prop_dist.get("phi", 25),
+    }
+
+
+def _get_tail_signal_config(weights: Optional[dict] = None) -> dict:
+    """Return breakout/dud thresholds and label cutoffs."""
+    weights = weights or _load_weights()
+    cfg = weights.get("tail_signal_config", {}) or {}
+    merged = {
+        "label_thresholds": dict(TAIL_SIGNAL_DEFAULTS["label_thresholds"]),
+        "prop_thresholds": dict(TAIL_SIGNAL_DEFAULTS["prop_thresholds"]),
+    }
+    if isinstance(cfg.get("label_thresholds"), dict):
+        merged["label_thresholds"].update(cfg["label_thresholds"])
+    if isinstance(cfg.get("prop_thresholds"), dict):
+        for prop, prop_cfg in cfg["prop_thresholds"].items():
+            base = dict(merged["prop_thresholds"].get(prop, {}))
+            if isinstance(prop_cfg, dict):
+                base.update(prop_cfg)
+            merged["prop_thresholds"][prop] = base
+    return merged
+
+
+def _label_tail_probability(prob: float, medium_cutoff: float, high_cutoff: float) -> str:
+    """Bucket a tail probability into Low/Medium/High."""
+    if prob >= high_cutoff:
+        return "High"
+    if prob >= medium_cutoff:
+        return "Medium"
+    return "Low"
 
 
 def _empirical_probability(projection: float, prop_type: str, line: float = 0.0) -> Optional[dict]:
@@ -1547,7 +1670,99 @@ def _win_prob_from_confidence(confidence: float, p_push: float) -> float:
     return confidence * non_push_mass
 
 
-def calculate_over_under_probability(projection, line, prop_type, proj_result=None):
+def calculate_tail_metrics(projection: float, line: float, prop_type: str,
+                           proj_result: Optional[dict] = None,
+                           weights_override: Optional[dict] = None,
+                           dist_type_override: Optional[str] = None) -> dict:
+    """Return percentile and breakout/dud metrics for the projected outcome."""
+    mu = max(float(projection), 0.01)
+    weights = weights_override or _load_weights()
+    cfg = get_distribution_config(prop_type, weights)
+    dist_type = dist_type_override or cfg["dist_type"]
+    var_ratio = cfg["var_ratio"]
+    phi = cfg["phi"]
+
+    proj_result = proj_result or {}
+    bb_alpha = proj_result.get("bb_alpha")
+    bb_beta = proj_result.get("bb_beta")
+    expected_bf = proj_result.get("expected_bf")
+    n_batters = int(expected_bf) if expected_bf else None
+
+    p10 = distributions.distribution_quantile(
+        0.10, mu, dist_type, var_ratio=var_ratio, phi=phi,
+        n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta,
+    )
+    p50 = distributions.distribution_quantile(
+        0.50, mu, dist_type, var_ratio=var_ratio, phi=phi,
+        n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta,
+    )
+    p90 = distributions.distribution_quantile(
+        0.90, mu, dist_type, var_ratio=var_ratio, phi=phi,
+        n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta,
+    )
+
+    tail_cfg = _get_tail_signal_config(weights)
+    label_cfg = tail_cfg["label_thresholds"]
+    prop_cfg = tail_cfg["prop_thresholds"].get(prop_type, {})
+
+    breakout_target = None
+    breakout_prob = None
+    dud_target = None
+    dud_prob = None
+
+    if "good_over" in prop_cfg:
+        breakout_target = prop_cfg["good_over"]
+        breakout_prob = distributions.prob_at_least(
+            breakout_target, mu, dist_type, var_ratio=var_ratio, phi=phi,
+            n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta,
+        )
+    elif "good_under" in prop_cfg:
+        breakout_target = prop_cfg["good_under"]
+        breakout_prob = distributions.prob_at_most(
+            breakout_target, mu, dist_type, var_ratio=var_ratio, phi=phi,
+            n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta,
+        )
+
+    if "bad_under" in prop_cfg:
+        dud_target = prop_cfg["bad_under"]
+        dud_prob = distributions.prob_at_most(
+            dud_target, mu, dist_type, var_ratio=var_ratio, phi=phi,
+            n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta,
+        )
+    elif "bad_over" in prop_cfg:
+        dud_target = prop_cfg["bad_over"]
+        dud_prob = distributions.prob_at_least(
+            dud_target, mu, dist_type, var_ratio=var_ratio, phi=phi,
+            n_batters=n_batters, bb_alpha=bb_alpha, bb_beta=bb_beta,
+        )
+
+    breakout_prob = max(0.0, min(1.0, breakout_prob if breakout_prob is not None else 0.0))
+    dud_prob = max(0.0, min(1.0, dud_prob if dud_prob is not None else 0.0))
+
+    return {
+        "p10": round(float(p10), 2),
+        "p50": round(float(p50), 2),
+        "p90": round(float(p90), 2),
+        "breakout_target": breakout_target,
+        "breakout_prob": round(float(breakout_prob), 4),
+        "breakout_watch": _label_tail_probability(
+            breakout_prob,
+            label_cfg["breakout_medium"],
+            label_cfg["breakout_high"],
+        ),
+        "dud_target": dud_target,
+        "dud_prob": round(float(dud_prob), 4),
+        "dud_risk": _label_tail_probability(
+            dud_prob,
+            label_cfg["dud_medium"],
+            label_cfg["dud_high"],
+        ),
+    }
+
+
+def calculate_over_under_probability(projection, line, prop_type, proj_result=None,
+                                     weights_override: Optional[dict] = None,
+                                     dist_type_override: Optional[str] = None):
     """
     P(over) and P(under) using prop-appropriate distributions.
 
@@ -1567,46 +1782,16 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     mu = max(projection, 0.01)
 
     # Load weights once (needed for both BB and non-BB paths)
-    weights = _load_weights()
+    weights = weights_override or _load_weights()
 
     # ── Compute probabilities via centralized distributions module ──────
     # distributions.compute_probabilities() is the SINGLE source of truth for
     # all CDF/PMF calculations. It reads distribution type from weights file
     # (distribution_params) and routes to the correct distribution.
-    dist_params = weights.get("distribution_params", {})
-    vr = weights.get("variance_ratios", {})
-    prop_dist = dist_params.get(prop_type, {})
-    dist_type = prop_dist.get("type", "negbin")  # Default: NegBin for all count props
-
-    # Override dist_type from variance_ratios if present but not in distribution_params
-    # This preserves backward compatibility with existing weights files
-    _DIST_DEFAULTS = {
-        "pitcher_strikeouts": ("betabinom", 2.2),
-        "hits": ("negbin", 2.2),
-        "total_bases": ("negbin", 2.5),
-        "stolen_bases": ("negbin", 2.5),
-        "hitter_fantasy_score": ("gamma", 4.0),
-        "earned_runs": ("negbin", 2.2),
-        "batter_strikeouts": ("negbin", 1.4),
-        "walks_allowed": ("negbin", 1.6),
-        "hits_allowed": ("negbin", 1.5),
-        "rbis": ("negbin", 1.8),
-        "runs": ("negbin", 1.7),
-        "walks": ("negbin", 1.5),
-        "singles": ("negbin", 1.3),
-        "doubles": ("negbin", 1.6),
-        "pitching_outs": ("normal", 1.3),
-        "hits_runs_rbis": ("normal", 1.5),
-        "home_runs": ("negbin", 2.0),
-    }
-    if not prop_dist and prop_type in _DIST_DEFAULTS:
-        dist_type, default_vr = _DIST_DEFAULTS[prop_type]
-    else:
-        default_vr = 1.5
-
-    # Get variance ratio from weights file, falling back to defaults
-    var_ratio = prop_dist.get("vr", vr.get(prop_type, default_vr))
-    phi = prop_dist.get("phi", 25)
+    dist_cfg = get_distribution_config(prop_type, weights)
+    dist_type = dist_type_override or dist_cfg["dist_type"]
+    var_ratio = dist_cfg["var_ratio"]
+    phi = dist_cfg["phi"]
 
     # Build distribution-specific params
     bb_alpha = None
@@ -1669,7 +1854,8 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # observed rates from 128K+ backtest predictions. Weights optimized via
     # grid search: hits/PK use pure theoretical, TB/FS use heavy empirical.
     is_dead_zone = False
-    base_emp_weight = CALIBRATION_BLEND_WEIGHTS.get(prop_type, 0.0)
+    blend_weights = _get_calibration_blend_weights(weights)
+    base_emp_weight = blend_weights.get(prop_type, 0.0)
     if base_emp_weight > 0:
         emp = _empirical_probability(mu, prop_type, line=line)
         if emp is not None:
@@ -1699,12 +1885,21 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # Formula: calibrated = 0.50 + (raw - 0.50) × shrinkage
     # shrinkage < 1.0 pulls everything toward the coinflip baseline.
     # 0.70 shrinkage: raw 80% → calibrated 71%, raw 75% → 67.5%, raw 60% → 57%
-    MODEL_UNCERTAINTY_SHRINKAGE = 0.70
-    confidence = 0.50 + (raw_prob - 0.50) * MODEL_UNCERTAINTY_SHRINKAGE
+    model_uncertainty_shrinkage = _get_confidence_shrinkage(prop_type, weights)
+    confidence = 0.50 + (raw_prob - 0.50) * model_uncertainty_shrinkage
+    confidence = max(0.50, min(confidence, 1.0))
 
     edge = round(abs(confidence - 0.50), 4)
     win_prob = _win_prob_from_confidence(confidence, p_push)
     rating = _rating_from_confidence(confidence, is_dead_zone=is_dead_zone)
+    tail_metrics = calculate_tail_metrics(
+        mu,
+        line,
+        prop_type,
+        proj_result=proj_result,
+        weights_override=weights,
+        dist_type_override=dist_type_override,
+    )
 
 
     return {
@@ -1714,6 +1909,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
         "win_prob": round(win_prob, 4),
         "edge": round(edge, 4), "rating": rating,
         "projection": round(mu, 2), "line": line,
+        **tail_metrics,
     }
 
 

@@ -25,6 +25,32 @@ class ProbabilityContractTests(unittest.TestCase):
         self.assertEqual(result["p_push"], 0.0)
         self.assertAlmostEqual(result["p_over"] + result["p_under"], 1.0, places=3)
 
+    def test_weight_overrides_drive_confidence_shrinkage(self):
+        loose = calculate_over_under_probability(
+            1.9,
+            1.5,
+            "total_bases",
+            weights_override={
+                "distribution_params": {"total_bases": {"type": "negbin", "vr": 2.5}},
+                "calibration_blend_weights": {"total_bases": 0.0},
+                "confidence_shrinkage": {"default": 1.0},
+            },
+        )
+        tight = calculate_over_under_probability(
+            1.9,
+            1.5,
+            "total_bases",
+            weights_override={
+                "distribution_params": {"total_bases": {"type": "negbin", "vr": 2.5}},
+                "calibration_blend_weights": {"total_bases": 0.0},
+                "confidence_shrinkage": {"default": 0.5},
+            },
+        )
+
+        self.assertGreater(loose["confidence"], tight["confidence"])
+        self.assertIn("breakout_prob", loose)
+        self.assertIn("dud_prob", loose)
+
     def test_sharp_edges_include_prediction_schema_fields(self):
         pp_lines = pd.DataFrame([
             {

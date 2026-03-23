@@ -197,6 +197,21 @@ def get_baseline_weights() -> dict:
             "doubles": 2.5,
         },
 
+        # Empirical calibration blend: mixes historical observed hit rates with
+        # theoretical distribution probabilities for props with enough backtest depth.
+        "calibration_blend_weights": {
+            "hits": 0.0,
+            "total_bases": 0.90,
+            "pitcher_strikeouts": 0.0,
+            "hitter_fantasy_score": 1.0,
+        },
+
+        # Confidence shrinkage pulls raw probabilities back toward 50%.
+        # Supports a default plus per-prop overrides.
+        "confidence_shrinkage": {
+            "default": 0.70,
+        },
+
         # Metadata for tracking
         "metadata": {
             "parent_version": None,
@@ -296,6 +311,17 @@ def _next_version() -> str:
     """
     _ensure_dirs()
     max_v = 1
+
+    if CURRENT_WEIGHTS_PATH.exists():
+        try:
+            with open(CURRENT_WEIGHTS_PATH, "r", encoding="utf-8") as f:
+                current = json.load(f)
+            current_version = str(current.get("version", ""))
+            if current_version.startswith("v"):
+                max_v = max(max_v, int(current_version[1:]))
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+
     for p in WEIGHTS_DIR.glob("v*.json"):
         name = p.stem
         # Extract version number from filenames like v002_post_backtest

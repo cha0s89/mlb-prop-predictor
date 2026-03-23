@@ -16,9 +16,11 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from scipy.stats import gamma as sp_gamma, nbinom as sp_nbinom, norm as sp_norm, poisson as sp_poisson
 
 from src.autolearn import load_current_weights, save_weights, _next_version
 from src.backtester import DEFAULT_RESULTS_PATH, load_results, filter_nonplays
+from src.predictor import get_distribution_config
 from src.selection import floor_key, get_confidence_floor
 
 
@@ -33,6 +35,36 @@ MIN_TRAIN_PICKS = 80
 MIN_VALID_PICKS = 30
 MIN_VOLUME_RETAIN = 0.85
 MIN_ACCURACY_GAIN = 0.003
+
+MODEL_TUNING_PROPS = {
+    "hits",
+    "total_bases",
+    "pitcher_strikeouts",
+    "hitter_fantasy_score",
+    "home_runs",
+}
+
+OFFSET_GRIDS = {
+    "hits": [round(x, 2) for x in np.arange(-0.30, 0.31, 0.05)],
+    "total_bases": [round(x, 2) for x in np.arange(-0.80, 0.81, 0.10)],
+    "pitcher_strikeouts": [round(x, 2) for x in np.arange(-1.00, 1.01, 0.10)],
+    "hitter_fantasy_score": [round(x, 2) for x in np.arange(-3.00, 3.01, 0.25)],
+    "home_runs": [round(x, 3) for x in np.arange(-0.15, 0.151, 0.025)],
+}
+VARIANCE_MULTIPLIERS = [0.70, 0.85, 1.0, 1.15, 1.30, 1.50]
+BLEND_GRID = [round(x, 2) for x in np.arange(0.0, 1.01, 0.1)]
+SHRINKAGE_GRID = [round(x, 2) for x in np.arange(0.50, 1.01, 0.05)]
+
+MODEL_MIN_TRAIN_ROWS = 120
+MODEL_MIN_VALID_ROWS = 40
+MODEL_MIN_LOGLOSS_GAIN = 0.005
+MODEL_MAX_MAE_REGRESSION = 0.02
+
+
+def _metric_or_default(metrics: dict, key: str, default: float = 1e9) -> float:
+    """Return a metric value with a numeric default when missing."""
+    value = metrics.get(key)
+    return default if value is None else float(value)
 
 
 @dataclass
@@ -81,6 +113,385 @@ def split_backtest_dataframe(df: pd.DataFrame, train_frac: float = 0.75) -> tupl
     train_df = df[df["game_date"].dt.date.isin(train_dates)].copy()
     valid_df = df[df["game_date"].dt.date.isin(valid_dates)].copy()
     return train_df, valid_df
+
+
+def load_model_backtest_dataframe(filepath: str = DEFAULT_RESULTS_PATH) -> pd.DataFrame:
+    """Load graded backtest rows for projection/probability tuning."""
+    results = load_results(filepath)
+    if not results:
+        return pd.DataFrame()
+
+    plays, _ = filter_nonplays(results)
+    df = pd.DataFrame(plays)
+    if df.empty:
+        return df
+
+    required = {"game_date", "prop_type", "projection", "line", "actual"}
+    missing = required - set(df.columns)
+    if missing:
+        return pd.DataFrame()
+
+    df = df[df["prop_type"].isin(MODEL_TUNING_PROPS)].copy()
+    if df.empty:
+        return df
+
+    df["game_date"] = pd.to_datetime(df["game_date"])
+    for col in ("projection", "line", "actual"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["projection", "line", "actual"])
+    df["actual_over"] = (df["actual"] > df["line"]).astype(float)
+    return df
+
+
+def _confidence_shrinkage_value(weights: dict, prop_type: str) -> float:
+    """Read per-prop confidence shrinkage from weights with fallback."""
+    raw = weights.get("confidence_shrinkage", 0.70)
+    if isinstance(raw, dict):
+        raw = raw.get(prop_type, raw.get("default", 0.70))
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 0.70
+    return max(0.30, min(1.10, value))
+
+
+def _calibration_blend_value(weights: dict, prop_type: str) -> float:
+    """Read per-prop empirical blend weight with metadata fallback."""
+    raw = weights.get("calibration_blend_weights")
+    if not raw:
+        raw = weights.get("metadata", {}).get("calibration_blend_weights", {})
+    try:
+        return max(0.0, min(1.0, float((raw or {}).get(prop_type, 0.0))))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _active_variance_value(weights: dict, prop_type: str) -> float:
+    """Read the active variance ratio for a prop."""
+    cfg = get_distribution_config(prop_type, weights)
+    return float(cfg["var_ratio"])
+
+
+def _calibration_tables() -> dict:
+    """Load empirical calibration tables from disk."""
+    from src.predictor import _load_calibration
+
+    return _load_calibration()
+
+
+def _empirical_probs_vectorized(projections: np.ndarray, prop_type: str, line: float) -> dict | None:
+    """Vectorized approximation of predictor empirical calibration interpolation."""
+    cal = _calibration_tables()
+    prop_cal = cal.get(prop_type)
+    if not prop_cal:
+        return None
+
+    cal_line = prop_cal.get("line", 0)
+    if line > 0 and cal_line > 0 and abs(line - cal_line) > 0.01:
+        return None
+
+    points = [pt for pt in prop_cal.get("points", []) if pt.get("n", 0) >= 30]
+    if not points:
+        return None
+
+    mids = np.array([float(pt["proj_mid"]) for pt in points], dtype=float)
+    p_over = np.array([float(pt["p_over"]) for pt in points], dtype=float)
+    p_under = np.array([float(pt["p_under"]) for pt in points], dtype=float)
+    counts = np.array([float(pt["n"]) for pt in points], dtype=float)
+
+    over = np.interp(projections, mids, p_over, left=p_over[0], right=p_over[-1])
+    under = np.interp(projections, mids, p_under, left=p_under[0], right=p_under[-1])
+    n_est = np.interp(projections, mids, counts, left=counts[0], right=counts[-1])
+    return {
+        "p_over": over,
+        "p_under": under,
+        "n_est": n_est,
+        "is_dead_zone": np.maximum(over, under) < 0.54,
+    }
+
+
+def _vectorized_theoretical_probs(mu: np.ndarray, line: float, prop_type: str, weights: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized distribution probabilities for a legacy backtest row set."""
+    cfg = get_distribution_config(prop_type, weights)
+    dist_type = cfg["dist_type"]
+    var_ratio = float(cfg["var_ratio"])
+    threshold = int(np.ceil(line))
+
+    if prop_type == "pitcher_strikeouts" and dist_type == "betabinom":
+        dist_type = "negbin"
+
+    if dist_type == "gamma":
+        safe_mu = np.clip(mu, 0.01, None)
+        var = np.clip(safe_mu * var_ratio, 0.01, None)
+        shape = (safe_mu ** 2) / var
+        scale = var / np.clip(safe_mu, 0.001, None)
+        p_over = 1.0 - sp_gamma.cdf(line + 0.5, shape, scale=scale)
+        p_under = sp_gamma.cdf(line - 0.5, shape, scale=scale)
+        return np.asarray(p_over, dtype=float), np.asarray(p_under, dtype=float)
+
+    if dist_type == "normal":
+        sigma = np.maximum(np.sqrt(np.clip(mu, 0.01, None) * var_ratio), 0.25)
+        p_over = 1.0 - sp_norm.cdf(line + 0.5, loc=mu, scale=sigma)
+        p_under = sp_norm.cdf(line - 0.5, loc=mu, scale=sigma)
+        return np.asarray(p_over, dtype=float), np.asarray(p_under, dtype=float)
+
+    if dist_type == "poisson":
+        p_over = 1.0 - sp_poisson.cdf(threshold - 1, np.clip(mu, 0.01, None))
+        return np.asarray(p_over, dtype=float), 1.0 - np.asarray(p_over, dtype=float)
+
+    safe_mu = np.clip(mu, 0.01, None)
+    if var_ratio <= 1.0:
+        p_over = 1.0 - sp_poisson.cdf(threshold - 1, safe_mu)
+        return np.asarray(p_over, dtype=float), 1.0 - np.asarray(p_over, dtype=float)
+
+    var = safe_mu * var_ratio
+    n_param = np.clip((safe_mu ** 2) / np.clip(var - safe_mu, 0.001, None), 0.5, None)
+    p_param = np.clip(safe_mu / np.clip(var, 0.001, None), 0.001, 0.999)
+    p_over = 1.0 - sp_nbinom.cdf(threshold - 1, n_param, p_param)
+    return np.asarray(p_over, dtype=float), 1.0 - np.asarray(p_over, dtype=float)
+
+
+def _scored_rows_for_weights(df: pd.DataFrame, weights: dict) -> pd.DataFrame:
+    """Score a model configuration against legacy backtest rows."""
+    if df.empty:
+        return df.copy()
+
+    parts = []
+    for prop_type, subset in df.groupby("prop_type"):
+        work = subset.copy()
+        offset = float(weights.get("prop_type_offsets", {}).get(prop_type, 0.0))
+        mu = np.clip(work["projection"].astype(float).values + offset, 0.01, None)
+        work["projection_adj"] = mu
+
+        p_over, p_under = _vectorized_theoretical_probs(mu, float(work["line"].iloc[0]), prop_type, weights)
+
+        blend = _calibration_blend_value(weights, prop_type)
+        if blend > 0:
+            empirical = _empirical_probs_vectorized(mu, prop_type, float(work["line"].iloc[0]))
+            if empirical is not None:
+                emp_weight = np.where(empirical["n_est"] >= 100, blend, blend * 0.8)
+                theo_weight = 1.0 - emp_weight
+                p_over = empirical["p_over"] * emp_weight + p_over * theo_weight
+                p_under = empirical["p_under"] * emp_weight + p_under * theo_weight
+                total = np.clip(p_over + p_under, 1e-9, None)
+                p_over = p_over / total
+                p_under = p_under / total
+
+        pick_more = p_over >= p_under
+        raw_prob = np.where(pick_more, p_over, p_under)
+        shrink = _confidence_shrinkage_value(weights, prop_type)
+        confidence = np.clip(0.50 + (raw_prob - 0.50) * shrink, 0.50, 1.0)
+        actual = work["actual"].astype(float).values
+        line = work["line"].astype(float).values
+        is_win = np.where(pick_more, actual > line, actual < line).astype(float)
+
+        work["pick_candidate"] = np.where(pick_more, "MORE", "LESS")
+        work["confidence_candidate"] = confidence
+        work["is_win_candidate"] = is_win
+        parts.append(work)
+
+    return pd.concat(parts, ignore_index=True) if parts else df.iloc[0:0].copy()
+
+
+def evaluate_model_weights(df: pd.DataFrame, weights: dict) -> dict:
+    """Evaluate a full weight configuration on graded backtest rows."""
+    scored = _scored_rows_for_weights(df, weights)
+    if scored.empty:
+        return {
+            "rows": 0,
+            "accuracy": None,
+            "brier_score": None,
+            "log_loss": None,
+            "mae": None,
+            "rmse": None,
+            "bias": None,
+            "by_prop": {},
+        }
+
+    probs = np.clip(scored["confidence_candidate"].astype(float).values, 1e-7, 1 - 1e-7)
+    outcomes = scored["is_win_candidate"].astype(float).values
+    proj = scored["projection_adj"].astype(float).values
+    actual = scored["actual"].astype(float).values
+
+    result = {
+        "rows": int(len(scored)),
+        "accuracy": float(np.mean(outcomes)),
+        "brier_score": float(np.mean((probs - outcomes) ** 2)),
+        "log_loss": float(-np.mean(outcomes * np.log(probs) + (1 - outcomes) * np.log(1 - probs))),
+        "mae": float(np.mean(np.abs(proj - actual))),
+        "rmse": float(np.sqrt(np.mean((proj - actual) ** 2))),
+        "bias": float(np.mean(proj - actual)),
+        "by_prop": {},
+    }
+
+    for prop_type, subset in scored.groupby("prop_type"):
+        prop_probs = np.clip(subset["confidence_candidate"].astype(float).values, 1e-7, 1 - 1e-7)
+        prop_outcomes = subset["is_win_candidate"].astype(float).values
+        prop_proj = subset["projection_adj"].astype(float).values
+        prop_actual = subset["actual"].astype(float).values
+        result["by_prop"][prop_type] = {
+            "rows": int(len(subset)),
+            "accuracy": float(np.mean(prop_outcomes)),
+            "brier_score": float(np.mean((prop_probs - prop_outcomes) ** 2)),
+            "log_loss": float(-np.mean(prop_outcomes * np.log(prop_probs) + (1 - prop_outcomes) * np.log(1 - prop_probs))),
+            "mae": float(np.mean(np.abs(prop_proj - prop_actual))),
+            "rmse": float(np.sqrt(np.mean((prop_proj - prop_actual) ** 2))),
+            "bias": float(np.mean(prop_proj - prop_actual)),
+        }
+
+    return result
+
+
+def _prop_candidate_weights(base_weights: dict, prop_type: str, *,
+                            offset: float | None = None,
+                            variance: float | None = None,
+                            blend: float | None = None,
+                            shrinkage: float | None = None) -> dict:
+    """Return a shallow-cloned weight config with a single prop adjusted."""
+    weights = copy.deepcopy(base_weights)
+    if offset is not None:
+        weights.setdefault("prop_type_offsets", {})
+        weights["prop_type_offsets"][prop_type] = round(float(offset), 4)
+    if variance is not None:
+        weights.setdefault("distribution_params", {})
+        weights["distribution_params"].setdefault(prop_type, {})
+        weights["distribution_params"][prop_type]["vr"] = round(float(variance), 4)
+        weights.setdefault("variance_ratios", {})
+        weights["variance_ratios"][prop_type] = round(float(variance), 4)
+    if blend is not None:
+        weights.setdefault("calibration_blend_weights", {})
+        weights["calibration_blend_weights"][prop_type] = round(float(blend), 4)
+    if shrinkage is not None:
+        raw = weights.get("confidence_shrinkage", {"default": 0.70})
+        if not isinstance(raw, dict):
+            raw = {"default": float(raw)}
+        raw[prop_type] = round(float(shrinkage), 4)
+        weights["confidence_shrinkage"] = raw
+    return weights
+
+
+def optimize_model_parameters(train_df: pd.DataFrame, base_weights: dict) -> dict:
+    """Sequentially tune offset, variance, blend, and shrinkage per prop."""
+    tuned = copy.deepcopy(base_weights)
+    recommendations = {}
+
+    for prop_type, subset in train_df.groupby("prop_type"):
+        if len(subset) < MODEL_MIN_TRAIN_ROWS:
+            continue
+
+        prop_recs = {}
+
+        current_offset = float(tuned.get("prop_type_offsets", {}).get(prop_type, 0.0))
+        best_offset = current_offset
+        best_offset_metrics = evaluate_model_weights(subset, tuned)["by_prop"].get(prop_type, {})
+        best_offset_score = (
+            _metric_or_default(best_offset_metrics, "mae"),
+            _metric_or_default(best_offset_metrics, "rmse"),
+        )
+        for offset in sorted(set(OFFSET_GRIDS.get(prop_type, [current_offset]) + [current_offset])):
+            candidate_weights = _prop_candidate_weights(tuned, prop_type, offset=offset)
+            metrics = evaluate_model_weights(subset, candidate_weights)["by_prop"].get(prop_type, {})
+            score = (
+                _metric_or_default(metrics, "mae"),
+                _metric_or_default(metrics, "rmse"),
+            )
+            if score < best_offset_score:
+                best_offset = offset
+                best_offset_score = score
+                best_offset_metrics = metrics
+        tuned = _prop_candidate_weights(tuned, prop_type, offset=best_offset)
+        prop_recs["offset"] = {
+            "from": round(current_offset, 4),
+            "to": round(best_offset, 4),
+            "train_mae": round(best_offset_metrics.get("mae", 0.0), 4),
+            "train_bias": round(best_offset_metrics.get("bias", 0.0), 4),
+        }
+
+        current_variance = _active_variance_value(tuned, prop_type)
+        cfg = get_distribution_config(prop_type, tuned)
+        if cfg["dist_type"] != "betabinom":
+            best_variance = current_variance
+            best_variance_metrics = evaluate_model_weights(subset, tuned)["by_prop"].get(prop_type, {})
+            best_variance_score = (
+                _metric_or_default(best_variance_metrics, "log_loss"),
+                _metric_or_default(best_variance_metrics, "brier_score"),
+            )
+            var_grid = [round(current_variance * mult, 4) for mult in VARIANCE_MULTIPLIERS]
+            for variance in sorted(set(var_grid + [current_variance])):
+                if variance <= 1.01:
+                    continue
+                candidate_weights = _prop_candidate_weights(tuned, prop_type, variance=variance)
+                metrics = evaluate_model_weights(subset, candidate_weights)["by_prop"].get(prop_type, {})
+                score = (
+                    _metric_or_default(metrics, "log_loss"),
+                    _metric_or_default(metrics, "brier_score"),
+                )
+                if score < best_variance_score:
+                    best_variance = variance
+                    best_variance_score = score
+                    best_variance_metrics = metrics
+            tuned = _prop_candidate_weights(tuned, prop_type, variance=best_variance)
+            prop_recs["variance"] = {
+                "from": round(current_variance, 4),
+                "to": round(best_variance, 4),
+                "train_log_loss": round(best_variance_metrics.get("log_loss", 0.0), 4),
+                "train_brier": round(best_variance_metrics.get("brier_score", 0.0), 4),
+            }
+
+        current_blend = _calibration_blend_value(tuned, prop_type)
+        if _empirical_probs_vectorized(np.array([subset["projection"].mean()]), prop_type, float(subset["line"].iloc[0])) is not None:
+            best_blend = current_blend
+            best_blend_metrics = evaluate_model_weights(subset, tuned)["by_prop"].get(prop_type, {})
+            best_blend_score = (
+                _metric_or_default(best_blend_metrics, "log_loss"),
+                _metric_or_default(best_blend_metrics, "brier_score"),
+            )
+            for blend in sorted(set(BLEND_GRID + [current_blend])):
+                candidate_weights = _prop_candidate_weights(tuned, prop_type, blend=blend)
+                metrics = evaluate_model_weights(subset, candidate_weights)["by_prop"].get(prop_type, {})
+                score = (
+                    _metric_or_default(metrics, "log_loss"),
+                    _metric_or_default(metrics, "brier_score"),
+                )
+                if score < best_blend_score:
+                    best_blend = blend
+                    best_blend_score = score
+                    best_blend_metrics = metrics
+            tuned = _prop_candidate_weights(tuned, prop_type, blend=best_blend)
+            prop_recs["calibration_blend"] = {
+                "from": round(current_blend, 4),
+                "to": round(best_blend, 4),
+                "train_log_loss": round(best_blend_metrics.get("log_loss", 0.0), 4),
+            }
+
+        current_shrink = _confidence_shrinkage_value(tuned, prop_type)
+        best_shrink = current_shrink
+        best_shrink_metrics = evaluate_model_weights(subset, tuned)["by_prop"].get(prop_type, {})
+        best_shrink_score = (
+            _metric_or_default(best_shrink_metrics, "log_loss"),
+            _metric_or_default(best_shrink_metrics, "brier_score"),
+        )
+        for shrinkage in sorted(set(SHRINKAGE_GRID + [current_shrink])):
+            candidate_weights = _prop_candidate_weights(tuned, prop_type, shrinkage=shrinkage)
+            metrics = evaluate_model_weights(subset, candidate_weights)["by_prop"].get(prop_type, {})
+            score = (
+                _metric_or_default(metrics, "log_loss"),
+                _metric_or_default(metrics, "brier_score"),
+            )
+            if score < best_shrink_score:
+                best_shrink = shrinkage
+                best_shrink_score = score
+                best_shrink_metrics = metrics
+        tuned = _prop_candidate_weights(tuned, prop_type, shrinkage=best_shrink)
+        prop_recs["confidence_shrinkage"] = {
+            "from": round(current_shrink, 4),
+            "to": round(best_shrink, 4),
+            "train_log_loss": round(best_shrink_metrics.get("log_loss", 0.0), 4),
+        }
+
+        recommendations[prop_type] = prop_recs
+
+    return {"weights": tuned, "recommendations": recommendations}
 
 
 def _wilson_lower_bound(wins: int, total: int, z: float = 1.96) -> float:
@@ -258,17 +669,104 @@ def apply_candidate_floors(analysis: dict) -> dict:
     return {"applied": True, "version": version, "path": save_path, "reason": analysis.get("reason")}
 
 
+def analyze_backtest_model(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
+    """Run the offline model-parameter tuning analysis."""
+    df = load_model_backtest_dataframe(filepath)
+    if df.empty:
+        return {"error": "No graded model-tuning rows found in the backtest file."}
+
+    train_df, valid_df = split_backtest_dataframe(df)
+    if valid_df.empty:
+        return {"error": "Not enough distinct backtest dates to build a validation split."}
+
+    current_weights = load_current_weights()
+    tuned = optimize_model_parameters(train_df, current_weights)
+
+    current_eval = evaluate_model_weights(valid_df, current_weights)
+    candidate_eval = evaluate_model_weights(valid_df, tuned["weights"])
+
+    current_log_loss = _metric_or_default(current_eval, "log_loss")
+    candidate_log_loss = _metric_or_default(candidate_eval, "log_loss")
+    current_mae = _metric_or_default(current_eval, "mae")
+    candidate_mae = _metric_or_default(candidate_eval, "mae")
+
+    should_apply = (
+        candidate_eval.get("rows", 0) >= MODEL_MIN_VALID_ROWS
+        and (current_log_loss - candidate_log_loss) >= MODEL_MIN_LOGLOSS_GAIN
+        and (candidate_mae - current_mae) <= MODEL_MAX_MAE_REGRESSION
+    )
+
+    return {
+        "backtest_path": str(filepath),
+        "train_dates": int(train_df["game_date"].dt.date.nunique()),
+        "validation_dates": int(valid_df["game_date"].dt.date.nunique()),
+        "train_rows": int(len(train_df)),
+        "validation_rows": int(len(valid_df)),
+        "current": current_eval,
+        "candidate": candidate_eval,
+        "recommendations": tuned["recommendations"],
+        "candidate_weights": {
+            "prop_type_offsets": tuned["weights"].get("prop_type_offsets", {}),
+            "distribution_params": tuned["weights"].get("distribution_params", {}),
+            "variance_ratios": tuned["weights"].get("variance_ratios", {}),
+            "calibration_blend_weights": tuned["weights"].get("calibration_blend_weights", {}),
+            "confidence_shrinkage": tuned["weights"].get("confidence_shrinkage", {}),
+        },
+        "should_apply": should_apply,
+        "reason": (
+            f"validation log loss {candidate_log_loss:.4f} vs {current_log_loss:.4f}, "
+            f"mae {candidate_mae:.4f} vs {current_mae:.4f}"
+        ),
+    }
+
+
+def apply_candidate_model(analysis: dict) -> dict:
+    """Promote tuned model parameters into a new weights version when warranted."""
+    if analysis.get("error"):
+        return {"applied": False, "reason": analysis["error"]}
+    if not analysis.get("should_apply"):
+        return {"applied": False, "reason": analysis.get("reason", "Candidate model did not clear promotion gates.")}
+
+    weights = load_current_weights()
+    candidate = analysis.get("candidate_weights", {})
+    for key in (
+        "prop_type_offsets",
+        "distribution_params",
+        "variance_ratios",
+        "calibration_blend_weights",
+        "confidence_shrinkage",
+    ):
+        if key in candidate:
+            weights[key] = copy.deepcopy(candidate[key])
+
+    weights.setdefault("metadata", {})
+    weights["metadata"]["offline_model_tuning"] = {
+        "source_backtest": analysis.get("backtest_path"),
+        "train_rows": analysis.get("train_rows"),
+        "validation_rows": analysis.get("validation_rows"),
+        "applied_at": pd.Timestamp.utcnow().isoformat(),
+        "reason": analysis.get("reason"),
+        "recommendations": analysis.get("recommendations", {}),
+    }
+
+    version = _next_version()
+    description = "offline model tuning from historical backtest"
+    save_path = save_weights(weights, version, description)
+    return {"applied": True, "version": version, "path": save_path, "reason": analysis.get("reason")}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Offline confidence-floor tuner")
     parser.add_argument("--backtest-path", default=DEFAULT_RESULTS_PATH)
+    parser.add_argument("--model", action="store_true", help="Tune model offsets/variance/calibration instead of selection floors.")
     parser.add_argument("--apply-if-better", action="store_true")
     args = parser.parse_args(argv)
 
-    analysis = analyze_backtest_floors(args.backtest_path)
+    analysis = analyze_backtest_model(args.backtest_path) if args.model else analyze_backtest_floors(args.backtest_path)
     print(json.dumps(analysis, indent=2, default=str))
 
     if args.apply_if_better:
-        result = apply_candidate_floors(analysis)
+        result = apply_candidate_model(analysis) if args.model else apply_candidate_floors(analysis)
         print(json.dumps(result, indent=2, default=str))
 
     return 0
