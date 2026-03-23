@@ -72,6 +72,7 @@ from src.board_logger import (
 )
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
+from src.selection import annotate_prediction_floor, get_confidence_floor
 
 
 # ─────────────────────────────────────────────
@@ -471,6 +472,20 @@ def _sync_pick_metrics(pred: dict) -> None:
     pred["rating"] = _confidence_rating(conf)
 
 
+def _meets_confidence_floor(pred: dict) -> bool:
+    """Return whether a pick clears the configured per-prop confidence floor."""
+    if "meets_conf_floor" in pred:
+        return bool(pred.get("meets_conf_floor"))
+
+    floor = get_confidence_floor(
+        load_current_weights(),
+        pred.get("stat_internal") or pred.get("stat_type"),
+        pred.get("pick"),
+    )
+    confidence = _safe_num(pred.get("confidence", pred.get("proj_confidence")), 0.0)
+    return confidence >= floor
+
+
 def _derive_top_plays(scored_all: list[dict], pdf: pd.DataFrame) -> list[dict]:
     trivial_less_props = {"stolen_bases", "home_runs"}
 
@@ -486,6 +501,7 @@ def _derive_top_plays(scored_all: list[dict], pdf: pd.DataFrame) -> list[dict]:
             s for s in scored_all
             if s["combined_grade"] in ("A+", "A")
             and is_tradeable_pick(s.get("stat_internal", s.get("stat_type", "")), s.get("pick", ""))
+            and _meets_confidence_floor(s)
             and not _is_trivial(s)
         ][:5]
     else:
@@ -493,7 +509,13 @@ def _derive_top_plays(scored_all: list[dict], pdf: pd.DataFrame) -> list[dict]:
 
     if not top_plays and not pdf.empty:
         tradeable_best = pdf[
-            pdf.apply(lambda r: is_tradeable_pick(r.get("stat_internal", ""), r.get("pick", "")), axis=1)
+            pdf.apply(
+                lambda r: (
+                    is_tradeable_pick(r.get("stat_internal", ""), r.get("pick", ""))
+                    and _meets_confidence_floor(r)
+                ),
+                axis=1,
+            )
         ].sort_values(["confidence", "edge"], ascending=False)
         for _, tp in tradeable_best.head(5).iterrows():
             top_plays.append({
@@ -1307,6 +1329,7 @@ with tab_edge:
             prog = st.progress(0, text="Running projections...")
             total = len(pp_lines)
             _pred_errors = 0
+            active_weights = load_current_weights()
             for i, (_, row) in enumerate(pp_lines.iterrows()):
               try:
                 prog.progress((i + 1) / total, text=f"Projecting {i + 1}/{total}...")
@@ -1542,6 +1565,8 @@ with tab_edge:
                     p["confidence"] = min(p.get("confidence", 0.5), 0.65)
                     _sync_pick_metrics(p)
                     p["edge_capped"] = True
+
+                annotate_prediction_floor(p, active_weights)
 
                 preds.append(p)
               except Exception as _pred_exc:
@@ -1871,6 +1896,12 @@ with tab_edge:
                     _removed = _before_filter - len(filtered)
                     if _removed > 0:
                         st.info(f"Showing tradeable picks only. Filtered out {_removed} pick(s)")
+
+                    _before_floor = len(filtered)
+                    filtered = filtered[filtered["meets_conf_floor"].fillna(False)].copy()
+                    _removed_floor = _before_floor - len(filtered)
+                    if _removed_floor > 0:
+                        st.info(f"Applied model confidence floors. Filtered out {_removed_floor} pick(s) below tuned thresholds.")
 
                 slip_candidates = filtered.head(40).reset_index(drop=True)
                 selected_picks = []
@@ -2250,6 +2281,7 @@ with tab_edge:
                                     "stat_type": pick_row["stat_type"],
                                     "line": pick_row["line"],
                                     "pick": pick_row["pick"],
+                                    "game_date": pick_date,
                                 })
                                 mark_as_bet(
                                     pick_row["player_name"],

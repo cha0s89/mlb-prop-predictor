@@ -36,6 +36,86 @@ MLB_PROP_CORRELATIONS = {
     ("hits", "MORE", "batter_strikeouts", "MORE"): -0.35,
 }
 
+MIN_LEG_DIFFERENCE = 2
+
+
+def _pick_identity(pick: dict) -> tuple[str, str, str]:
+    """Stable identity for a pick across slips."""
+    return (
+        str(pick.get("player_name", "")).strip().lower(),
+        str(pick.get("stat_internal") or pick.get("stat_type") or "").strip().lower(),
+        str(pick.get("pick", "")).strip().upper(),
+    )
+
+
+def _slip_identities(picks: list[dict]) -> frozenset[tuple[str, str, str]]:
+    """Return the set of leg identities in a slip."""
+    return frozenset(_pick_identity(p) for p in picks)
+
+
+def _overlap_count(picks_a: list[dict], picks_b: list[dict]) -> int:
+    """Count shared legs between two slips."""
+    return len(_slip_identities(picks_a) & _slip_identities(picks_b))
+
+
+def _max_allowed_overlap(slip_size: int) -> int:
+    """Require each additional slip to differ by at least two legs."""
+    return max(0, slip_size - MIN_LEG_DIFFERENCE)
+
+
+def _is_distinct_enough(picks: list[dict], existing_slips: list[dict], slip_size: int) -> bool:
+    """Reject slips that overlap too heavily with already selected slips."""
+    max_overlap = _max_allowed_overlap(slip_size)
+    return all(_overlap_count(picks, slip["picks"]) <= max_overlap for slip in existing_slips)
+
+
+def _portfolio_penalty(picks: list[dict], existing_slips: list[dict], slip_size: int) -> float:
+    """Penalize overlap and leg reuse across the suggested-slip portfolio."""
+    if not existing_slips:
+        return 0.0
+
+    max_overlap = _max_allowed_overlap(slip_size)
+    overlap_penalty = 0.0
+    reused_legs = Counter()
+    for slip in existing_slips:
+        overlap = _overlap_count(picks, slip["picks"])
+        if overlap > max_overlap:
+            overlap_penalty += 40.0 * (overlap - max_overlap)
+        reused_legs.update(_slip_identities(slip["picks"]))
+
+    reuse_penalty = 6.0 * sum(reused_legs.get(leg, 0) for leg in _slip_identities(picks))
+    return overlap_penalty + reuse_penalty
+
+
+def _select_portfolio(candidates: list[dict], num_slips: int, slip_size: int) -> list[dict]:
+    """Greedily select the best portfolio of slips with low overlap."""
+    remaining = list(candidates)
+    selected = []
+
+    while remaining and len(selected) < num_slips:
+        best_idx = None
+        best_score = None
+
+        for idx, slip in enumerate(remaining):
+            if selected and not _is_distinct_enough(slip["picks"], selected, slip_size):
+                continue
+
+            score = float(slip.get("quality_score", 0))
+            if "mc_ev_pct" in slip:
+                score += float(slip.get("mc_ev_pct", 0)) * 0.15
+            score -= _portfolio_penalty(slip["picks"], selected, slip_size)
+
+            if best_score is None or score > best_score:
+                best_idx = idx
+                best_score = score
+
+        if best_idx is None:
+            break
+
+        selected.append(remaining.pop(best_idx))
+
+    return selected
+
 
 def estimate_slip_correlation(picks: list[dict]) -> float:
     """
@@ -302,11 +382,26 @@ def suggest_slips(
 
     # If we don't have enough slips, use a fallback greedy approach
     if len(slips) < num_slips:
-        slips.extend(_generate_fallback_slips(sorted_preds, slip_size, num_slips - len(slips)))
+        slips.extend(
+            _generate_fallback_slips(
+                sorted_preds,
+                slip_size,
+                num_slips - len(slips),
+                existing_signatures={_slip_identities(slip["picks"]) for slip in slips},
+            )
+        )
 
-    # Sort by quality score and trim to num_slips
-    slips.sort(key=lambda s: s.get('quality_score', 0), reverse=True)
-    slips = slips[:num_slips]
+    slips = _select_portfolio(slips, num_slips=num_slips, slip_size=slip_size)
+    if len(slips) < num_slips:
+        slips.extend(
+            _generate_fallback_slips(
+                sorted_preds,
+                slip_size,
+                num_slips - len(slips),
+                existing_signatures={_slip_identities(slip["picks"]) for slip in slips},
+                portfolio_slips=slips,
+            )
+        )
 
     # Assign labels based on characteristics
     slips = _assign_slip_labels(slips)
@@ -414,7 +509,9 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
 def _generate_fallback_slips(
     sorted_preds: list[dict],
     slip_size: int,
-    num_needed: int
+    num_needed: int,
+    existing_signatures: set[frozenset[tuple[str, str, str]]] | None = None,
+    portfolio_slips: list[dict] | None = None,
 ) -> list[dict]:
     """
     Generate fallback slips using a greedy approach when combinatorial search insufficient.
@@ -428,6 +525,8 @@ def _generate_fallback_slips(
         list: Additional slip dicts
     """
     slips = []
+    used_signatures = set(existing_signatures or set())
+    portfolio_slips = portfolio_slips or []
 
     for start_idx in range(0, len(sorted_preds) - slip_size, max(1, slip_size // 2)):
         if len(slips) >= num_needed:
@@ -459,10 +558,16 @@ def _generate_fallback_slips(
             used_types[stat_type] += 1
 
         if len(selected) == slip_size:
+            signature = _slip_identities(selected)
+            if signature in used_signatures:
+                continue
+            if portfolio_slips and not _is_distinct_enough(selected, portfolio_slips + slips, slip_size):
+                continue
             more_count = sum(1 for p in selected if p.get('pick') == 'MORE')
             less_count = slip_size - more_count
             slip = _build_slip_dict(selected, more_count, less_count)
             slips.append(slip)
+            used_signatures.add(signature)
 
     return slips
 

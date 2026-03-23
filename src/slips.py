@@ -184,6 +184,39 @@ def create_slip(game_date: str, entry_type: str, entry_amount: float,
 
     conn.commit()
     conn.close()
+
+    # Track CLV for linked model predictions after the slip and pick rows exist.
+    for pick in picks:
+        prediction_id = pick.get("prediction_id")
+        if not prediction_id:
+            continue
+        try:
+            pred_conn = get_connection()
+            pred_row = pred_conn.execute("""
+                SELECT id, game_date, player_name, stat_internal, line, pick, projection, win_prob
+                FROM predictions
+                WHERE id = ?
+            """, (prediction_id,)).fetchone()
+            pred_conn.close()
+            if not pred_row or pred_row[7] is None:
+                continue
+
+            from src.clv import record_opening_line
+
+            record_opening_line(
+                player_name=pred_row[2],
+                prop_type=pred_row[3],
+                direction=pred_row[5],
+                pp_line=float(pred_row[4]),
+                bet_probability=float(pred_row[7] or 0.0),
+                edge_source="slip",
+                game_date=pred_row[1] or pick.get("game_date") or game_date,
+                prediction_id=int(pred_row[0]),
+                projection=float(pred_row[6] or 0.0),
+            )
+        except Exception:
+            pass
+
     return slip_id
 
 
@@ -191,14 +224,22 @@ def grade_slip_pick(slip_pick_id: int, actual_result: float) -> str:
     """Grade a single pick within a slip."""
     conn = get_connection()
     cur = conn.execute(
-        "SELECT line, pick FROM slip_picks WHERE id = ?", (slip_pick_id,)
+        """
+        SELECT sp.line, sp.pick, sp.prediction_id, sp.player_name, sp.stat_type,
+               COALESCE(pr.game_date, s.game_date) AS resolved_game_date
+        FROM slip_picks sp
+        LEFT JOIN predictions pr ON sp.prediction_id = pr.id
+        LEFT JOIN slips s ON sp.slip_id = s.id
+        WHERE sp.id = ?
+        """,
+        (slip_pick_id,),
     )
     row = cur.fetchone()
     if not row:
         conn.close()
         return None
 
-    line, pick = row
+    line, pick, prediction_id, player_name, stat_type, resolved_game_date = row
     if actual_result > line:
         result = "W" if pick == "MORE" else "L"
     elif actual_result < line:
@@ -211,6 +252,19 @@ def grade_slip_pick(slip_pick_id: int, actual_result: float) -> str:
     """, (result, actual_result, slip_pick_id))
     conn.commit()
     conn.close()
+
+    try:
+        from src.clv import record_outcome
+
+        record_outcome(
+            player_name=player_name,
+            prop_type=stat_type,
+            outcome=result,
+            game_date=resolved_game_date,
+            prediction_id=prediction_id,
+        )
+    except Exception:
+        pass
 
     # Check if all picks graded, then finalize slip
     _try_finalize_slip_for_pick(slip_pick_id)

@@ -890,6 +890,7 @@ def backtest_single_day(game_date: str,
                     "edge": pred.get("edge", 0),
                     "p_over": pred.get("p_over", 0.5),
                     "p_under": pred.get("p_under", 0.5),
+                    "plate_appearances": batter.get("pa", 0),
                     "actual": actual,
                     "result": grade,
                 })
@@ -944,6 +945,7 @@ def backtest_single_day(game_date: str,
                     "edge": pred.get("edge", 0),
                     "p_over": pred.get("p_over", 0.5),
                     "p_under": pred.get("p_under", 0.5),
+                    "innings_pitched": sp.get("ip", 0.0),
                     "actual": actual_k,
                     "result": grade,
                 })
@@ -992,8 +994,25 @@ def filter_nonplays(results: list[dict]) -> tuple[list[dict], dict]:
         - kept_predictions: count after filtering
         - pct_removed: percentage of predictions that were non-plays
     """
-    plays = [r for r in results if r.get("actual", 0) > 0]
-    nonplays = [r for r in results if r.get("actual", 0) == 0]
+    has_explicit_play_flag = any(
+        ("plate_appearances" in r) or ("innings_pitched" in r)
+        for r in results
+    )
+
+    if has_explicit_play_flag:
+        plays = [
+            r for r in results
+            if r.get("plate_appearances", 0) > 0 or float(r.get("innings_pitched", 0) or 0) > 0
+        ]
+        nonplays = [
+            r for r in results
+            if r.get("plate_appearances", 0) <= 0 and float(r.get("innings_pitched", 0) or 0) <= 0
+        ]
+    else:
+        # Legacy backtest files do not carry explicit play indicators, so we
+        # cannot distinguish a true non-play from a legitimate 0-stat outcome.
+        plays = list(results)
+        nonplays = []
 
     stats = {
         "total_predictions": len(results),

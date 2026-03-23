@@ -18,6 +18,25 @@ from typing import Optional, Dict, List
 from src.database import get_connection
 
 
+def _resolve_snapshot_game_date(row: pd.Series, fallback_date: str | None) -> str:
+    """Resolve a snapshot row's game date from row data before falling back."""
+    explicit = row.get("game_date")
+    if explicit:
+        return str(explicit)
+
+    start_time = row.get("start_time")
+    if start_time is not None and str(start_time) not in ("", "NaT"):
+        try:
+            ts = pd.Timestamp(start_time)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize("UTC")
+            return ts.tz_convert("America/Los_Angeles").date().isoformat()
+        except Exception:
+            pass
+
+    return fallback_date or date.today().isoformat()
+
+
 def init_line_snapshots_table():
     """Create the line_snapshots table."""
     conn = get_connection()
@@ -68,8 +87,9 @@ def snapshot_pp_lines(pp_lines_df: pd.DataFrame, game_date: str = None):
     rows_inserted = 0
     for _, row in pp_lines_df.iterrows():
         player = row.get("player_name", "")
-        stat = row.get("stat_type", "")
+        stat = row.get("stat_internal") or row.get("stat_type", "")
         line = row.get("line")
+        row_game_date = _resolve_snapshot_game_date(row, game_date)
 
         if not player or not stat or line is None:
             continue
@@ -80,7 +100,7 @@ def snapshot_pp_lines(pp_lines_df: pd.DataFrame, game_date: str = None):
             SELECT id FROM line_snapshots
             WHERE player_name = ? AND stat_type = ? AND game_date = ?
             AND pp_line = ? AND snapshot_time > datetime(?, '-15 minutes')
-        """, (player, stat, game_date, line, now)).fetchone()
+        """, (player, stat, row_game_date, line, now)).fetchone()
 
         if existing:
             continue
@@ -91,7 +111,7 @@ def snapshot_pp_lines(pp_lines_df: pd.DataFrame, game_date: str = None):
              line_type, start_time)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
-            now, game_date, player, stat, line,
+            now, row_game_date, player, stat, line,
             row.get("line_type", "standard"),
             row.get("start_time", ""),
         ))
@@ -194,7 +214,6 @@ def detect_stale_lines(pp_lines_df: pd.DataFrame,
         List of stale line alerts with player, prop, staleness info
     """
     stale_alerts = []
-    game_date = date.today().isoformat()
     conn = get_connection()
     cutoff = (datetime.now() - timedelta(hours=hours_threshold)).isoformat()
 
@@ -214,7 +233,8 @@ def detect_stale_lines(pp_lines_df: pd.DataFrame,
 
         for _, pp_row in matching.iterrows():
             pp_line = pp_row["line"]
-            stat_type = pp_row["stat_type"]
+            stat_type = pp_row.get("stat_internal", pp_row.get("stat_type", ""))
+            row_game_date = _resolve_snapshot_game_date(pp_row, None)
 
             if abs(pp_line - sharp_line_val) < 0.25:
                 continue  # Lines match, not stale
@@ -227,7 +247,7 @@ def detect_stale_lines(pp_lines_df: pd.DataFrame,
                 FROM line_snapshots
                 WHERE player_name = ? AND stat_type = ? AND game_date = ?
                 AND snapshot_time >= ?
-            """, (pp_row["player_name"], stat_type, game_date, cutoff)).fetchone()
+            """, (pp_row["player_name"], stat_type, row_game_date, cutoff)).fetchone()
 
             if movement and movement[0] <= 1:
                 # PP line hasn't moved — it's stale

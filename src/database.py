@@ -21,6 +21,18 @@ def get_connection():
     return conn
 
 
+def _existing_columns(conn, table_name: str) -> set[str]:
+    """Return the current column names for a table."""
+    cur = conn.execute(f"PRAGMA table_info({table_name})")
+    return {row[1] for row in cur.fetchall()}
+
+
+def _ensure_column(conn, table_name: str, column_name: str, ddl_fragment: str) -> None:
+    """Add a column if it does not already exist."""
+    if column_name not in _existing_columns(conn, table_name):
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl_fragment}")
+
+
 def resolve_game_date(pred: dict = None, game_date: str = None) -> str:
     """Resolve the best available game date for a prediction payload."""
     if game_date:
@@ -86,6 +98,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_predictions_player ON predictions(player_name);
         CREATE INDEX IF NOT EXISTS idx_predictions_result ON predictions(result);
     """)
+    _ensure_column(conn, "predictions", "p_push", "REAL")
+    _ensure_column(conn, "predictions", "win_prob", "REAL")
+    _ensure_column(conn, "predictions", "game_time_utc", "TEXT")
     conn.commit()
     conn.close()
 
@@ -145,12 +160,59 @@ def init_clv_table():
             opening_prob REAL,
             closing_prob REAL,
             our_prob REAL,
+            prediction_id INTEGER,
+            projection REAL,
+            closing_line REAL,
+            edge_source TEXT,
+            outcome INTEGER,
+            updated_at TEXT,
             clv_points REAL,
             beat_close INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now'))
         )
     """)
+    cols = _existing_columns(conn, "clv_tracking")
+    if "game_date" not in cols and "date" in cols:
+        conn.execute("ALTER TABLE clv_tracking ADD COLUMN game_date TEXT")
+        conn.execute("UPDATE clv_tracking SET game_date = date")
+        cols = _existing_columns(conn, "clv_tracking")
+    if "stat_type" not in cols and "prop_type" in cols:
+        conn.execute("ALTER TABLE clv_tracking ADD COLUMN stat_type TEXT")
+        conn.execute("UPDATE clv_tracking SET stat_type = prop_type")
+        cols = _existing_columns(conn, "clv_tracking")
+    if "line" not in cols and "pp_line" in cols:
+        conn.execute("ALTER TABLE clv_tracking ADD COLUMN line REAL")
+        conn.execute("UPDATE clv_tracking SET line = pp_line")
+        cols = _existing_columns(conn, "clv_tracking")
+    if "pick" not in cols and "direction" in cols:
+        conn.execute("ALTER TABLE clv_tracking ADD COLUMN pick TEXT")
+        conn.execute("UPDATE clv_tracking SET pick = direction")
+        cols = _existing_columns(conn, "clv_tracking")
+    if "opening_prob" not in cols and "bet_probability" in cols:
+        conn.execute("ALTER TABLE clv_tracking ADD COLUMN opening_prob REAL")
+        conn.execute("UPDATE clv_tracking SET opening_prob = bet_probability")
+        cols = _existing_columns(conn, "clv_tracking")
+    if "closing_prob" not in cols and "closing_probability" in cols:
+        conn.execute("ALTER TABLE clv_tracking ADD COLUMN closing_prob REAL")
+        conn.execute("UPDATE clv_tracking SET closing_prob = closing_probability")
+        cols = _existing_columns(conn, "clv_tracking")
+    if "clv_points" not in cols and "clv" in cols:
+        conn.execute("ALTER TABLE clv_tracking ADD COLUMN clv_points REAL")
+        conn.execute("UPDATE clv_tracking SET clv_points = clv")
+        cols = _existing_columns(conn, "clv_tracking")
+
+    _ensure_column(conn, "clv_tracking", "prediction_id", "INTEGER")
+    _ensure_column(conn, "clv_tracking", "projection", "REAL")
+    _ensure_column(conn, "clv_tracking", "closing_line", "REAL")
+    _ensure_column(conn, "clv_tracking", "edge_source", "TEXT")
+    _ensure_column(conn, "clv_tracking", "outcome", "INTEGER")
+    _ensure_column(conn, "clv_tracking", "updated_at", "TEXT")
+    _ensure_column(conn, "clv_tracking", "our_prob", "REAL")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clv_date ON clv_tracking(game_date)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_clv_player_prop "
+        "ON clv_tracking(game_date, player_name, stat_type)"
+    )
     conn.commit()
     conn.close()
 
@@ -163,9 +225,9 @@ def log_prediction(pred: dict, game_date: str = None):
     cur = conn.execute("""
         INSERT INTO predictions
         (game_date, player_name, stat_type, stat_internal, line, projection,
-         pick, confidence, rating, p_over, p_under, edge, park_team,
-         weather_temp, weather_wind, model_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         pick, confidence, rating, p_over, p_under, p_push, win_prob, edge,
+         park_team, weather_temp, weather_wind, model_version, game_time_utc)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         resolved_game_date,
         pred.get("player_name", ""),
@@ -178,11 +240,14 @@ def log_prediction(pred: dict, game_date: str = None):
         pred.get("rating", ""),
         pred.get("p_over", 0),
         pred.get("p_under", 0),
+        pred.get("p_push", 0),
+        pred.get("win_prob", 0),
         pred.get("edge", 0),
         pred.get("park_team", ""),
         pred.get("weather_temp", None),
         pred.get("weather_wind", None),
         pred.get("model_version", "v1.0"),
+        pred.get("game_time_utc", pred.get("start_time")),
     ))
     conn.commit()
     row_id = cur.lastrowid
@@ -801,8 +866,9 @@ def save_clv_record(records: list):
         conn.execute("""
             INSERT INTO clv_tracking
             (game_date, player_name, stat_type, line, pick, opening_prob,
-             closing_prob, our_prob, clv_points, beat_close)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             closing_prob, our_prob, prediction_id, projection, closing_line,
+             edge_source, outcome, updated_at, clv_points, beat_close)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             record.get("game_date"),
             record.get("player_name"),
@@ -812,6 +878,12 @@ def save_clv_record(records: list):
             record.get("opening_prob"),
             record.get("closing_prob"),
             record.get("our_prob"),
+            record.get("prediction_id"),
+            record.get("projection"),
+            record.get("closing_line"),
+            record.get("edge_source"),
+            record.get("outcome"),
+            record.get("updated_at"),
             record.get("clv_points"),
             record.get("beat_close", 0),
         ))

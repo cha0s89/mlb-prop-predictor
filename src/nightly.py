@@ -24,7 +24,7 @@ from src.autograder import auto_grade_date
 from src.autolearn import run_adjustment_cycle
 from src.ensemble import update_ensemble_weights
 from src.drift import check_model_health
-from src.clv import compute_clv_stats
+from src.clv import compute_clv_stats, update_closing_lines
 from src.board_logger import get_board_stats, ensure_shadow_sample, get_shadow_sample_stats
 from src.database import get_connection, get_graded_predictions, get_projection_diagnostics
 
@@ -119,7 +119,9 @@ def run_nightly_cycle(target_date: str = None) -> dict:
 
     # ── PHASE 6: CLV STATS ───────────────────────────────────
     try:
+        clv_sync = update_closing_lines(target_date, days_back=7)
         clv = compute_clv_stats(days=30)
+        clv["sync"] = clv_sync
         results["phase_results"]["clv"] = clv
         logger.info("Phase 6 done: mean CLV=%.3f", clv.get("mean_clv", 0))
     except Exception as e:

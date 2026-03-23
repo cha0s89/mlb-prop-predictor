@@ -125,6 +125,42 @@ def get_baseline_weights() -> dict:
             "doubles": 0.0,
         },
 
+        # Per-prop selection floors used by the UI/slip builder.
+        # These do not change the raw projection; they gate which picks qualify
+        # for surfaced recommendations and suggested slips.
+        "per_prop_confidence_floors": {
+            "hits_more": 0.60,
+            "hits_less": 0.60,
+            "total_bases_more": 0.60,
+            "total_bases_less": 0.60,
+            "pitcher_strikeouts_more": 0.60,
+            "pitcher_strikeouts_less": 0.60,
+            "hitter_fantasy_score_more": 0.60,
+            "hitter_fantasy_score_less": 0.60,
+            "pitching_outs_more": 0.60,
+            "pitching_outs_less": 0.60,
+            "earned_runs_more": 0.60,
+            "earned_runs_less": 0.60,
+            "walks_allowed_more": 0.60,
+            "walks_allowed_less": 0.60,
+            "hits_allowed_more": 0.60,
+            "hits_allowed_less": 0.60,
+            "batter_strikeouts_more": 0.60,
+            "batter_strikeouts_less": 0.60,
+            "walks_more": 0.60,
+            "walks_less": 0.60,
+            "rbis_more": 0.60,
+            "rbis_less": 0.60,
+            "runs_more": 0.60,
+            "runs_less": 0.60,
+            "singles_more": 0.60,
+            "singles_less": 0.60,
+            "doubles_more": 0.60,
+            "doubles_less": 0.60,
+            "hits_runs_rbis_more": 0.60,
+            "hits_runs_rbis_less": 0.60,
+        },
+
         # Factor weights: how much to trust each input signal
         # 1.0 = default trust. Adjusted based on whether the factor
         # improves or hurts prediction accuracy.

@@ -122,12 +122,18 @@ def score_single_pick(sharp_edge: dict = None, proj_result: dict = None) -> dict
     player_name = (sharp_edge or proj_result).get("player_name", "")
     team = (sharp_edge or {}).get("team", "") or (proj_result or {}).get("team", "")
     stat_type = (sharp_edge or proj_result).get("stat_type", "")
+    stat_internal = (
+        (proj_result or {}).get("stat_internal")
+        or (sharp_edge or {}).get("stat_internal")
+        or stat_type.lower().strip().replace("+", "_").replace(" ", "_")
+    )
     line = (sharp_edge or {}).get("pp_line") or (proj_result or {}).get("line", 0)
 
     return {
         "player_name": player_name,
         "team": team,
         "stat_type": stat_type,
+        "stat_internal": stat_internal,
         "line": line,
         "pick": pick,
         "combined_score": round(combined, 4),
@@ -135,8 +141,10 @@ def score_single_pick(sharp_edge: dict = None, proj_result: dict = None) -> dict
         "signal": signal,
         "sharp_edge_pct": round(sharp_edge_val * 100, 2) if has_sharp else None,
         "proj_edge_pct": round(proj_edge_val * 100, 2) if has_proj else None,
+        "confidence": proj_result.get("confidence") if has_proj else None,
         "proj_confidence": proj_result.get("confidence") if has_proj else None,
         "proj_rating": proj_rating if has_proj else None,
+        "meets_conf_floor": proj_result.get("meets_conf_floor", True) if has_proj else True,
         "fanduel_agrees": sharp_edge.get("fanduel_agrees") if has_sharp else None,
         "num_books": sharp_edge.get("num_books") if has_sharp else None,
     }
