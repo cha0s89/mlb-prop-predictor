@@ -157,6 +157,7 @@ def _phase1_autograde(target_date: str) -> dict:
         "wins": wins,
         "losses": losses,
         "pushes": pushes,
+        "tracking_repairs": raw.get("tracking_repairs", {}),
         "projected_stats_graded": raw.get("projected_stats_graded", 0),
         "board_entries_graded": raw.get("board_entries_graded", 0),
         "not_matched": raw.get("not_matched", 0),

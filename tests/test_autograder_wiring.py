@@ -234,6 +234,129 @@ class AutograderWiringTests(unittest.TestCase):
         self.assertEqual(rows[2], "A")
         self.assertAlmostEqual(rows[3], 1.9, places=3)
 
+    def test_auto_grade_prediction_supports_plural_rbis_internal_name(self):
+        pred_id = database.log_prediction(
+            {
+                "game_date": "2026-03-26",
+                "player_name": "Shohei Ohtani",
+                "stat_type": "RBIs",
+                "stat_internal": "rbis",
+                "line": 0.5,
+                "projection": 0.9,
+                "pick": "MORE",
+                "confidence": 0.59,
+                "rating": "C",
+            }
+        )
+        pred_row = database.get_ungraded_predictions("2026-03-26").iloc[0]
+        player_stats_list = [
+            {
+                "player_name": "Shohei Ohtani",
+                "player_type": "batter",
+                "rbi": 2,
+                "hits": 1,
+                "runs": 1,
+                "walks": 1,
+                "hbp": 0,
+                "stolen_bases": 0,
+                "strikeouts": 1,
+                "at_bats": 4,
+                "total_bases": 4,
+                "hits_runs_rbis": 4,
+                "fantasy_score": 14.0,
+            }
+        ]
+
+        result = autograder.auto_grade_prediction(pred_row, player_stats_list)
+
+        self.assertEqual(pred_id, 1)
+        self.assertEqual(result, "W")
+        row = self._fetchall(
+            "SELECT actual_result, result FROM predictions WHERE id = ?",
+            (pred_id,),
+        )[0]
+        self.assertEqual(row[0], 2.0)
+        self.assertEqual(row[1], "W")
+
+    def test_repair_preopening_tracking_rows_removes_future_duplicate_legacy_rows(self):
+        database.save_projected_stats([
+            {
+                "game_date": "2026-03-22",
+                "player_name": "Max Fried",
+                "team": "NYY",
+                "stat_type": "pitcher_strikeouts",
+                "projected_value": 4.6,
+                "line": 5.0,
+                "pick": "LESS",
+                "confidence": 0.58,
+                "rating": "C",
+            },
+            {
+                "game_date": "2026-03-27",
+                "player_name": "Max Fried",
+                "team": "NYY",
+                "stat_type": "pitcher_strikeouts",
+                "projected_value": 5.0,
+                "line": 5.0,
+                "pick": "LESS",
+                "confidence": 0.61,
+                "rating": "B",
+            },
+        ])
+        board_logger.log_board_snapshot([
+            {
+                "game_date": "2026-03-22",
+                "player_name": "Max Fried",
+                "team": "NYY",
+                "stat_internal": "pitcher_strikeouts",
+                "stat_type": "Pitcher Strikeouts",
+                "line": 5.0,
+                "pick": "LESS",
+                "confidence": 0.58,
+                "rating": "C",
+                "projection": 4.6,
+                "line_type": "standard",
+            },
+            {
+                "game_date": "2026-03-27",
+                "player_name": "Max Fried",
+                "team": "NYY",
+                "stat_internal": "pitcher_strikeouts",
+                "stat_type": "Pitcher Strikeouts",
+                "line": 5.0,
+                "pick": "LESS",
+                "confidence": 0.61,
+                "rating": "B",
+                "projection": 5.0,
+                "line_type": "standard",
+            },
+        ])
+
+        repair = autograder._repair_preopening_tracking_rows("2026-03-22")
+
+        self.assertEqual(repair["projected_stats_removed"], 1)
+        self.assertEqual(repair["board_rows_removed"], 1)
+        projected_rows = self._fetchall(
+            """
+            SELECT game_date
+            FROM projected_stats
+            WHERE player_name = ? AND stat_type = ?
+            ORDER BY game_date
+            """,
+            ("Max Fried", "pitcher_strikeouts"),
+        )
+        board_rows = self._fetchall(
+            """
+            SELECT date
+            FROM daily_board
+            WHERE player_name = ? AND prop_type = ?
+            ORDER BY date
+            """,
+            ("Max Fried", "pitcher_strikeouts"),
+        )
+        self.assertEqual(projected_rows, [("2026-03-27",)])
+        self.assertEqual(board_rows, [("2026-03-27",)])
+
 
 if __name__ == "__main__":
     unittest.main()

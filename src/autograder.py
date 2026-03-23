@@ -30,6 +30,7 @@ from src.database import (
 )
 from src.board_logger import grade_board_entry
 from src.slips import grade_slip_pick
+from src.spring import get_opening_day_for_year
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ STAT_TYPE_MAP = {
     "total_bases": "total_bases",
     "home_runs": "home_runs",
     "rbi": "rbi",
+    "rbis": "rbi",
     "runs": "runs",
     "stolen_bases": "stolen_bases",
     "walks": "walks",
@@ -460,6 +462,72 @@ def _lookup_actual_value(
     return float(actual_value)
 
 
+def _repair_preopening_tracking_rows(game_date: str) -> dict:
+    """Remove legacy pre-opening-day tracking rows that were saved under the wrong date.
+
+    Older board captures sometimes logged future regular-season props under the
+    current preseason date. Once the same player/stat/line is later saved with
+    the correct scheduled game date, the preseason copy becomes ungradeable
+    noise. During preseason only, drop the stale earlier copy when an exact
+    future duplicate exists.
+    """
+    try:
+        target_date = pd.Timestamp(game_date).date()
+    except Exception:
+        return {"projected_stats_removed": 0, "board_rows_removed": 0}
+
+    opening_day = get_opening_day_for_year(target_date.year)
+    if target_date >= opening_day:
+        return {"projected_stats_removed": 0, "board_rows_removed": 0}
+
+    conn = get_connection()
+    try:
+        projected_removed = conn.execute(
+            """
+            DELETE FROM projected_stats
+            WHERE game_date = ?
+              AND actual_value IS NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM projected_stats newer
+                  WHERE newer.player_name = projected_stats.player_name
+                    AND newer.stat_type = projected_stats.stat_type
+                    AND COALESCE(newer.line, -9999) = COALESCE(projected_stats.line, -9999)
+                    AND newer.game_date > projected_stats.game_date
+                    AND newer.game_date >= ?
+              )
+            """,
+            (game_date, opening_day.isoformat()),
+        ).rowcount
+
+        board_removed = conn.execute(
+            """
+            DELETE FROM daily_board
+            WHERE date = ?
+              AND actual_stat IS NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM daily_board newer
+                  WHERE newer.player_name = daily_board.player_name
+                    AND newer.prop_type = daily_board.prop_type
+                    AND COALESCE(newer.line, -9999) = COALESCE(daily_board.line, -9999)
+                    AND COALESCE(newer.direction, '') = COALESCE(daily_board.direction, '')
+                    AND COALESCE(newer.line_type, 'standard') = COALESCE(daily_board.line_type, 'standard')
+                    AND newer.date > daily_board.date
+                    AND newer.date >= ?
+              )
+            """,
+            (game_date, opening_day.isoformat()),
+        ).rowcount
+        conn.commit()
+        return {
+            "projected_stats_removed": projected_removed or 0,
+            "board_rows_removed": board_removed or 0,
+        }
+    finally:
+        conn.close()
+
+
 def _grade_tracking_tables_for_date(game_date: str, player_stats_list: list[dict]) -> dict:
     """Grade projected_stats and daily_board rows for a given date."""
     conn = get_connection()
@@ -646,9 +714,15 @@ def auto_grade_date(game_date: str) -> dict:
         "slip_picks_graded": 0,
         "projected_stats_graded": 0,
         "board_entries_graded": 0,
+        "tracking_repairs": {},
         "results": [],
         "errors": [],
     }
+
+    try:
+        report["tracking_repairs"] = _repair_preopening_tracking_rows(game_date)
+    except Exception as exc:
+        report["errors"].append(f"Error repairing tracking rows for {game_date}: {exc}")
 
     # Get ungraded predictions for this date
     ungraded = get_ungraded_predictions(game_date=game_date)
