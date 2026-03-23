@@ -15,3 +15,6 @@ venv/
 .fuse_hidden*
 delete/
 data/odds_cache/
+logs/
+data/weights/runtime_override.json
+data/calibration/
