@@ -13,6 +13,26 @@ import numpy as np
 from scipy.stats import betabinom, nbinom, poisson, norm, gamma
 from scipy.special import comb
 
+
+def _is_integer_line(line: float) -> bool:
+    """Return True when a betting line is effectively an integer."""
+    try:
+        return float(line).is_integer()
+    except (TypeError, ValueError):
+        return False
+
+
+def _strict_over_threshold(line: float) -> int:
+    """Return the first discrete outcome that grades MORE as a win."""
+    value = float(line)
+    return int(value) + 1 if _is_integer_line(value) else int(np.ceil(value))
+
+
+def _strict_under_threshold(line: float) -> int:
+    """Return the last discrete outcome that grades LESS as a win."""
+    value = float(line)
+    return int(value) - 1 if _is_integer_line(value) else int(np.floor(value))
+
 # === BETA-BINOMIAL (Pitcher Strikeouts) ===
 
 def betabinom_params(k_rate: float, precision: float = 30.0) -> tuple[float, float]:
@@ -31,8 +51,8 @@ def betabinom_params(k_rate: float, precision: float = 30.0) -> tuple[float, flo
 
 
 def prob_over_betabinom(line: float, n_batters: int, alpha: float, beta: float) -> float:
-    """P(K >= ceil(line)) using Beta-Binomial CDF."""
-    threshold = int(np.ceil(line))
+    """P(K > line) using Beta-Binomial CDF with PrizePicks semantics."""
+    threshold = _strict_over_threshold(line)
     if threshold <= 0:
         return 1.0
     if threshold > n_batters:
@@ -41,8 +61,8 @@ def prob_over_betabinom(line: float, n_batters: int, alpha: float, beta: float) 
 
 
 def prob_under_betabinom(line: float, n_batters: int, alpha: float, beta: float) -> float:
-    """P(K <= floor(line)) using Beta-Binomial CDF."""
-    threshold = int(np.floor(line))
+    """P(K < line) using Beta-Binomial CDF with PrizePicks semantics."""
+    threshold = _strict_under_threshold(line)
     if threshold < 0:
         return 0.0
     if threshold >= n_batters:
@@ -107,16 +127,16 @@ def negbinom_params(mean_runs: float, overdispersion: float = 2.0) -> tuple[floa
 
 
 def prob_over_negbinom(line: float, n: float, p: float) -> float:
-    """P(runs >= ceil(line)) using Negative Binomial."""
-    threshold = int(np.ceil(line))
+    """P(runs > line) using Negative Binomial with PrizePicks semantics."""
+    threshold = _strict_over_threshold(line)
     if threshold <= 0:
         return 1.0
     return float(1 - nbinom.cdf(threshold - 1, n, p))
 
 
 def prob_under_negbinom(line: float, n: float, p: float) -> float:
-    """P(runs <= floor(line)) using Negative Binomial."""
-    threshold = int(np.floor(line))
+    """P(runs < line) using Negative Binomial with PrizePicks semantics."""
+    threshold = _strict_under_threshold(line)
     if threshold < 0:
         return 0.0
     return float(nbinom.cdf(threshold, n, p))
@@ -180,20 +200,20 @@ def prob_push(line: float, n_batters: int, alpha: float, beta: float) -> float:
 # === POISSON (Walks, Batter Ks, Hits Allowed) ===
 
 def prob_over_poisson(line: float, mu: float) -> float:
-    """P(X >= ceil(line)) using Poisson CDF."""
+    """P(X > line) using Poisson CDF with PrizePicks semantics."""
     if mu <= 0:
         return 0.0
-    threshold = int(np.ceil(line))
+    threshold = _strict_over_threshold(line)
     if threshold <= 0:
         return 1.0
     return float(1 - poisson.cdf(threshold - 1, mu))
 
 
 def prob_under_poisson(line: float, mu: float) -> float:
-    """P(X <= floor(line)) using Poisson CDF."""
+    """P(X < line) using Poisson CDF with PrizePicks semantics."""
     if mu <= 0:
         return 1.0
-    threshold = int(np.floor(line))
+    threshold = _strict_under_threshold(line)
     if threshold < 0:
         return 0.0
     return float(poisson.cdf(threshold, mu))

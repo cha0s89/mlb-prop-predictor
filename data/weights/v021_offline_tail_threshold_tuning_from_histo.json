@@ -1,7 +1,7 @@
 {
-  "version": "v022",
-  "description": "offline model tuning from historical backtest",
-  "created_at": "2026-03-23T17:51:31.104947+00:00",
+  "version": "v021",
+  "description": "offline tail threshold tuning from historical backtest",
+  "created_at": "2026-03-23T17:49:38.768239+00:00",
   "confidence_thresholds": {
     "A": 0.7,
     "B": 0.62,
@@ -75,59 +75,47 @@
   },
   "variance_ratios": {
     "pitcher_strikeouts": 2.2,
-    "batter_strikeouts": 1.0115,
+    "batter_strikeouts": 1.19,
     "hits": 2.5875,
     "total_bases": 1.0413,
     "home_runs": 1.19,
     "rbis": 1.53,
     "runs": 2.21,
     "stolen_bases": 2.5,
-    "hitter_fantasy_score": 1.1662,
+    "hitter_fantasy_score": 1.372,
     "hits_runs_rbis": 1.05,
-    "pitching_outs": 2.2425,
-    "earned_runs": 1.078,
+    "pitching_outs": 1.95,
+    "earned_runs": 1.54,
     "walks_allowed": 1.12,
     "walks": 1.5,
-    "hits_allowed": 3.375,
-    "singles": 2.925,
+    "hits_allowed": 2.25,
+    "singles": 1.95,
     "doubles": 1.84
   },
   "calibration_blend_weights": {
     "hits": 0.0,
-    "total_bases": 0.2,
-    "pitcher_strikeouts": 0.7,
-    "hitter_fantasy_score": 0.6,
-    "batter_strikeouts": 1.0,
-    "doubles": 0.9,
-    "earned_runs": 1.0,
-    "hits_allowed": 0.4,
-    "hits_runs_rbis": 0.0,
-    "home_runs": 0.5,
-    "pitching_outs": 0.7,
-    "rbis": 0.0,
-    "runs": 0.2,
-    "singles": 0.5,
-    "walks": 0.0,
-    "walks_allowed": 1.0
+    "total_bases": 0.3,
+    "pitcher_strikeouts": 0.5,
+    "hitter_fantasy_score": 0.7
   },
   "confidence_shrinkage": {
     "default": 0.7,
     "hits": 1.0,
     "hitter_fantasy_score": 0.65,
     "home_runs": 0.95,
-    "pitcher_strikeouts": 1.0,
+    "pitcher_strikeouts": 0.8,
     "total_bases": 0.65,
     "batter_strikeouts": 1.0,
     "doubles": 1.0,
-    "earned_runs": 0.9,
-    "hits_allowed": 0.8,
+    "earned_runs": 0.8,
+    "hits_allowed": 0.65,
     "hits_runs_rbis": 0.85,
-    "pitching_outs": 0.85,
+    "pitching_outs": 0.55,
     "rbis": 0.65,
     "runs": 0.75,
     "singles": 0.5,
     "walks": 0.65,
-    "walks_allowed": 0.95
+    "walks_allowed": 0.5
   },
   "seasonal_spring_blend": {
     "post_open_decay_days": 60,
@@ -204,82 +192,67 @@
       "Dead zones: auto-filtered by empirical calibration + floors"
     ],
     "offline_model_tuning": {
-      "source_backtest": "data/backtest/backtest_2025.json",
+      "source_backtest": "C:\\Users\\Unknown\\Downloads\\mlb-prop-predictor\\data\\backtest\\backtest_2025.json",
       "train_rows": 283133,
       "validation_rows": 93276,
-      "applied_at": "2026-03-23T17:51:31.102343+00:00",
-      "reason": "validation log loss 0.5991 vs 0.6072, mae 1.1317 vs 1.1317, holdout log-loss delta 0.0089",
+      "applied_at": "2026-03-23T16:30:53.978767+00:00",
+      "reason": "validation log loss 0.6072 vs 0.6250, mae 1.1317 vs 1.2072, holdout log-loss delta 0.0188",
       "recommendations": {
         "batter_strikeouts": {
           "offset": {
-            "from": -0.1,
+            "from": 0.0,
             "to": -0.1,
             "train_mae": 0.6759,
             "train_bias": -0.028
           },
           "variance": {
-            "from": 1.19,
-            "to": 1.0115,
-            "train_log_loss": 0.6606,
-            "train_brier": 0.2341
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 1.0,
-            "train_log_loss": 0.6561
+            "from": 1.4,
+            "to": 1.19,
+            "train_log_loss": 0.6712,
+            "train_brier": 0.2392
           },
           "confidence_shrinkage": {
-            "from": 1.0,
+            "from": 0.7,
             "to": 1.0,
-            "train_log_loss": 0.6561
+            "train_log_loss": 0.6687
           }
         },
         "doubles": {
           "offset": {
-            "from": -0.4,
+            "from": 0.0,
             "to": -0.4,
             "train_mae": 0.5091,
             "train_bias": 0.3308
           },
           "variance": {
-            "from": 1.84,
+            "from": 1.6,
             "to": 1.84,
-            "train_log_loss": 0.5019,
-            "train_brier": 0.1588
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.9,
-            "train_log_loss": 0.4354
+            "train_log_loss": 0.546,
+            "train_brier": 0.1782
           },
           "confidence_shrinkage": {
-            "from": 1.0,
+            "from": 0.7,
             "to": 1.0,
-            "train_log_loss": 0.4354
+            "train_log_loss": 0.5019
           }
         },
         "earned_runs": {
           "offset": {
-            "from": -0.1,
+            "from": 0.0,
             "to": -0.1,
             "train_mae": 1.557,
             "train_bias": -0.2267
           },
           "variance": {
-            "from": 1.54,
-            "to": 1.078,
-            "train_log_loss": 0.6766,
-            "train_brier": 0.2416
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 1.0,
-            "train_log_loss": 0.6713
+            "from": 2.2,
+            "to": 1.54,
+            "train_log_loss": 0.6815,
+            "train_brier": 0.2442
           },
           "confidence_shrinkage": {
-            "from": 0.8,
-            "to": 0.9,
-            "train_log_loss": 0.6711
+            "from": 0.7,
+            "to": 0.8,
+            "train_log_loss": 0.6813
           }
         },
         "hits": {
@@ -308,48 +281,38 @@
         },
         "hits_allowed": {
           "offset": {
-            "from": -0.2,
+            "from": 0.0,
             "to": -0.2,
             "train_mae": 1.881,
             "train_bias": 0.0122
           },
           "variance": {
-            "from": 2.25,
-            "to": 3.375,
-            "train_log_loss": 0.6648,
-            "train_brier": 0.2361
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.4,
-            "train_log_loss": 0.6642
+            "from": 1.5,
+            "to": 2.25,
+            "train_log_loss": 0.6663,
+            "train_brier": 0.2368
           },
           "confidence_shrinkage": {
-            "from": 0.65,
-            "to": 0.8,
-            "train_log_loss": 0.6634
+            "from": 0.7,
+            "to": 0.65,
+            "train_log_loss": 0.6663
           }
         },
         "hits_runs_rbis": {
           "offset": {
-            "from": -0.6,
+            "from": 0.0,
             "to": -0.6,
             "train_mae": 1.4626,
             "train_bias": -0.5072
           },
           "variance": {
-            "from": 1.05,
+            "from": 1.5,
             "to": 1.05,
-            "train_log_loss": 0.69,
-            "train_brier": 0.2484
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.0,
-            "train_log_loss": 0.69
+            "train_log_loss": 0.6902,
+            "train_brier": 0.2485
           },
           "confidence_shrinkage": {
-            "from": 0.85,
+            "from": 0.7,
             "to": 0.85,
             "train_log_loss": 0.69
           }
@@ -362,20 +325,20 @@
             "train_bias": -1.8542
           },
           "variance": {
-            "from": 1.372,
-            "to": 1.1662,
-            "train_log_loss": 0.6384,
-            "train_brier": 0.2232
+            "from": 1.96,
+            "to": 1.372,
+            "train_log_loss": 0.6388,
+            "train_brier": 0.2234
           },
           "calibration_blend": {
             "from": 0.7,
-            "to": 0.6,
-            "train_log_loss": 0.6377
+            "to": 0.7,
+            "train_log_loss": 0.6388
           },
           "confidence_shrinkage": {
             "from": 0.65,
             "to": 0.65,
-            "train_log_loss": 0.6377
+            "train_log_loss": 0.6388
           }
         },
         "home_runs": {
@@ -391,15 +354,10 @@
             "train_log_loss": 0.3542,
             "train_brier": 0.1008
           },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.5,
-            "train_log_loss": 0.3536
-          },
           "confidence_shrinkage": {
             "from": 0.95,
             "to": 0.95,
-            "train_log_loss": 0.3536
+            "train_log_loss": 0.3542
           }
         },
         "pitcher_strikeouts": {
@@ -411,109 +369,89 @@
           },
           "calibration_blend": {
             "from": 0.5,
-            "to": 0.7,
-            "train_log_loss": 0.6728
+            "to": 0.5,
+            "train_log_loss": 0.6767
           },
           "confidence_shrinkage": {
             "from": 0.8,
-            "to": 1.0,
-            "train_log_loss": 0.6705
+            "to": 0.8,
+            "train_log_loss": 0.6767
           }
         },
         "pitching_outs": {
           "offset": {
-            "from": 1.25,
+            "from": 0.0,
             "to": 1.25,
             "train_mae": 3.319,
             "train_bias": 0.5693
           },
           "variance": {
-            "from": 1.95,
-            "to": 2.2425,
-            "train_log_loss": 0.6839,
-            "train_brier": 0.2455
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.7,
-            "train_log_loss": 0.6791
+            "from": 1.3,
+            "to": 1.95,
+            "train_log_loss": 0.6848,
+            "train_brier": 0.2459
           },
           "confidence_shrinkage": {
-            "from": 0.55,
-            "to": 0.85,
-            "train_log_loss": 0.6772
+            "from": 0.7,
+            "to": 0.55,
+            "train_log_loss": 0.6839
           }
         },
         "rbis": {
           "offset": {
-            "from": -0.7,
+            "from": 0.0,
             "to": -0.7,
             "train_mae": 0.458,
             "train_bias": -0.432
           },
           "variance": {
-            "from": 1.53,
+            "from": 1.8,
             "to": 1.53,
-            "train_log_loss": 0.606,
-            "train_brier": 0.2077
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.0,
-            "train_log_loss": 0.606
+            "train_log_loss": 0.6062,
+            "train_brier": 0.2078
           },
           "confidence_shrinkage": {
-            "from": 0.65,
+            "from": 0.7,
             "to": 0.65,
             "train_log_loss": 0.606
           }
         },
         "runs": {
           "offset": {
-            "from": -0.6,
+            "from": 0.0,
             "to": -0.6,
             "train_mae": 0.4672,
             "train_bias": -0.4404
           },
           "variance": {
-            "from": 2.21,
+            "from": 1.7,
             "to": 2.21,
-            "train_log_loss": 0.6592,
-            "train_brier": 0.2332
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.2,
-            "train_log_loss": 0.6592
+            "train_log_loss": 0.6594,
+            "train_brier": 0.2333
           },
           "confidence_shrinkage": {
-            "from": 0.75,
+            "from": 0.7,
             "to": 0.75,
             "train_log_loss": 0.6592
           }
         },
         "singles": {
           "offset": {
-            "from": -0.8,
+            "from": 0.0,
             "to": -0.8,
             "train_mae": 0.5797,
             "train_bias": -0.4558
           },
           "variance": {
-            "from": 1.95,
-            "to": 2.925,
-            "train_log_loss": 0.6883,
-            "train_brier": 0.2476
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.5,
-            "train_log_loss": 0.6881
+            "from": 1.3,
+            "to": 1.95,
+            "train_log_loss": 0.7097,
+            "train_brier": 0.2577
           },
           "confidence_shrinkage": {
-            "from": 0.5,
+            "from": 0.7,
             "to": 0.5,
-            "train_log_loss": 0.6881
+            "train_log_loss": 0.695
           }
         },
         "total_bases": {
@@ -524,25 +462,25 @@
             "train_bias": -0.4844
           },
           "variance": {
-            "from": 1.0413,
+            "from": 1.225,
             "to": 1.0413,
-            "train_log_loss": 0.6443,
+            "train_log_loss": 0.6444,
             "train_brier": 0.2261
           },
           "calibration_blend": {
-            "from": 0.3,
-            "to": 0.2,
-            "train_log_loss": 0.6441
+            "from": 0.5,
+            "to": 0.3,
+            "train_log_loss": 0.6443
           },
           "confidence_shrinkage": {
             "from": 0.65,
             "to": 0.65,
-            "train_log_loss": 0.6441
+            "train_log_loss": 0.6443
           }
         },
         "walks": {
           "offset": {
-            "from": -0.5,
+            "from": 0.0,
             "to": -0.5,
             "train_mae": 0.3447,
             "train_bias": -0.3174
@@ -553,13 +491,8 @@
             "train_log_loss": 0.6,
             "train_brier": 0.2049
           },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 0.0,
-            "train_log_loss": 0.6
-          },
           "confidence_shrinkage": {
-            "from": 0.65,
+            "from": 0.7,
             "to": 0.65,
             "train_log_loss": 0.6
           }
@@ -572,20 +505,15 @@
             "train_bias": -0.0918
           },
           "variance": {
-            "from": 1.12,
+            "from": 1.6,
             "to": 1.12,
-            "train_log_loss": 0.692,
-            "train_brier": 0.2494
-          },
-          "calibration_blend": {
-            "from": 0.0,
-            "to": 1.0,
-            "train_log_loss": 0.6864
+            "train_log_loss": 0.695,
+            "train_brier": 0.2509
           },
           "confidence_shrinkage": {
-            "from": 0.5,
-            "to": 0.95,
-            "train_log_loss": 0.6844
+            "from": 0.7,
+            "to": 0.5,
+            "train_log_loss": 0.692
           }
         }
       }
@@ -1072,15 +1000,15 @@
     },
     "hitter_fantasy_score": {
       "type": "gamma",
-      "vr": 1.1662
+      "vr": 1.372
     },
     "earned_runs": {
       "type": "negbin",
-      "vr": 1.078
+      "vr": 1.54
     },
     "batter_strikeouts": {
       "type": "negbin",
-      "vr": 1.0115
+      "vr": 1.19
     },
     "walks_allowed": {
       "type": "negbin",
@@ -1088,7 +1016,7 @@
     },
     "hits_allowed": {
       "type": "negbin",
-      "vr": 3.375
+      "vr": 2.25
     },
     "rbis": {
       "type": "negbin",
@@ -1104,7 +1032,7 @@
     },
     "singles": {
       "type": "negbin",
-      "vr": 2.925
+      "vr": 1.95
     },
     "doubles": {
       "type": "negbin",
@@ -1112,7 +1040,7 @@
     },
     "pitching_outs": {
       "type": "normal",
-      "vr": 2.2425
+      "vr": 1.95
     },
     "hits_runs_rbis": {
       "type": "normal",

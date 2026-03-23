@@ -9,10 +9,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.autolearn import get_baseline_weights
 from src.offline_tuner import (
+    analyze_backtest_tail_signals,
     evaluate_floors,
     evaluate_model_weights,
     load_backtest_dataframe,
+    load_calibration_backtest_dataframe,
     load_model_backtest_dataframe,
+    load_tail_backtest_dataframe,
+    optimize_tail_signal_config,
+    evaluate_tail_signal_config,
     optimize_confidence_floors,
     optimize_model_parameters,
 )
@@ -166,6 +171,89 @@ class OfflineTunerTests(unittest.TestCase):
 
         self.assertEqual(set(floor_df["prop_type"]), {"earned_runs", "hits_runs_rbis"})
         self.assertEqual(set(model_df["prop_type"]), {"earned_runs", "hits_runs_rbis"})
+
+    def test_calibration_loader_keeps_expanded_prop_families(self):
+        sample_rows = [
+            {
+                "game_date": "2025-06-01",
+                "prop_type": "runs",
+                "projection": 0.72,
+                "line": 0.5,
+                "actual": 1.0,
+                "pick": "MORE",
+                "confidence": 0.58,
+                "result": "W",
+            },
+            {
+                "game_date": "2025-06-02",
+                "prop_type": "earned_runs",
+                "projection": 1.6,
+                "line": 1.5,
+                "actual": 0.0,
+                "pick": "LESS",
+                "confidence": 0.57,
+                "result": "W",
+            },
+        ]
+
+        with patch("src.offline_tuner.load_results", return_value=sample_rows):
+            cal_df = load_calibration_backtest_dataframe("unused.json")
+
+        self.assertEqual(set(cal_df["stat_internal"]), {"runs", "earned_runs"})
+        self.assertIn("actual_result", cal_df.columns)
+
+    def test_tail_optimizer_learns_prop_specific_threshold_overrides(self):
+        rows = []
+        for i in range(220):
+            rows.append({
+                "game_date": pd.Timestamp("2025-04-01") + pd.Timedelta(days=i // 8),
+                "prop_type": "hits",
+                "actual": 3.0 if i % 5 == 0 else 0.0,
+                "breakout_prob": 0.32 if i % 5 == 0 else 0.06,
+                "dud_prob": 0.08 if i % 5 == 0 else 0.42,
+                "breakout_target": 3.0,
+                "dud_target": 0.0,
+                "actual_breakout": 1 if i % 5 == 0 else 0,
+                "actual_dud": 0 if i % 5 == 0 else 1,
+            })
+        train_df = pd.DataFrame(rows)
+        tuned = optimize_tail_signal_config(train_df, get_baseline_weights())
+        cfg = tuned["tail_signal_config"]["label_thresholds_by_prop"]["hits"]
+        metrics = evaluate_tail_signal_config(train_df, tuned["tail_signal_config"])
+
+        self.assertIn("breakout_high", cfg)
+        self.assertIn("dud_high", cfg)
+        self.assertGreater(metrics["by_prop"]["hits"]["breakout_high_precision"], 0.0)
+        self.assertGreater(metrics["by_prop"]["hits"]["dud_high_precision"], 0.0)
+
+    def test_tail_analyzer_does_not_promote_identical_config(self):
+        rows = []
+        for i in range(220):
+            rows.append({
+                "game_date": pd.Timestamp("2025-04-01") + pd.Timedelta(days=i // 4),
+                "prop_type": "hits",
+                "actual": 3.0 if i % 5 == 0 else 0.0,
+                "breakout_prob": 0.32 if i % 5 == 0 else 0.06,
+                "dud_prob": 0.08 if i % 5 == 0 else 0.42,
+                "breakout_target": 3.0,
+                "dud_target": 0.0,
+                "actual_breakout": 1 if i % 5 == 0 else 0,
+                "actual_dud": 0 if i % 5 == 0 else 1,
+            })
+        df = pd.DataFrame(rows)
+        current_weights = get_baseline_weights()
+        same_cfg = current_weights.get("tail_signal_config", {})
+
+        with patch("src.offline_tuner.load_tail_backtest_dataframe", return_value=df), patch(
+            "src.offline_tuner.load_current_weights", return_value=current_weights
+        ), patch(
+            "src.offline_tuner.optimize_tail_signal_config",
+            return_value={"tail_signal_config": same_cfg, "recommendations": {}},
+        ):
+            analysis = analyze_backtest_tail_signals("ignored.json")
+
+        self.assertFalse(analysis["should_apply"])
+        self.assertIn("config_changed=False", analysis["reason"])
 
 
 if __name__ == "__main__":

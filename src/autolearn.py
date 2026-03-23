@@ -904,11 +904,57 @@ def build_calibration_curve(graded: pd.DataFrame) -> dict:
 
 CALIBRATION_PATH = WEIGHTS_DIR / "calibration_v015.json"
 CALIBRATION_PROPS = {
-    "hits": {"line": 1.5, "bin_width": 0.05, "min_proj": 0.5, "max_proj": 1.5},
-    "total_bases": {"line": 1.5, "bin_width": 0.10, "min_proj": 0.8, "max_proj": 2.5},
-    "pitcher_strikeouts": {"line": 4.5, "bin_width": 0.25, "min_proj": 3.0, "max_proj": 9.0},
-    "hitter_fantasy_score": {"line": 7.5, "bin_width": 0.25, "min_proj": 5.5, "max_proj": 12.0},
+    "hits": {"line": 1.5, "bin_width": 0.05},
+    "total_bases": {"line": 1.5, "bin_width": 0.10},
+    "pitcher_strikeouts": {"line": 4.5, "bin_width": 0.25},
+    "hitter_fantasy_score": {"line": 7.5, "bin_width": 0.25},
+    "home_runs": {"line": 0.5, "bin_width": 0.02},
+    "runs": {"line": 0.5, "bin_width": 0.05},
+    "rbis": {"line": 0.5, "bin_width": 0.05},
+    "hits_runs_rbis": {"line": 1.5, "bin_width": 0.10},
+    "batter_strikeouts": {"line": 0.5, "bin_width": 0.05},
+    "walks": {"line": 0.5, "bin_width": 0.05},
+    "singles": {"line": 0.5, "bin_width": 0.05},
+    "doubles": {"line": 0.5, "bin_width": 0.05},
+    "pitching_outs": {"line": 17.5, "bin_width": 0.25},
+    "earned_runs": {"line": 1.5, "bin_width": 0.10},
+    "walks_allowed": {"line": 1.5, "bin_width": 0.10},
+    "hits_allowed": {"line": 5.5, "bin_width": 0.10},
 }
+
+
+def _round_down(value: float, step: float) -> float:
+    return np.floor(value / step) * step
+
+
+def _round_up(value: float, step: float) -> float:
+    return np.ceil(value / step) * step
+
+
+def _dominant_calibration_line(subset: pd.DataFrame, fallback: float) -> float:
+    """Return the most common line observed for a prop family."""
+    if "line" not in subset.columns or subset["line"].dropna().empty:
+        return float(fallback)
+    counts = subset["line"].value_counts(dropna=True)
+    if counts.empty:
+        return float(fallback)
+    return float(counts.index[0])
+
+
+def _projection_bounds_for_calibration(subset: pd.DataFrame, bin_width: float) -> tuple[float, float]:
+    """Derive stable projection bounds from empirical quantiles."""
+    projections = pd.to_numeric(subset["projection"], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    if projections.empty:
+        return 0.0, bin_width
+
+    lo = float(projections.quantile(0.01))
+    hi = float(projections.quantile(0.99))
+    if hi <= lo:
+        hi = lo + bin_width
+
+    lo = float(_round_down(max(0.0, lo), bin_width))
+    hi = float(_round_up(hi, bin_width))
+    return lo, max(hi, lo + bin_width)
 
 
 def rebuild_calibration_tables(graded: pd.DataFrame, min_per_bin: int = 30) -> dict:
@@ -935,16 +981,20 @@ def rebuild_calibration_tables(graded: pd.DataFrame, min_per_bin: int = 30) -> d
         return result
 
     for prop_type, cfg in CALIBRATION_PROPS.items():
-        line = cfg["line"]
         bin_width = cfg["bin_width"]
 
-        # Filter to this prop type with matching line
+        # Filter to this prop type first, then anchor to its dominant line so
+        # the empirical table stays line-specific.
         col_name = "stat_internal" if "stat_internal" in graded.columns else "prop_type"
-        mask = (graded[col_name] == prop_type) & (graded["result"].isin(["W", "L"]))
-        if "line" in graded.columns:
-            mask = mask & (abs(graded["line"] - line) < 0.01)
-        subset = graded[mask].copy()
+        base_mask = (graded[col_name] == prop_type) & (graded["result"].isin(["W", "L"]))
+        subset = graded[base_mask].copy()
 
+        if len(subset) < min_per_bin:
+            continue
+
+        line = _dominant_calibration_line(subset, cfg["line"])
+        if "line" in subset.columns:
+            subset = subset[abs(subset["line"] - line) < 0.01].copy()
         if len(subset) < min_per_bin:
             continue
 
@@ -957,10 +1007,11 @@ def rebuild_calibration_tables(graded: pd.DataFrame, min_per_bin: int = 30) -> d
         if actual_col is None:
             continue
 
+        proj_lo, proj_hi_bound = _projection_bounds_for_calibration(subset, bin_width)
+
         # Build bins
         points = []
-        proj_lo = cfg["min_proj"]
-        while proj_lo < cfg["max_proj"]:
+        while proj_lo < proj_hi_bound:
             proj_hi = proj_lo + bin_width
             proj_mid = round((proj_lo + proj_hi) / 2, 4)
 

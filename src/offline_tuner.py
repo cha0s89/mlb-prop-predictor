@@ -18,10 +18,17 @@ import numpy as np
 import pandas as pd
 from scipy.stats import gamma as sp_gamma, nbinom as sp_nbinom, norm as sp_norm, poisson as sp_poisson
 
-from src.autolearn import load_current_weights, save_weights, _next_version
+from src.autolearn import (
+    CALIBRATION_PATH,
+    load_current_weights,
+    rebuild_calibration_tables,
+    save_weights,
+    _next_version,
+)
 from src.backtester import DEFAULT_RESULTS_PATH, load_results, filter_nonplays
 from src.predictor import get_distribution_config
 from src.selection import floor_key, get_confidence_floor
+from src.tail_signals import INVERSE_GOOD_PROPS
 
 
 SUPPORTED_PROPS = {
@@ -93,6 +100,12 @@ MODEL_MIN_TRAIN_ROWS = 120
 MODEL_MIN_VALID_ROWS = 40
 MODEL_MIN_LOGLOSS_GAIN = 0.005
 MODEL_MAX_MAE_REGRESSION = 0.02
+TAIL_MIN_TRAIN_ROWS = 120
+TAIL_MIN_VALID_ROWS = 40
+TAIL_MEDIUM_GRID = [round(x, 2) for x in np.arange(0.08, 0.31, 0.02)]
+TAIL_HIGH_GRID = [round(x, 2) for x in np.arange(0.12, 0.51, 0.02)]
+TAIL_MIN_SCORE_GAIN = 1e-4
+TAIL_MIN_HOLDOUT_GAIN = 1e-4
 
 
 def _offset_grid_for_prop(prop_type: str, subset: pd.DataFrame, current_offset: float) -> list[float]:
@@ -222,6 +235,32 @@ def load_model_backtest_dataframe(filepath: str = DEFAULT_RESULTS_PATH) -> pd.Da
     df = df.dropna(subset=["projection", "line", "actual"])
     df["actual_over"] = (df["actual"] > df["line"]).astype(float)
     return df
+
+
+def load_calibration_backtest_dataframe(filepath: str = DEFAULT_RESULTS_PATH) -> pd.DataFrame:
+    """Load graded backtest rows for empirical calibration-table rebuilds."""
+    results = load_results(filepath)
+    if not results:
+        return pd.DataFrame()
+
+    plays, _ = filter_nonplays(results)
+    df = pd.DataFrame(plays)
+    if df.empty:
+        return df
+
+    required = {"game_date", "prop_type", "projection", "line", "actual", "result"}
+    if required - set(df.columns):
+        return pd.DataFrame()
+
+    df = df[df["result"].isin(["W", "L"])].copy()
+    if df.empty:
+        return df
+
+    df = df.rename(columns={"prop_type": "stat_internal", "actual": "actual_result"})
+    df["game_date"] = pd.to_datetime(df["game_date"])
+    for col in ("projection", "line", "actual_result"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.dropna(subset=["projection", "line", "actual_result"]).copy()
 
 
 def _confidence_shrinkage_value(weights: dict, prop_type: str) -> float:
@@ -421,6 +460,249 @@ def evaluate_model_weights(df: pd.DataFrame, weights: dict) -> dict:
         }
 
     return result
+
+
+def rebuild_backtest_calibration_tables(
+    filepath: str = DEFAULT_RESULTS_PATH,
+    min_per_bin: int = 40,
+) -> dict:
+    """Regenerate empirical calibration tables from the historical backtest."""
+    df = load_calibration_backtest_dataframe(filepath)
+    if df.empty:
+        return {"error": "No graded rows available to rebuild calibration tables."}
+
+    before = {}
+    if CALIBRATION_PATH.exists():
+        with open(CALIBRATION_PATH, encoding="utf-8") as f:
+            before = json.load(f)
+
+    rebuilt = rebuild_calibration_tables(df, min_per_bin=min_per_bin)
+    after = {}
+    if CALIBRATION_PATH.exists():
+        with open(CALIBRATION_PATH, encoding="utf-8") as f:
+            after = json.load(f)
+
+    changed_props = sorted(set(after.keys()) - set(before.keys()))
+    changed_props.extend(
+        prop for prop in sorted(set(after.keys()) & set(before.keys()))
+        if after.get(prop) != before.get(prop)
+    )
+
+    return {
+        "backtest_path": str(filepath),
+        "rows": int(len(df)),
+        "props_written": sorted(after.keys()),
+        "changed_props": changed_props,
+        "calibration_path": str(CALIBRATION_PATH),
+        "error": None,
+    }
+
+
+def load_tail_backtest_dataframe(filepath: str = DEFAULT_RESULTS_PATH) -> pd.DataFrame:
+    """Load backtest rows with breakout/dud probabilities for tail-label tuning."""
+    results = load_results(filepath)
+    if not results:
+        return pd.DataFrame()
+
+    plays, _ = filter_nonplays(results)
+    df = pd.DataFrame(plays)
+    if df.empty:
+        return df
+
+    required = {
+        "game_date", "prop_type", "actual", "breakout_prob", "dud_prob",
+        "breakout_target", "dud_target",
+    }
+    if required - set(df.columns):
+        return pd.DataFrame()
+
+    df = df.copy()
+    df["game_date"] = pd.to_datetime(df["game_date"])
+    for col in ("actual", "breakout_prob", "dud_prob", "breakout_target", "dud_target"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["actual", "breakout_prob", "dud_prob"]).copy()
+    if df.empty:
+        return df
+
+    df["actual_breakout"] = df.apply(
+        lambda row: _actual_tail_event(row, kind="breakout"),
+        axis=1,
+    ).astype(int)
+    df["actual_dud"] = df.apply(
+        lambda row: _actual_tail_event(row, kind="dud"),
+        axis=1,
+    ).astype(int)
+    return df
+
+
+def _actual_tail_event(row: pd.Series, kind: str) -> bool:
+    """Return whether a historical outcome satisfied the configured tail event."""
+    prop_type = str(row.get("prop_type", "")).strip()
+    actual = float(row.get("actual", np.nan))
+    target = row.get("breakout_target" if kind == "breakout" else "dud_target")
+    if pd.isna(actual) or pd.isna(target):
+        return False
+    if prop_type in INVERSE_GOOD_PROPS:
+        return actual <= target if kind == "breakout" else actual >= target
+    return actual >= target if kind == "breakout" else actual <= target
+
+
+def _tail_bucket_stats(df: pd.DataFrame, prob_col: str, outcome_col: str, medium: float, high: float) -> dict:
+    """Evaluate medium/high label quality for a tail-probability column."""
+    actual = df[outcome_col].astype(float)
+    baseline = float(actual.mean()) if len(df) else 0.0
+
+    high_mask = df[prob_col] >= high
+    med_mask = (df[prob_col] >= medium) & (df[prob_col] < high)
+
+    def _bucket(mask: pd.Series) -> dict:
+        bucket = df[mask]
+        count = int(len(bucket))
+        hits = int(bucket[outcome_col].sum()) if count else 0
+        precision = float(bucket[outcome_col].mean()) if count else 0.0
+        lift = precision / baseline if baseline > 0 else 0.0
+        return {
+            "count": count,
+            "hits": hits,
+            "precision": precision,
+            "lift": lift,
+            "coverage": count / len(df) if len(df) else 0.0,
+            "wilson_lb": _wilson_lower_bound(hits, count) if count else 0.0,
+        }
+
+    return {
+        "baseline_rate": baseline,
+        "medium": _bucket(med_mask),
+        "high": _bucket(high_mask),
+    }
+
+
+def _tail_score(stats: dict, min_high: int = 20, min_medium: int = 50) -> float:
+    """Score a tail-threshold configuration, preferring high-lift stable labels."""
+    high = stats["high"]
+    medium = stats["medium"]
+    if high["count"] < min_high or medium["count"] < min_medium:
+        return -1.0
+
+    return (
+        high["wilson_lb"] * max(high["lift"], 1.0)
+        + 0.35 * medium["wilson_lb"] * max(medium["lift"], 1.0)
+        + 0.05 * min(high["coverage"], 0.10)
+    )
+
+
+def optimize_tail_signal_config(train_df: pd.DataFrame, base_weights: dict) -> dict:
+    """Tune per-prop breakout/dud label cutoffs from historical backtest rows."""
+    tuned_cfg = copy.deepcopy(base_weights.get("tail_signal_config", {}))
+    label_thresholds_by_prop = copy.deepcopy(tuned_cfg.get("label_thresholds_by_prop", {}))
+    recommendations = {}
+
+    for prop_type, subset in train_df.groupby("prop_type"):
+        if len(subset) < TAIL_MIN_TRAIN_ROWS:
+            continue
+
+        prop_rec = {}
+        existing = label_thresholds_by_prop.get(prop_type, {})
+
+        for kind, prob_col, outcome_col in (
+            ("breakout", "breakout_prob", "actual_breakout"),
+            ("dud", "dud_prob", "actual_dud"),
+        ):
+            current_medium = float(existing.get(f"{kind}_medium", 0.10 if kind == "breakout" else 0.20))
+            current_high = float(existing.get(f"{kind}_high", 0.20 if kind == "breakout" else 0.35))
+
+            best_medium = current_medium
+            best_high = current_high
+            best_stats = _tail_bucket_stats(subset, prob_col, outcome_col, current_medium, current_high)
+            best_score = _tail_score(best_stats)
+
+            for medium in TAIL_MEDIUM_GRID:
+                for high in TAIL_HIGH_GRID:
+                    if high <= medium:
+                        continue
+                    stats = _tail_bucket_stats(subset, prob_col, outcome_col, medium, high)
+                    score = _tail_score(stats)
+                    if score > best_score:
+                        best_score = score
+                        best_medium = medium
+                        best_high = high
+                        best_stats = stats
+
+            label_thresholds_by_prop.setdefault(prop_type, {})
+            label_thresholds_by_prop[prop_type][f"{kind}_medium"] = round(best_medium, 4)
+            label_thresholds_by_prop[prop_type][f"{kind}_high"] = round(best_high, 4)
+            prop_rec[kind] = {
+                "from": {"medium": current_medium, "high": current_high},
+                "to": {"medium": round(best_medium, 4), "high": round(best_high, 4)},
+                "train_high_precision": round(best_stats["high"]["precision"], 4),
+                "train_high_lift": round(best_stats["high"]["lift"], 4),
+                "train_high_count": best_stats["high"]["count"],
+            }
+
+        recommendations[prop_type] = prop_rec
+
+    tuned_cfg["label_thresholds_by_prop"] = label_thresholds_by_prop
+    return {"tail_signal_config": tuned_cfg, "recommendations": recommendations}
+
+
+def _tail_configs_differ(current_cfg: dict, candidate_cfg: dict) -> bool:
+    """Return whether a tail-threshold candidate meaningfully differs from current settings."""
+    return json.dumps(current_cfg or {}, sort_keys=True) != json.dumps(candidate_cfg or {}, sort_keys=True)
+
+
+def _average_nonnegative(scores: list[float]) -> float:
+    """Average nonnegative scores without emitting NumPy warnings for empty lists."""
+    valid = [float(score) for score in scores if score >= 0]
+    return float(np.mean(valid)) if valid else 0.0
+
+
+def evaluate_tail_signal_config(df: pd.DataFrame, tail_cfg: dict) -> dict:
+    """Evaluate a tail-signal label configuration on historical rows."""
+    if df.empty:
+        return {"rows": 0, "by_prop": {}, "breakout_score": 0.0, "dud_score": 0.0}
+
+    default_labels = tail_cfg.get("label_thresholds", {}) or {}
+    per_prop = tail_cfg.get("label_thresholds_by_prop", {}) or {}
+    by_prop = {}
+    breakout_scores = []
+    dud_scores = []
+
+    for prop_type, subset in df.groupby("prop_type"):
+        cfg = dict(default_labels)
+        cfg.update(per_prop.get(prop_type, {}))
+        breakout_stats = _tail_bucket_stats(
+            subset,
+            "breakout_prob",
+            "actual_breakout",
+            float(cfg.get("breakout_medium", 0.10)),
+            float(cfg.get("breakout_high", 0.20)),
+        )
+        dud_stats = _tail_bucket_stats(
+            subset,
+            "dud_prob",
+            "actual_dud",
+            float(cfg.get("dud_medium", 0.20)),
+            float(cfg.get("dud_high", 0.35)),
+        )
+        breakout_score = _tail_score(breakout_stats)
+        dud_score = _tail_score(dud_stats)
+        breakout_scores.append(breakout_score)
+        dud_scores.append(dud_score)
+        by_prop[prop_type] = {
+            "breakout_high_precision": round(breakout_stats["high"]["precision"], 4),
+            "breakout_high_lift": round(breakout_stats["high"]["lift"], 4),
+            "breakout_high_count": breakout_stats["high"]["count"],
+            "dud_high_precision": round(dud_stats["high"]["precision"], 4),
+            "dud_high_lift": round(dud_stats["high"]["lift"], 4),
+            "dud_high_count": dud_stats["high"]["count"],
+        }
+
+    return {
+        "rows": int(len(df)),
+        "by_prop": by_prop,
+        "breakout_score": _average_nonnegative(breakout_scores),
+        "dud_score": _average_nonnegative(dud_scores),
+    }
 
 
 def _prop_candidate_weights(base_weights: dict, prop_type: str, *,
@@ -833,6 +1115,83 @@ def analyze_backtest_model(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
     }
 
 
+def analyze_backtest_tail_signals(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
+    """Run offline tail-label threshold tuning on the historical backtest."""
+    df = load_tail_backtest_dataframe(filepath)
+    if df.empty:
+        return {"error": "No tail-signal backtest rows found."}
+
+    train_df, valid_df, holdout_df = split_backtest_dataframe_three_way(df)
+    if valid_df.empty:
+        return {"error": "Not enough distinct backtest dates to build a validation split."}
+
+    current_weights = load_current_weights()
+    current_cfg = current_weights.get("tail_signal_config", {})
+    tuned = optimize_tail_signal_config(train_df, current_weights)
+
+    current_eval = evaluate_tail_signal_config(valid_df, current_cfg)
+    candidate_eval = evaluate_tail_signal_config(valid_df, tuned["tail_signal_config"])
+    holdout_current = evaluate_tail_signal_config(holdout_df, current_cfg) if not holdout_df.empty else {}
+    holdout_candidate = evaluate_tail_signal_config(holdout_df, tuned["tail_signal_config"]) if not holdout_df.empty else {}
+
+    current_score = current_eval.get("breakout_score", 0.0) + current_eval.get("dud_score", 0.0)
+    candidate_score = candidate_eval.get("breakout_score", 0.0) + candidate_eval.get("dud_score", 0.0)
+    holdout_delta = (
+        holdout_candidate.get("breakout_score", 0.0) + holdout_candidate.get("dud_score", 0.0)
+        - holdout_current.get("breakout_score", 0.0) - holdout_current.get("dud_score", 0.0)
+    )
+    config_changed = _tail_configs_differ(current_cfg, tuned["tail_signal_config"])
+
+    should_apply = (
+        config_changed
+        and (candidate_score - current_score) >= TAIL_MIN_SCORE_GAIN
+        and (holdout_df.empty or holdout_delta >= TAIL_MIN_HOLDOUT_GAIN)
+    )
+
+    return {
+        "backtest_path": str(filepath),
+        "train_rows": int(len(train_df)),
+        "validation_rows": int(len(valid_df)),
+        "holdout_rows": int(len(holdout_df)),
+        "current": current_eval,
+        "candidate": candidate_eval,
+        "holdout_current": holdout_current,
+        "holdout_candidate": holdout_candidate,
+        "candidate_tail_signal_config": tuned["tail_signal_config"],
+        "recommendations": tuned["recommendations"],
+        "should_apply": should_apply,
+        "reason": (
+            f"validation tail score {candidate_score:.4f} vs {current_score:.4f}, "
+            f"holdout delta {holdout_delta:.4f}, config_changed={config_changed}"
+        ),
+    }
+
+
+def apply_candidate_tail_signals(analysis: dict) -> dict:
+    """Promote tuned tail-label thresholds into a new weights version when warranted."""
+    if analysis.get("error"):
+        return {"applied": False, "reason": analysis["error"]}
+    if not analysis.get("should_apply"):
+        return {"applied": False, "reason": analysis.get("reason", "Tail candidate did not clear promotion gates.")}
+
+    weights = load_current_weights()
+    weights["tail_signal_config"] = copy.deepcopy(analysis.get("candidate_tail_signal_config", {}))
+    weights.setdefault("metadata", {})
+    weights["metadata"]["offline_tail_tuning"] = {
+        "source_backtest": analysis.get("backtest_path"),
+        "train_rows": analysis.get("train_rows"),
+        "validation_rows": analysis.get("validation_rows"),
+        "applied_at": pd.Timestamp.utcnow().isoformat(),
+        "reason": analysis.get("reason"),
+        "recommendations": analysis.get("recommendations", {}),
+    }
+
+    version = _next_version()
+    description = "offline tail threshold tuning from historical backtest"
+    save_path = save_weights(weights, version, description)
+    return {"applied": True, "version": version, "path": save_path, "reason": analysis.get("reason")}
+
+
 def apply_candidate_model(analysis: dict) -> dict:
     """Promote tuned model parameters into a new weights version when warranted."""
     if analysis.get("error"):
@@ -928,14 +1287,31 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Offline confidence-floor tuner")
     parser.add_argument("--backtest-path", default=DEFAULT_RESULTS_PATH)
     parser.add_argument("--model", action="store_true", help="Tune model offsets/variance/calibration instead of selection floors.")
+    parser.add_argument("--tail", action="store_true", help="Tune breakout/dud label thresholds from the backtest.")
+    parser.add_argument("--rebuild-calibration", action="store_true", help="Rebuild empirical calibration tables from the backtest.")
     parser.add_argument("--apply-if-better", action="store_true")
     args = parser.parse_args(argv)
 
-    analysis = analyze_backtest_model(args.backtest_path) if args.model else analyze_backtest_floors(args.backtest_path)
+    if args.rebuild_calibration:
+        analysis = rebuild_backtest_calibration_tables(args.backtest_path)
+        print(json.dumps(analysis, indent=2, default=str))
+        return 0
+
+    if args.tail:
+        analysis = analyze_backtest_tail_signals(args.backtest_path)
+    elif args.model:
+        analysis = analyze_backtest_model(args.backtest_path)
+    else:
+        analysis = analyze_backtest_floors(args.backtest_path)
     print(json.dumps(analysis, indent=2, default=str))
 
     if args.apply_if_better:
-        result = apply_candidate_model(analysis) if args.model else apply_candidate_floors(analysis)
+        if args.tail:
+            result = apply_candidate_tail_signals(analysis)
+        elif args.model:
+            result = apply_candidate_model(analysis)
+        else:
+            result = apply_candidate_floors(analysis)
         print(json.dumps(result, indent=2, default=str))
 
     return 0

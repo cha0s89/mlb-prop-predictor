@@ -212,9 +212,14 @@ def _get_tail_signal_config(weights: Optional[dict] = None) -> dict:
     merged = {
         "label_thresholds": dict(TAIL_SIGNAL_DEFAULTS["label_thresholds"]),
         "prop_thresholds": dict(TAIL_SIGNAL_DEFAULTS["prop_thresholds"]),
+        "label_thresholds_by_prop": {},
     }
     if isinstance(cfg.get("label_thresholds"), dict):
         merged["label_thresholds"].update(cfg["label_thresholds"])
+    if isinstance(cfg.get("label_thresholds_by_prop"), dict):
+        for prop, prop_cfg in cfg["label_thresholds_by_prop"].items():
+            if isinstance(prop_cfg, dict):
+                merged["label_thresholds_by_prop"][prop] = dict(prop_cfg)
     if isinstance(cfg.get("prop_thresholds"), dict):
         for prop, prop_cfg in cfg["prop_thresholds"].items():
             base = dict(merged["prop_thresholds"].get(prop, {}))
@@ -1728,7 +1733,8 @@ def calculate_tail_metrics(projection: float, line: float, prop_type: str,
     )
 
     tail_cfg = _get_tail_signal_config(weights)
-    label_cfg = tail_cfg["label_thresholds"]
+    label_cfg = dict(tail_cfg["label_thresholds"])
+    label_cfg.update(tail_cfg.get("label_thresholds_by_prop", {}).get(prop_type, {}))
     prop_cfg = tail_cfg["prop_thresholds"].get(prop_type, {})
 
     breakout_target = None

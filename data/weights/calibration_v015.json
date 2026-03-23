@@ -3,134 +3,154 @@
     "line": 1.5,
     "points": [
       {
+        "proj_mid": 0.625,
+        "proj_lo": 0.6,
+        "proj_hi": 0.65,
+        "p_over": 0.1675,
+        "p_under": 0.8325,
+        "n": 758,
+        "n_over": 127,
+        "n_under": 631
+      },
+      {
+        "proj_mid": 0.675,
+        "proj_lo": 0.65,
+        "proj_hi": 0.7,
+        "p_over": 0.1761,
+        "p_under": 0.8239,
+        "n": 1760,
+        "n_over": 310,
+        "n_under": 1450
+      },
+      {
         "proj_mid": 0.725,
         "proj_lo": 0.7,
         "proj_hi": 0.75,
-        "p_over": 0.2301,
-        "p_under": 0.7699,
-        "n": 226,
-        "n_over": 52,
-        "n_under": 174
+        "p_over": 0.1918,
+        "p_under": 0.8082,
+        "n": 3176,
+        "n_over": 609,
+        "n_under": 2567
       },
       {
         "proj_mid": 0.775,
         "proj_lo": 0.75,
         "proj_hi": 0.8,
-        "p_over": 0.2041,
-        "p_under": 0.7959,
-        "n": 916,
-        "n_over": 187,
-        "n_under": 729
+        "p_over": 0.1921,
+        "p_under": 0.8079,
+        "n": 5210,
+        "n_over": 1001,
+        "n_under": 4209
       },
       {
         "proj_mid": 0.825,
         "proj_lo": 0.8,
         "proj_hi": 0.85,
-        "p_over": 0.2448,
-        "p_under": 0.7552,
-        "n": 2643,
-        "n_over": 647,
-        "n_under": 1996
+        "p_over": 0.208,
+        "p_under": 0.792,
+        "n": 8034,
+        "n_over": 1671,
+        "n_under": 6363
       },
       {
         "proj_mid": 0.875,
         "proj_lo": 0.85,
         "proj_hi": 0.9,
-        "p_over": 0.268,
-        "p_under": 0.732,
-        "n": 4900,
-        "n_over": 1313,
-        "n_under": 3587
+        "p_over": 0.2368,
+        "p_under": 0.7632,
+        "n": 10711,
+        "n_over": 2536,
+        "n_under": 8175
       },
       {
         "proj_mid": 0.925,
         "proj_lo": 0.9,
         "proj_hi": 0.95,
-        "p_over": 0.255,
-        "p_under": 0.745,
-        "n": 6988,
-        "n_over": 1782,
-        "n_under": 5206
+        "p_over": 0.2398,
+        "p_under": 0.7602,
+        "n": 12404,
+        "n_over": 2975,
+        "n_under": 9429
       },
       {
         "proj_mid": 0.975,
         "proj_lo": 0.95,
         "proj_hi": 1.0,
-        "p_over": 0.293,
-        "p_under": 0.707,
-        "n": 6372,
-        "n_over": 1867,
-        "n_under": 4505
+        "p_over": 0.2711,
+        "p_under": 0.7289,
+        "n": 10965,
+        "n_over": 2973,
+        "n_under": 7992
       },
       {
         "proj_mid": 1.025,
         "proj_lo": 1.0,
         "proj_hi": 1.05,
-        "p_over": 0.3098,
-        "p_under": 0.6902,
-        "n": 4326,
-        "n_over": 1340,
-        "n_under": 2986
+        "p_over": 0.2828,
+        "p_under": 0.7172,
+        "n": 7533,
+        "n_over": 2130,
+        "n_under": 5403
       },
       {
         "proj_mid": 1.075,
         "proj_lo": 1.05,
         "proj_hi": 1.1,
-        "p_over": 0.3158,
-        "p_under": 0.6842,
-        "n": 2378,
-        "n_over": 751,
-        "n_under": 1627
+        "p_over": 0.2822,
+        "p_under": 0.7178,
+        "n": 4586,
+        "n_over": 1294,
+        "n_under": 3292
       },
       {
         "proj_mid": 1.125,
         "proj_lo": 1.1,
         "proj_hi": 1.15,
-        "p_over": 0.3567,
-        "p_under": 0.6433,
-        "n": 1054,
-        "n_over": 376,
-        "n_under": 678
+        "p_over": 0.3103,
+        "p_under": 0.6897,
+        "n": 2472,
+        "n_over": 767,
+        "n_under": 1705
       },
       {
         "proj_mid": 1.175,
         "proj_lo": 1.15,
         "proj_hi": 1.2,
-        "p_over": 0.3907,
-        "p_under": 0.6093,
-        "n": 535,
-        "n_over": 209,
-        "n_under": 326
+        "p_over": 0.3306,
+        "p_under": 0.6694,
+        "n": 1340,
+        "n_over": 443,
+        "n_under": 897
       },
       {
         "proj_mid": 1.225,
         "proj_lo": 1.2,
         "proj_hi": 1.25,
-        "p_over": 0.3675,
-        "p_under": 0.6325,
-        "n": 302,
-        "n_over": 111,
-        "n_under": 191
+        "p_over": 0.3261,
+        "p_under": 0.6739,
+        "n": 877,
+        "n_over": 286,
+        "n_under": 591
       },
       {
         "proj_mid": 1.275,
         "proj_lo": 1.25,
         "proj_hi": 1.3,
-        "p_over": 0.3861,
-        "p_under": 0.6139,
-        "n": 158,
-        "n_over": 61,
-        "n_under": 97
+        "p_over": 0.3378,
+        "p_under": 0.6622,
+        "n": 524,
+        "n_over": 177,
+        "n_under": 347
       },
       {
         "proj_mid": 1.325,
         "proj_lo": 1.3,
         "proj_hi": 1.35,
-        "p_over": 0.4731,
-        "p_under": 0.5269,
-        "n": 93,
-        "n_over": 44,
-        "n_under": 49
+        "p_over": 0.3466,
+        "p_under": 0.6534,
+        "n": 277,
+        "n_over": 96,
+        "n_under": 181
       },
       {
         "proj_mid": 1.375,
@@ -143,80 +163,130 @@
         "n_under": 46
       }
     ],
-    "total_predictions": 31070
+    "total_predictions": 71416
   },
   "total_bases": {
     "line": 1.5,
     "points": [
       {
+        "proj_mid": 0.55,
+        "proj_lo": 0.5,
+        "proj_hi": 0.6,
+        "p_over": 0.2738,
+        "p_under": 0.7262,
+        "n": 588,
+        "n_over": 161,
+        "n_under": 427
+      },
+      {
+        "proj_mid": 0.65,
+        "proj_lo": 0.6,
+        "proj_hi": 0.7,
+        "p_over": 0.2892,
+        "p_under": 0.7108,
+        "n": 2085,
+        "n_over": 603,
+        "n_under": 1482
+      },
+      {
+        "proj_mid": 0.75,
+        "proj_lo": 0.7,
+        "proj_hi": 0.8,
+        "p_over": 0.3143,
+        "p_under": 0.6857,
+        "n": 4846,
+        "n_over": 1523,
+        "n_under": 3323
+      },
+      {
+        "proj_mid": 0.85,
+        "proj_lo": 0.8,
+        "proj_hi": 0.9,
+        "p_over": 0.3303,
+        "p_under": 0.6697,
+        "n": 7974,
+        "n_over": 2634,
+        "n_under": 5340
+      },
+      {
+        "proj_mid": 0.95,
+        "proj_lo": 0.9,
+        "proj_hi": 1.0,
+        "p_over": 0.3425,
+        "p_under": 0.6575,
+        "n": 8616,
+        "n_over": 2951,
+        "n_under": 5665
+      },
+      {
         "proj_mid": 1.05,
         "proj_lo": 1.0,
         "proj_hi": 1.1,
-        "p_over": 0.2923,
-        "p_under": 0.7077,
-        "n": 65,
-        "n_over": 19,
-        "n_under": 46
+        "p_over": 0.3746,
+        "p_under": 0.6254,
+        "n": 6860,
+        "n_over": 2570,
+        "n_under": 4290
       },
       {
         "proj_mid": 1.15,
         "proj_lo": 1.1,
         "proj_hi": 1.2,
-        "p_over": 0.3563,
-        "p_under": 0.6438,
-        "n": 320,
-        "n_over": 114,
-        "n_under": 206
+        "p_over": 0.3872,
+        "p_under": 0.6128,
+        "n": 4396,
+        "n_over": 1702,
+        "n_under": 2694
       },
       {
         "proj_mid": 1.25,
         "proj_lo": 1.2,
         "proj_hi": 1.3,
-        "p_over": 0.4059,
-        "p_under": 0.5941,
-        "n": 1296,
-        "n_over": 526,
-        "n_under": 770
+        "p_over": 0.4054,
+        "p_under": 0.5946,
+        "n": 3582,
+        "n_over": 1452,
+        "n_under": 2130
       },
       {
         "proj_mid": 1.35,
         "proj_lo": 1.3,
         "proj_hi": 1.4,
-        "p_over": 0.4135,
-        "p_under": 0.5865,
-        "n": 3487,
-        "n_over": 1442,
-        "n_under": 2045
+        "p_over": 0.4144,
+        "p_under": 0.5856,
+        "n": 4763,
+        "n_over": 1974,
+        "n_under": 2789
       },
       {
         "proj_mid": 1.45,
         "proj_lo": 1.4,
         "proj_hi": 1.5,
-        "p_over": 0.4406,
-        "p_under": 0.5594,
-        "n": 6232,
-        "n_over": 2746,
-        "n_under": 3486
+        "p_over": 0.4434,
+        "p_under": 0.5566,
+        "n": 6948,
+        "n_over": 3081,
+        "n_under": 3867
       },
       {
         "proj_mid": 1.55,
         "proj_lo": 1.5,
         "proj_hi": 1.6,
-        "p_over": 0.4576,
-        "p_under": 0.5424,
-        "n": 7122,
-        "n_over": 3259,
-        "n_under": 3863
+        "p_over": 0.4578,
+        "p_under": 0.5422,
+        "n": 7568,
+        "n_over": 3465,
+        "n_under": 4103
       },
       {
         "proj_mid": 1.65,
         "proj_lo": 1.6,
         "proj_hi": 1.7,
-        "p_over": 0.4721,
-        "p_under": 0.5279,
-        "n": 5546,
-        "n_over": 2618,
-        "n_under": 2928
+        "p_over": 0.4735,
+        "p_under": 0.5265,
+        "n": 5747,
+        "n_over": 2721,
+        "n_under": 3026
       },
       {
         "proj_mid": 1.75,
@@ -289,130 +359,160 @@
         "n_under": 39
       }
     ],
-    "total_predictions": 31070
+    "total_predictions": 71416
   },
   "pitcher_strikeouts": {
     "line": 4.5,
     "points": [
       {
+        "proj_mid": 2.875,
+        "proj_lo": 2.75,
+        "proj_hi": 3.0,
+        "p_over": 0.2817,
+        "p_under": 0.7183,
+        "n": 71,
+        "n_over": 20,
+        "n_under": 51
+      },
+      {
+        "proj_mid": 3.125,
+        "proj_lo": 3.0,
+        "proj_hi": 3.25,
+        "p_over": 0.3372,
+        "p_under": 0.6628,
+        "n": 258,
+        "n_over": 87,
+        "n_under": 171
+      },
+      {
+        "proj_mid": 3.375,
+        "proj_lo": 3.25,
+        "proj_hi": 3.5,
+        "p_over": 0.3927,
+        "p_under": 0.6073,
+        "n": 191,
+        "n_over": 75,
+        "n_under": 116
+      },
+      {
         "proj_mid": 3.625,
         "proj_lo": 3.5,
         "proj_hi": 3.75,
-        "p_over": 0.25,
-        "p_under": 0.75,
-        "n": 108,
-        "n_over": 27,
-        "n_under": 81
+        "p_over": 0.376,
+        "p_under": 0.624,
+        "n": 375,
+        "n_over": 141,
+        "n_under": 234
       },
       {
         "proj_mid": 3.875,
         "proj_lo": 3.75,
         "proj_hi": 4.0,
-        "p_over": 0.3695,
-        "p_under": 0.6305,
-        "n": 203,
-        "n_over": 75,
-        "n_under": 128
+        "p_over": 0.4382,
+        "p_under": 0.5618,
+        "n": 623,
+        "n_over": 273,
+        "n_under": 350
       },
       {
         "proj_mid": 4.125,
         "proj_lo": 4.0,
         "proj_hi": 4.25,
-        "p_over": 0.3474,
-        "p_under": 0.6526,
-        "n": 95,
-        "n_over": 33,
-        "n_under": 62
+        "p_over": 0.4803,
+        "p_under": 0.5197,
+        "n": 737,
+        "n_over": 354,
+        "n_under": 383
       },
       {
         "proj_mid": 4.375,
         "proj_lo": 4.25,
         "proj_hi": 4.5,
-        "p_over": 0.4646,
-        "p_under": 0.5354,
-        "n": 254,
-        "n_over": 118,
-        "n_under": 136
+        "p_over": 0.5602,
+        "p_under": 0.4398,
+        "n": 723,
+        "n_over": 405,
+        "n_under": 318
       },
       {
         "proj_mid": 4.625,
         "proj_lo": 4.5,
         "proj_hi": 4.75,
-        "p_over": 0.425,
-        "p_under": 0.575,
-        "n": 320,
-        "n_over": 136,
-        "n_under": 184
+        "p_over": 0.4994,
+        "p_under": 0.5006,
+        "n": 771,
+        "n_over": 385,
+        "n_under": 386
       },
       {
         "proj_mid": 4.875,
         "proj_lo": 4.75,
         "proj_hi": 5.0,
-        "p_over": 0.4791,
-        "p_under": 0.5209,
-        "n": 311,
-        "n_over": 149,
-        "n_under": 162
+        "p_over": 0.5612,
+        "p_under": 0.4388,
+        "n": 613,
+        "n_over": 344,
+        "n_under": 269
       },
       {
         "proj_mid": 5.125,
         "proj_lo": 5.0,
         "proj_hi": 5.25,
-        "p_over": 0.5054,
-        "p_under": 0.4946,
-        "n": 653,
-        "n_over": 330,
-        "n_under": 323
+        "p_over": 0.5275,
+        "p_under": 0.4725,
+        "n": 944,
+        "n_over": 498,
+        "n_under": 446
       },
       {
         "proj_mid": 5.375,
         "proj_lo": 5.25,
         "proj_hi": 5.5,
-        "p_over": 0.5412,
-        "p_under": 0.4588,
-        "n": 340,
-        "n_over": 184,
-        "n_under": 156
+        "p_over": 0.5588,
+        "p_under": 0.4412,
+        "n": 485,
+        "n_over": 271,
+        "n_under": 214
       },
       {
         "proj_mid": 5.625,
         "proj_lo": 5.5,
         "proj_hi": 5.75,
-        "p_over": 0.6292,
-        "p_under": 0.3708,
-        "n": 267,
-        "n_over": 168,
-        "n_under": 99
+        "p_over": 0.6304,
+        "p_under": 0.3696,
+        "n": 395,
+        "n_over": 249,
+        "n_under": 146
       },
       {
         "proj_mid": 5.875,
         "proj_lo": 5.75,
         "proj_hi": 6.0,
-        "p_over": 0.5762,
-        "p_under": 0.4238,
-        "n": 328,
-        "n_over": 189,
-        "n_under": 139
+        "p_over": 0.622,
+        "p_under": 0.378,
+        "n": 500,
+        "n_over": 311,
+        "n_under": 189
       },
       {
         "proj_mid": 6.125,
         "proj_lo": 6.0,
         "proj_hi": 6.25,
-        "p_over": 0.5663,
-        "p_under": 0.4337,
-        "n": 309,
-        "n_over": 175,
-        "n_under": 134
+        "p_over": 0.5813,
+        "p_under": 0.4187,
+        "n": 406,
+        "n_over": 236,
+        "n_under": 170
       },
       {
         "proj_mid": 6.375,
         "proj_lo": 6.25,
         "proj_hi": 6.5,
-        "p_over": 0.6265,
-        "p_under": 0.3735,
-        "n": 166,
-        "n_over": 104,
-        "n_under": 62
+        "p_over": 0.6383,
+        "p_under": 0.3617,
+        "n": 235,
+        "n_over": 150,
+        "n_under": 85
       },
       {
         "proj_mid": 6.625,
@@ -485,100 +585,210 @@
         "n_under": 15
       }
     ],
-    "total_predictions": 4073
+    "total_predictions": 8147
   },
   "hitter_fantasy_score": {
     "line": 7.5,
     "points": [
       {
+        "proj_mid": 3.375,
+        "proj_lo": 3.25,
+        "proj_hi": 3.5,
+        "p_over": 0.2608,
+        "p_under": 0.7392,
+        "n": 395,
+        "n_over": 103,
+        "n_under": 292
+      },
+      {
+        "proj_mid": 3.625,
+        "proj_lo": 3.5,
+        "proj_hi": 3.75,
+        "p_over": 0.2649,
+        "p_under": 0.7351,
+        "n": 921,
+        "n_over": 244,
+        "n_under": 677
+      },
+      {
+        "proj_mid": 3.875,
+        "proj_lo": 3.75,
+        "proj_hi": 4.0,
+        "p_over": 0.297,
+        "p_under": 0.703,
+        "n": 1909,
+        "n_over": 567,
+        "n_under": 1342
+      },
+      {
+        "proj_mid": 4.125,
+        "proj_lo": 4.0,
+        "proj_hi": 4.25,
+        "p_over": 0.2854,
+        "p_under": 0.7146,
+        "n": 3203,
+        "n_over": 914,
+        "n_under": 2289
+      },
+      {
+        "proj_mid": 4.375,
+        "proj_lo": 4.25,
+        "proj_hi": 4.5,
+        "p_over": 0.3052,
+        "p_under": 0.6948,
+        "n": 4325,
+        "n_over": 1320,
+        "n_under": 3005
+      },
+      {
+        "proj_mid": 4.625,
+        "proj_lo": 4.5,
+        "proj_hi": 4.75,
+        "p_over": 0.3147,
+        "p_under": 0.6853,
+        "n": 5170,
+        "n_over": 1627,
+        "n_under": 3543
+      },
+      {
+        "proj_mid": 4.875,
+        "proj_lo": 4.75,
+        "proj_hi": 5.0,
+        "p_over": 0.3391,
+        "p_under": 0.6609,
+        "n": 5654,
+        "n_over": 1917,
+        "n_under": 3737
+      },
+      {
+        "proj_mid": 5.125,
+        "proj_lo": 5.0,
+        "proj_hi": 5.25,
+        "p_over": 0.352,
+        "p_under": 0.648,
+        "n": 4935,
+        "n_over": 1737,
+        "n_under": 3198
+      },
+      {
+        "proj_mid": 5.375,
+        "proj_lo": 5.25,
+        "proj_hi": 5.5,
+        "p_over": 0.3715,
+        "p_under": 0.6285,
+        "n": 4024,
+        "n_over": 1495,
+        "n_under": 2529
+      },
+      {
+        "proj_mid": 5.625,
+        "proj_lo": 5.5,
+        "proj_hi": 5.75,
+        "p_over": 0.3751,
+        "p_under": 0.6249,
+        "n": 2858,
+        "n_over": 1072,
+        "n_under": 1786
+      },
+      {
+        "proj_mid": 5.875,
+        "proj_lo": 5.75,
+        "proj_hi": 6.0,
+        "p_over": 0.3861,
+        "p_under": 0.6139,
+        "n": 2020,
+        "n_over": 780,
+        "n_under": 1240
+      },
+      {
         "proj_mid": 6.125,
         "proj_lo": 6.0,
         "proj_hi": 6.25,
-        "p_over": 0.3175,
-        "p_under": 0.6825,
-        "n": 63,
-        "n_over": 20,
-        "n_under": 43
+        "p_over": 0.37,
+        "p_under": 0.63,
+        "n": 1454,
+        "n_over": 538,
+        "n_under": 916
       },
       {
         "proj_mid": 6.375,
         "proj_lo": 6.25,
         "proj_hi": 6.5,
-        "p_over": 0.3778,
-        "p_under": 0.6222,
-        "n": 225,
-        "n_over": 85,
-        "n_under": 140
+        "p_over": 0.4147,
+        "p_under": 0.5853,
+        "n": 1167,
+        "n_over": 484,
+        "n_under": 683
       },
       {
         "proj_mid": 6.625,
         "proj_lo": 6.5,
         "proj_hi": 6.75,
-        "p_over": 0.3842,
-        "p_under": 0.6158,
-        "n": 505,
-        "n_over": 194,
-        "n_under": 311
+        "p_over": 0.4236,
+        "p_under": 0.5764,
+        "n": 1060,
+        "n_over": 449,
+        "n_under": 611
       },
       {
         "proj_mid": 6.875,
         "proj_lo": 6.75,
         "proj_hi": 7.0,
-        "p_over": 0.3805,
-        "p_under": 0.6195,
-        "n": 1159,
-        "n_over": 441,
-        "n_under": 718
+        "p_over": 0.4182,
+        "p_under": 0.5818,
+        "n": 1607,
+        "n_over": 672,
+        "n_under": 935
       },
       {
         "proj_mid": 7.125,
         "proj_lo": 7.0,
         "proj_hi": 7.25,
-        "p_over": 0.4028,
-        "p_under": 0.5972,
-        "n": 1904,
-        "n_over": 767,
-        "n_under": 1137
+        "p_over": 0.4174,
+        "p_under": 0.5826,
+        "n": 2281,
+        "n_over": 952,
+        "n_under": 1329
       },
       {
         "proj_mid": 7.375,
         "proj_lo": 7.25,
         "proj_hi": 7.5,
-        "p_over": 0.4118,
-        "p_under": 0.5882,
-        "n": 2856,
-        "n_over": 1176,
-        "n_under": 1680
+        "p_over": 0.4184,
+        "p_under": 0.5816,
+        "n": 3090,
+        "n_over": 1293,
+        "n_under": 1797
       },
       {
         "proj_mid": 7.625,
         "proj_lo": 7.5,
         "proj_hi": 7.75,
-        "p_over": 0.4308,
-        "p_under": 0.5692,
-        "n": 3600,
-        "n_over": 1551,
-        "n_under": 2049
+        "p_over": 0.4318,
+        "p_under": 0.5682,
+        "n": 3796,
+        "n_over": 1639,
+        "n_under": 2157
       },
       {
         "proj_mid": 7.875,
         "proj_lo": 7.75,
         "proj_hi": 8.0,
-        "p_over": 0.439,
-        "p_under": 0.561,
-        "n": 4073,
-        "n_over": 1788,
-        "n_under": 2285
+        "p_over": 0.4431,
+        "p_under": 0.5569,
+        "n": 4225,
+        "n_over": 1872,
+        "n_under": 2353
       },
       {
         "proj_mid": 8.125,
         "proj_lo": 8.0,
         "proj_hi": 8.25,
-        "p_over": 0.4532,
-        "p_under": 0.5468,
-        "n": 3815,
-        "n_over": 1729,
-        "n_under": 2086
+        "p_over": 0.4549,
+        "p_under": 0.5451,
+        "n": 3935,
+        "n_over": 1790,
+        "n_under": 2145
       },
       {
         "proj_mid": 8.375,
@@ -721,6 +931,2318 @@
         "n_under": 20
       }
     ],
-    "total_predictions": 31070
+    "total_predictions": 71416
+  },
+  "home_runs": {
+    "line": 0.5,
+    "points": [
+      {
+        "proj_mid": 0.01,
+        "proj_lo": 0.0,
+        "proj_hi": 0.02,
+        "p_over": 0.1023,
+        "p_under": 0.8977,
+        "n": 29014,
+        "n_over": 2968,
+        "n_under": 26046
+      },
+      {
+        "proj_mid": 0.03,
+        "proj_lo": 0.02,
+        "proj_hi": 0.04,
+        "p_over": 0.1437,
+        "p_under": 0.8563,
+        "n": 3348,
+        "n_over": 481,
+        "n_under": 2867
+      },
+      {
+        "proj_mid": 0.05,
+        "proj_lo": 0.04,
+        "proj_hi": 0.06,
+        "p_over": 0.1485,
+        "p_under": 0.8515,
+        "n": 2343,
+        "n_over": 348,
+        "n_under": 1995
+      },
+      {
+        "proj_mid": 0.07,
+        "proj_lo": 0.06,
+        "proj_hi": 0.08,
+        "p_over": 0.1543,
+        "p_under": 0.8457,
+        "n": 1445,
+        "n_over": 223,
+        "n_under": 1222
+      },
+      {
+        "proj_mid": 0.09,
+        "proj_lo": 0.08,
+        "proj_hi": 0.1,
+        "p_over": 0.1579,
+        "p_under": 0.8421,
+        "n": 1121,
+        "n_over": 177,
+        "n_under": 944
+      },
+      {
+        "proj_mid": 0.11,
+        "proj_lo": 0.1,
+        "proj_hi": 0.12,
+        "p_over": 0.1635,
+        "p_under": 0.8365,
+        "n": 1064,
+        "n_over": 174,
+        "n_under": 890
+      },
+      {
+        "proj_mid": 0.13,
+        "proj_lo": 0.12,
+        "proj_hi": 0.14,
+        "p_over": 0.1667,
+        "p_under": 0.8333,
+        "n": 264,
+        "n_over": 44,
+        "n_under": 220
+      },
+      {
+        "proj_mid": 0.15,
+        "proj_lo": 0.14,
+        "proj_hi": 0.16,
+        "p_over": 0.1911,
+        "p_under": 0.8089,
+        "n": 382,
+        "n_over": 73,
+        "n_under": 309
+      },
+      {
+        "proj_mid": 0.17,
+        "proj_lo": 0.16,
+        "proj_hi": 0.18,
+        "p_over": 0.1617,
+        "p_under": 0.8383,
+        "n": 266,
+        "n_over": 43,
+        "n_under": 223
+      },
+      {
+        "proj_mid": 0.19,
+        "proj_lo": 0.18,
+        "proj_hi": 0.2,
+        "p_over": 0.1515,
+        "p_under": 0.8485,
+        "n": 231,
+        "n_over": 35,
+        "n_under": 196
+      },
+      {
+        "proj_mid": 0.21,
+        "proj_lo": 0.2,
+        "proj_hi": 0.22,
+        "p_over": 0.1734,
+        "p_under": 0.8266,
+        "n": 173,
+        "n_over": 30,
+        "n_under": 143
+      },
+      {
+        "proj_mid": 0.23,
+        "proj_lo": 0.22,
+        "proj_hi": 0.24,
+        "p_over": 0.1709,
+        "p_under": 0.8291,
+        "n": 158,
+        "n_over": 27,
+        "n_under": 131
+      },
+      {
+        "proj_mid": 0.25,
+        "proj_lo": 0.24,
+        "proj_hi": 0.26,
+        "p_over": 0.1579,
+        "p_under": 0.8421,
+        "n": 114,
+        "n_over": 18,
+        "n_under": 96
+      },
+      {
+        "proj_mid": 0.27,
+        "proj_lo": 0.26,
+        "proj_hi": 0.28,
+        "p_over": 0.2065,
+        "p_under": 0.7935,
+        "n": 92,
+        "n_over": 19,
+        "n_under": 73
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "runs": {
+    "line": 0.5,
+    "points": [
+      {
+        "proj_mid": 0.225,
+        "proj_lo": 0.2,
+        "proj_hi": 0.25,
+        "p_over": 0.3319,
+        "p_under": 0.6681,
+        "n": 229,
+        "n_over": 76,
+        "n_under": 153
+      },
+      {
+        "proj_mid": 0.275,
+        "proj_lo": 0.25,
+        "proj_hi": 0.3,
+        "p_over": 0.2814,
+        "p_under": 0.7186,
+        "n": 867,
+        "n_over": 244,
+        "n_under": 623
+      },
+      {
+        "proj_mid": 0.325,
+        "proj_lo": 0.3,
+        "proj_hi": 0.35,
+        "p_over": 0.3135,
+        "p_under": 0.6865,
+        "n": 1745,
+        "n_over": 547,
+        "n_under": 1198
+      },
+      {
+        "proj_mid": 0.375,
+        "proj_lo": 0.35,
+        "proj_hi": 0.4,
+        "p_over": 0.3461,
+        "p_under": 0.6539,
+        "n": 4007,
+        "n_over": 1387,
+        "n_under": 2620
+      },
+      {
+        "proj_mid": 0.425,
+        "proj_lo": 0.4,
+        "proj_hi": 0.45,
+        "p_over": 0.362,
+        "p_under": 0.638,
+        "n": 6324,
+        "n_over": 2289,
+        "n_under": 4035
+      },
+      {
+        "proj_mid": 0.475,
+        "proj_lo": 0.45,
+        "proj_hi": 0.5,
+        "p_over": 0.3635,
+        "p_under": 0.6365,
+        "n": 9458,
+        "n_over": 3438,
+        "n_under": 6020
+      },
+      {
+        "proj_mid": 0.525,
+        "proj_lo": 0.5,
+        "proj_hi": 0.55,
+        "p_over": 0.3949,
+        "p_under": 0.6051,
+        "n": 7715,
+        "n_over": 3047,
+        "n_under": 4668
+      },
+      {
+        "proj_mid": 0.575,
+        "proj_lo": 0.55,
+        "proj_hi": 0.6,
+        "p_over": 0.3938,
+        "p_under": 0.6062,
+        "n": 4436,
+        "n_over": 1747,
+        "n_under": 2689
+      },
+      {
+        "proj_mid": 0.625,
+        "proj_lo": 0.6,
+        "proj_hi": 0.65,
+        "p_over": 0.4044,
+        "p_under": 0.5956,
+        "n": 1983,
+        "n_over": 802,
+        "n_under": 1181
+      },
+      {
+        "proj_mid": 0.675,
+        "proj_lo": 0.65,
+        "proj_hi": 0.7,
+        "p_over": 0.4505,
+        "p_under": 0.5495,
+        "n": 1221,
+        "n_over": 550,
+        "n_under": 671
+      },
+      {
+        "proj_mid": 0.725,
+        "proj_lo": 0.7,
+        "proj_hi": 0.75,
+        "p_over": 0.4372,
+        "p_under": 0.5628,
+        "n": 478,
+        "n_over": 209,
+        "n_under": 269
+      },
+      {
+        "proj_mid": 0.775,
+        "proj_lo": 0.75,
+        "proj_hi": 0.8,
+        "p_over": 0.4652,
+        "p_under": 0.5348,
+        "n": 359,
+        "n_over": 167,
+        "n_under": 192
+      },
+      {
+        "proj_mid": 0.825,
+        "proj_lo": 0.8,
+        "proj_hi": 0.85,
+        "p_over": 0.4333,
+        "p_under": 0.5667,
+        "n": 300,
+        "n_over": 130,
+        "n_under": 170
+      },
+      {
+        "proj_mid": 0.875,
+        "proj_lo": 0.85,
+        "proj_hi": 0.9,
+        "p_over": 0.5045,
+        "p_under": 0.4955,
+        "n": 224,
+        "n_over": 113,
+        "n_under": 111
+      },
+      {
+        "proj_mid": 0.925,
+        "proj_lo": 0.9,
+        "proj_hi": 0.95,
+        "p_over": 0.5123,
+        "p_under": 0.4877,
+        "n": 162,
+        "n_over": 83,
+        "n_under": 79
+      },
+      {
+        "proj_mid": 0.975,
+        "proj_lo": 0.95,
+        "proj_hi": 1.0,
+        "p_over": 0.4323,
+        "p_under": 0.5677,
+        "n": 155,
+        "n_over": 67,
+        "n_under": 88
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "rbis": {
+    "line": 0.5,
+    "points": [
+      {
+        "proj_mid": 0.225,
+        "proj_lo": 0.2,
+        "proj_hi": 0.25,
+        "p_over": 0.2488,
+        "p_under": 0.7512,
+        "n": 217,
+        "n_over": 54,
+        "n_under": 163
+      },
+      {
+        "proj_mid": 0.275,
+        "proj_lo": 0.25,
+        "proj_hi": 0.3,
+        "p_over": 0.2089,
+        "p_under": 0.7911,
+        "n": 790,
+        "n_over": 165,
+        "n_under": 625
+      },
+      {
+        "proj_mid": 0.325,
+        "proj_lo": 0.3,
+        "proj_hi": 0.35,
+        "p_over": 0.2557,
+        "p_under": 0.7443,
+        "n": 1631,
+        "n_over": 417,
+        "n_under": 1214
+      },
+      {
+        "proj_mid": 0.375,
+        "proj_lo": 0.35,
+        "proj_hi": 0.4,
+        "p_over": 0.2673,
+        "p_under": 0.7327,
+        "n": 3636,
+        "n_over": 972,
+        "n_under": 2664
+      },
+      {
+        "proj_mid": 0.425,
+        "proj_lo": 0.4,
+        "proj_hi": 0.45,
+        "p_over": 0.2815,
+        "p_under": 0.7185,
+        "n": 5779,
+        "n_over": 1627,
+        "n_under": 4152
+      },
+      {
+        "proj_mid": 0.475,
+        "proj_lo": 0.45,
+        "proj_hi": 0.5,
+        "p_over": 0.2813,
+        "p_under": 0.7187,
+        "n": 8524,
+        "n_over": 2398,
+        "n_under": 6126
+      },
+      {
+        "proj_mid": 0.525,
+        "proj_lo": 0.5,
+        "proj_hi": 0.55,
+        "p_over": 0.3101,
+        "p_under": 0.6899,
+        "n": 7391,
+        "n_over": 2292,
+        "n_under": 5099
+      },
+      {
+        "proj_mid": 0.575,
+        "proj_lo": 0.55,
+        "proj_hi": 0.6,
+        "p_over": 0.3172,
+        "p_under": 0.6828,
+        "n": 4697,
+        "n_over": 1490,
+        "n_under": 3207
+      },
+      {
+        "proj_mid": 0.625,
+        "proj_lo": 0.6,
+        "proj_hi": 0.65,
+        "p_over": 0.3061,
+        "p_under": 0.6939,
+        "n": 2656,
+        "n_over": 813,
+        "n_under": 1843
+      },
+      {
+        "proj_mid": 0.675,
+        "proj_lo": 0.65,
+        "proj_hi": 0.7,
+        "p_over": 0.3519,
+        "p_under": 0.6481,
+        "n": 1827,
+        "n_over": 643,
+        "n_under": 1184
+      },
+      {
+        "proj_mid": 0.725,
+        "proj_lo": 0.7,
+        "proj_hi": 0.75,
+        "p_over": 0.3338,
+        "p_under": 0.6662,
+        "n": 728,
+        "n_over": 243,
+        "n_under": 485
+      },
+      {
+        "proj_mid": 0.775,
+        "proj_lo": 0.75,
+        "proj_hi": 0.8,
+        "p_over": 0.3681,
+        "p_under": 0.6319,
+        "n": 576,
+        "n_over": 212,
+        "n_under": 364
+      },
+      {
+        "proj_mid": 0.825,
+        "proj_lo": 0.8,
+        "proj_hi": 0.85,
+        "p_over": 0.3513,
+        "p_under": 0.6487,
+        "n": 390,
+        "n_over": 137,
+        "n_under": 253
+      },
+      {
+        "proj_mid": 0.875,
+        "proj_lo": 0.85,
+        "proj_hi": 0.9,
+        "p_over": 0.3868,
+        "p_under": 0.6132,
+        "n": 318,
+        "n_over": 123,
+        "n_under": 195
+      },
+      {
+        "proj_mid": 0.925,
+        "proj_lo": 0.9,
+        "proj_hi": 0.95,
+        "p_over": 0.3429,
+        "p_under": 0.6571,
+        "n": 210,
+        "n_over": 72,
+        "n_under": 138
+      },
+      {
+        "proj_mid": 0.975,
+        "proj_lo": 0.95,
+        "proj_hi": 1.0,
+        "p_over": 0.3842,
+        "p_under": 0.6158,
+        "n": 177,
+        "n_over": 68,
+        "n_under": 109
+      },
+      {
+        "proj_mid": 1.025,
+        "proj_lo": 1.0,
+        "proj_hi": 1.05,
+        "p_over": 0.4341,
+        "p_under": 0.5659,
+        "n": 129,
+        "n_over": 56,
+        "n_under": 73
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "hits_runs_rbis": {
+    "line": 1.5,
+    "points": [
+      {
+        "proj_mid": 1.15,
+        "proj_lo": 1.1,
+        "proj_hi": 1.2,
+        "p_over": 0.3453,
+        "p_under": 0.6547,
+        "n": 278,
+        "n_over": 96,
+        "n_under": 182
+      },
+      {
+        "proj_mid": 1.25,
+        "proj_lo": 1.2,
+        "proj_hi": 1.3,
+        "p_over": 0.3748,
+        "p_under": 0.6252,
+        "n": 643,
+        "n_over": 241,
+        "n_under": 402
+      },
+      {
+        "proj_mid": 1.35,
+        "proj_lo": 1.3,
+        "proj_hi": 1.4,
+        "p_over": 0.3877,
+        "p_under": 0.6123,
+        "n": 1011,
+        "n_over": 392,
+        "n_under": 619
+      },
+      {
+        "proj_mid": 1.45,
+        "proj_lo": 1.4,
+        "proj_hi": 1.5,
+        "p_over": 0.4058,
+        "p_under": 0.5942,
+        "n": 2055,
+        "n_over": 834,
+        "n_under": 1221
+      },
+      {
+        "proj_mid": 1.55,
+        "proj_lo": 1.5,
+        "proj_hi": 1.6,
+        "p_over": 0.4116,
+        "p_under": 0.5884,
+        "n": 3265,
+        "n_over": 1344,
+        "n_under": 1921
+      },
+      {
+        "proj_mid": 1.65,
+        "proj_lo": 1.6,
+        "proj_hi": 1.7,
+        "p_over": 0.4324,
+        "p_under": 0.5676,
+        "n": 3626,
+        "n_over": 1568,
+        "n_under": 2058
+      },
+      {
+        "proj_mid": 1.75,
+        "proj_lo": 1.7,
+        "proj_hi": 1.8,
+        "p_over": 0.4404,
+        "p_under": 0.5596,
+        "n": 4796,
+        "n_over": 2112,
+        "n_under": 2684
+      },
+      {
+        "proj_mid": 1.85,
+        "proj_lo": 1.8,
+        "proj_hi": 1.9,
+        "p_over": 0.448,
+        "p_under": 0.552,
+        "n": 5759,
+        "n_over": 2580,
+        "n_under": 3179
+      },
+      {
+        "proj_mid": 1.95,
+        "proj_lo": 1.9,
+        "proj_hi": 2.0,
+        "p_over": 0.4579,
+        "p_under": 0.5421,
+        "n": 5781,
+        "n_over": 2647,
+        "n_under": 3134
+      },
+      {
+        "proj_mid": 2.05,
+        "proj_lo": 2.0,
+        "proj_hi": 2.1,
+        "p_over": 0.4729,
+        "p_under": 0.5271,
+        "n": 4085,
+        "n_over": 1932,
+        "n_under": 2153
+      },
+      {
+        "proj_mid": 2.15,
+        "proj_lo": 2.1,
+        "proj_hi": 2.2,
+        "p_over": 0.4965,
+        "p_under": 0.5035,
+        "n": 2822,
+        "n_over": 1401,
+        "n_under": 1421
+      },
+      {
+        "proj_mid": 2.25,
+        "proj_lo": 2.2,
+        "proj_hi": 2.3,
+        "p_over": 0.503,
+        "p_under": 0.497,
+        "n": 1831,
+        "n_over": 921,
+        "n_under": 910
+      },
+      {
+        "proj_mid": 2.35,
+        "proj_lo": 2.3,
+        "proj_hi": 2.4,
+        "p_over": 0.521,
+        "p_under": 0.479,
+        "n": 1142,
+        "n_over": 595,
+        "n_under": 547
+      },
+      {
+        "proj_mid": 2.45,
+        "proj_lo": 2.4,
+        "proj_hi": 2.5,
+        "p_over": 0.5446,
+        "p_under": 0.4554,
+        "n": 784,
+        "n_over": 427,
+        "n_under": 357
+      },
+      {
+        "proj_mid": 2.55,
+        "proj_lo": 2.5,
+        "proj_hi": 2.6,
+        "p_over": 0.5788,
+        "p_under": 0.4212,
+        "n": 539,
+        "n_over": 312,
+        "n_under": 227
+      },
+      {
+        "proj_mid": 2.65,
+        "proj_lo": 2.6,
+        "proj_hi": 2.7,
+        "p_over": 0.5736,
+        "p_under": 0.4264,
+        "n": 326,
+        "n_over": 187,
+        "n_under": 139
+      },
+      {
+        "proj_mid": 2.75,
+        "proj_lo": 2.7,
+        "proj_hi": 2.8,
+        "p_over": 0.5401,
+        "p_under": 0.4599,
+        "n": 287,
+        "n_over": 155,
+        "n_under": 132
+      },
+      {
+        "proj_mid": 2.85,
+        "proj_lo": 2.8,
+        "proj_hi": 2.9,
+        "p_over": 0.5492,
+        "p_under": 0.4508,
+        "n": 264,
+        "n_over": 145,
+        "n_under": 119
+      },
+      {
+        "proj_mid": 2.95,
+        "proj_lo": 2.9,
+        "proj_hi": 3.0,
+        "p_over": 0.5301,
+        "p_under": 0.4699,
+        "n": 183,
+        "n_over": 97,
+        "n_under": 86
+      },
+      {
+        "proj_mid": 3.05,
+        "proj_lo": 3.0,
+        "proj_hi": 3.1,
+        "p_over": 0.6225,
+        "p_under": 0.3775,
+        "n": 151,
+        "n_over": 94,
+        "n_under": 57
+      },
+      {
+        "proj_mid": 3.15,
+        "proj_lo": 3.1,
+        "proj_hi": 3.2,
+        "p_over": 0.5574,
+        "p_under": 0.4426,
+        "n": 122,
+        "n_over": 68,
+        "n_under": 54
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "batter_strikeouts": {
+    "line": 0.5,
+    "points": [
+      {
+        "proj_mid": 0.425,
+        "proj_lo": 0.4,
+        "proj_hi": 0.45,
+        "p_over": 0.3484,
+        "p_under": 0.6516,
+        "n": 221,
+        "n_over": 77,
+        "n_under": 144
+      },
+      {
+        "proj_mid": 0.475,
+        "proj_lo": 0.45,
+        "proj_hi": 0.5,
+        "p_over": 0.392,
+        "p_under": 0.608,
+        "n": 477,
+        "n_over": 187,
+        "n_under": 290
+      },
+      {
+        "proj_mid": 0.525,
+        "proj_lo": 0.5,
+        "proj_hi": 0.55,
+        "p_over": 0.4486,
+        "p_under": 0.5514,
+        "n": 720,
+        "n_over": 323,
+        "n_under": 397
+      },
+      {
+        "proj_mid": 0.575,
+        "proj_lo": 0.55,
+        "proj_hi": 0.6,
+        "p_over": 0.4642,
+        "p_under": 0.5358,
+        "n": 1426,
+        "n_over": 662,
+        "n_under": 764
+      },
+      {
+        "proj_mid": 0.625,
+        "proj_lo": 0.6,
+        "proj_hi": 0.65,
+        "p_over": 0.4962,
+        "p_under": 0.5038,
+        "n": 1697,
+        "n_over": 842,
+        "n_under": 855
+      },
+      {
+        "proj_mid": 0.675,
+        "proj_lo": 0.65,
+        "proj_hi": 0.7,
+        "p_over": 0.5108,
+        "p_under": 0.4892,
+        "n": 2171,
+        "n_over": 1109,
+        "n_under": 1062
+      },
+      {
+        "proj_mid": 0.725,
+        "proj_lo": 0.7,
+        "proj_hi": 0.75,
+        "p_over": 0.5358,
+        "p_under": 0.4642,
+        "n": 2475,
+        "n_over": 1326,
+        "n_under": 1149
+      },
+      {
+        "proj_mid": 0.775,
+        "proj_lo": 0.75,
+        "proj_hi": 0.8,
+        "p_over": 0.5717,
+        "p_under": 0.4283,
+        "n": 2732,
+        "n_over": 1562,
+        "n_under": 1170
+      },
+      {
+        "proj_mid": 0.825,
+        "proj_lo": 0.8,
+        "proj_hi": 0.85,
+        "p_over": 0.5909,
+        "p_under": 0.4091,
+        "n": 3092,
+        "n_over": 1827,
+        "n_under": 1265
+      },
+      {
+        "proj_mid": 0.875,
+        "proj_lo": 0.85,
+        "proj_hi": 0.9,
+        "p_over": 0.6145,
+        "p_under": 0.3855,
+        "n": 3175,
+        "n_over": 1951,
+        "n_under": 1224
+      },
+      {
+        "proj_mid": 0.925,
+        "proj_lo": 0.9,
+        "proj_hi": 0.95,
+        "p_over": 0.6352,
+        "p_under": 0.3648,
+        "n": 3177,
+        "n_over": 2018,
+        "n_under": 1159
+      },
+      {
+        "proj_mid": 0.975,
+        "proj_lo": 0.95,
+        "proj_hi": 1.0,
+        "p_over": 0.6501,
+        "p_under": 0.3499,
+        "n": 3155,
+        "n_over": 2051,
+        "n_under": 1104
+      },
+      {
+        "proj_mid": 1.025,
+        "proj_lo": 1.0,
+        "proj_hi": 1.05,
+        "p_over": 0.6549,
+        "p_under": 0.3451,
+        "n": 3063,
+        "n_over": 2006,
+        "n_under": 1057
+      },
+      {
+        "proj_mid": 1.075,
+        "proj_lo": 1.05,
+        "proj_hi": 1.1,
+        "p_over": 0.6808,
+        "p_under": 0.3192,
+        "n": 2788,
+        "n_over": 1898,
+        "n_under": 890
+      },
+      {
+        "proj_mid": 1.125,
+        "proj_lo": 1.1,
+        "proj_hi": 1.15,
+        "p_over": 0.6798,
+        "p_under": 0.3202,
+        "n": 2258,
+        "n_over": 1535,
+        "n_under": 723
+      },
+      {
+        "proj_mid": 1.175,
+        "proj_lo": 1.15,
+        "proj_hi": 1.2,
+        "p_over": 0.6977,
+        "p_under": 0.3023,
+        "n": 1806,
+        "n_over": 1260,
+        "n_under": 546
+      },
+      {
+        "proj_mid": 1.225,
+        "proj_lo": 1.2,
+        "proj_hi": 1.25,
+        "p_over": 0.7045,
+        "p_under": 0.2955,
+        "n": 1479,
+        "n_over": 1042,
+        "n_under": 437
+      },
+      {
+        "proj_mid": 1.275,
+        "proj_lo": 1.25,
+        "proj_hi": 1.3,
+        "p_over": 0.7194,
+        "p_under": 0.2806,
+        "n": 1208,
+        "n_over": 869,
+        "n_under": 339
+      },
+      {
+        "proj_mid": 1.325,
+        "proj_lo": 1.3,
+        "proj_hi": 1.35,
+        "p_over": 0.7248,
+        "p_under": 0.2752,
+        "n": 825,
+        "n_over": 598,
+        "n_under": 227
+      },
+      {
+        "proj_mid": 1.375,
+        "proj_lo": 1.35,
+        "proj_hi": 1.4,
+        "p_over": 0.727,
+        "p_under": 0.273,
+        "n": 663,
+        "n_over": 482,
+        "n_under": 181
+      },
+      {
+        "proj_mid": 1.425,
+        "proj_lo": 1.4,
+        "proj_hi": 1.45,
+        "p_over": 0.6904,
+        "p_under": 0.3096,
+        "n": 478,
+        "n_over": 330,
+        "n_under": 148
+      },
+      {
+        "proj_mid": 1.475,
+        "proj_lo": 1.45,
+        "proj_hi": 1.5,
+        "p_over": 0.6997,
+        "p_under": 0.3003,
+        "n": 343,
+        "n_over": 240,
+        "n_under": 103
+      },
+      {
+        "proj_mid": 1.525,
+        "proj_lo": 1.5,
+        "proj_hi": 1.55,
+        "p_over": 0.7628,
+        "p_under": 0.2372,
+        "n": 215,
+        "n_over": 164,
+        "n_under": 51
+      },
+      {
+        "proj_mid": 1.575,
+        "proj_lo": 1.55,
+        "proj_hi": 1.6,
+        "p_over": 0.7114,
+        "p_under": 0.2886,
+        "n": 149,
+        "n_over": 106,
+        "n_under": 43
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "walks": {
+    "line": 0.5,
+    "points": [
+      {
+        "proj_mid": 0.125,
+        "proj_lo": 0.1,
+        "proj_hi": 0.15,
+        "p_over": 0.2095,
+        "p_under": 0.7905,
+        "n": 2558,
+        "n_over": 536,
+        "n_under": 2022
+      },
+      {
+        "proj_mid": 0.175,
+        "proj_lo": 0.15,
+        "proj_hi": 0.2,
+        "p_over": 0.2157,
+        "p_under": 0.7843,
+        "n": 3036,
+        "n_over": 655,
+        "n_under": 2381
+      },
+      {
+        "proj_mid": 0.225,
+        "proj_lo": 0.2,
+        "proj_hi": 0.25,
+        "p_over": 0.229,
+        "p_under": 0.771,
+        "n": 5844,
+        "n_over": 1338,
+        "n_under": 4506
+      },
+      {
+        "proj_mid": 0.275,
+        "proj_lo": 0.25,
+        "proj_hi": 0.3,
+        "p_over": 0.2648,
+        "p_under": 0.7352,
+        "n": 7070,
+        "n_over": 1872,
+        "n_under": 5198
+      },
+      {
+        "proj_mid": 0.325,
+        "proj_lo": 0.3,
+        "proj_hi": 0.35,
+        "p_over": 0.2876,
+        "p_under": 0.7124,
+        "n": 6790,
+        "n_over": 1953,
+        "n_under": 4837
+      },
+      {
+        "proj_mid": 0.375,
+        "proj_lo": 0.35,
+        "proj_hi": 0.4,
+        "p_over": 0.3122,
+        "p_under": 0.6878,
+        "n": 5125,
+        "n_over": 1600,
+        "n_under": 3525
+      },
+      {
+        "proj_mid": 0.425,
+        "proj_lo": 0.4,
+        "proj_hi": 0.45,
+        "p_over": 0.3415,
+        "p_under": 0.6585,
+        "n": 3611,
+        "n_over": 1233,
+        "n_under": 2378
+      },
+      {
+        "proj_mid": 0.475,
+        "proj_lo": 0.45,
+        "proj_hi": 0.5,
+        "p_over": 0.3645,
+        "p_under": 0.6355,
+        "n": 2546,
+        "n_over": 928,
+        "n_under": 1618
+      },
+      {
+        "proj_mid": 0.525,
+        "proj_lo": 0.5,
+        "proj_hi": 0.55,
+        "p_over": 0.3705,
+        "p_under": 0.6295,
+        "n": 1293,
+        "n_over": 479,
+        "n_under": 814
+      },
+      {
+        "proj_mid": 0.575,
+        "proj_lo": 0.55,
+        "proj_hi": 0.6,
+        "p_over": 0.3451,
+        "p_under": 0.6549,
+        "n": 736,
+        "n_over": 254,
+        "n_under": 482
+      },
+      {
+        "proj_mid": 0.625,
+        "proj_lo": 0.6,
+        "proj_hi": 0.65,
+        "p_over": 0.3922,
+        "p_under": 0.6078,
+        "n": 515,
+        "n_over": 202,
+        "n_under": 313
+      },
+      {
+        "proj_mid": 0.675,
+        "proj_lo": 0.65,
+        "proj_hi": 0.7,
+        "p_over": 0.4346,
+        "p_under": 0.5654,
+        "n": 382,
+        "n_over": 166,
+        "n_under": 216
+      },
+      {
+        "proj_mid": 0.725,
+        "proj_lo": 0.7,
+        "proj_hi": 0.75,
+        "p_over": 0.3552,
+        "p_under": 0.6448,
+        "n": 183,
+        "n_over": 65,
+        "n_under": 118
+      },
+      {
+        "proj_mid": 0.775,
+        "proj_lo": 0.75,
+        "proj_hi": 0.8,
+        "p_over": 0.415,
+        "p_under": 0.585,
+        "n": 147,
+        "n_over": 61,
+        "n_under": 86
+      },
+      {
+        "proj_mid": 0.825,
+        "proj_lo": 0.8,
+        "proj_hi": 0.85,
+        "p_over": 0.3451,
+        "p_under": 0.6549,
+        "n": 113,
+        "n_over": 39,
+        "n_under": 74
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "singles": {
+    "line": 0.5,
+    "points": [
+      {
+        "proj_mid": 0.625,
+        "proj_lo": 0.6,
+        "proj_hi": 0.65,
+        "p_over": 0.3865,
+        "p_under": 0.6135,
+        "n": 758,
+        "n_over": 293,
+        "n_under": 465
+      },
+      {
+        "proj_mid": 0.675,
+        "proj_lo": 0.65,
+        "proj_hi": 0.7,
+        "p_over": 0.3898,
+        "p_under": 0.6102,
+        "n": 1760,
+        "n_over": 686,
+        "n_under": 1074
+      },
+      {
+        "proj_mid": 0.725,
+        "proj_lo": 0.7,
+        "proj_hi": 0.75,
+        "p_over": 0.3936,
+        "p_under": 0.6064,
+        "n": 2950,
+        "n_over": 1161,
+        "n_under": 1789
+      },
+      {
+        "proj_mid": 0.775,
+        "proj_lo": 0.75,
+        "proj_hi": 0.8,
+        "p_over": 0.4089,
+        "p_under": 0.5911,
+        "n": 4294,
+        "n_over": 1756,
+        "n_under": 2538
+      },
+      {
+        "proj_mid": 0.825,
+        "proj_lo": 0.8,
+        "proj_hi": 0.85,
+        "p_over": 0.4263,
+        "p_under": 0.5737,
+        "n": 5391,
+        "n_over": 2298,
+        "n_under": 3093
+      },
+      {
+        "proj_mid": 0.875,
+        "proj_lo": 0.85,
+        "proj_hi": 0.9,
+        "p_over": 0.4478,
+        "p_under": 0.5522,
+        "n": 5811,
+        "n_over": 2602,
+        "n_under": 3209
+      },
+      {
+        "proj_mid": 0.925,
+        "proj_lo": 0.9,
+        "proj_hi": 0.95,
+        "p_over": 0.4621,
+        "p_under": 0.5379,
+        "n": 5416,
+        "n_over": 2503,
+        "n_under": 2913
+      },
+      {
+        "proj_mid": 0.975,
+        "proj_lo": 0.95,
+        "proj_hi": 1.0,
+        "p_over": 0.4685,
+        "p_under": 0.5315,
+        "n": 4593,
+        "n_over": 2152,
+        "n_under": 2441
+      },
+      {
+        "proj_mid": 1.025,
+        "proj_lo": 1.0,
+        "proj_hi": 1.05,
+        "p_over": 0.4858,
+        "p_under": 0.5142,
+        "n": 3207,
+        "n_over": 1558,
+        "n_under": 1649
+      },
+      {
+        "proj_mid": 1.075,
+        "proj_lo": 1.05,
+        "proj_hi": 1.1,
+        "p_over": 0.4841,
+        "p_under": 0.5159,
+        "n": 2208,
+        "n_over": 1069,
+        "n_under": 1139
+      },
+      {
+        "proj_mid": 1.125,
+        "proj_lo": 1.1,
+        "proj_hi": 1.15,
+        "p_over": 0.5028,
+        "p_under": 0.4972,
+        "n": 1418,
+        "n_over": 713,
+        "n_under": 705
+      },
+      {
+        "proj_mid": 1.175,
+        "proj_lo": 1.15,
+        "proj_hi": 1.2,
+        "p_over": 0.5416,
+        "p_under": 0.4584,
+        "n": 805,
+        "n_over": 436,
+        "n_under": 369
+      },
+      {
+        "proj_mid": 1.225,
+        "proj_lo": 1.2,
+        "proj_hi": 1.25,
+        "p_over": 0.527,
+        "p_under": 0.473,
+        "n": 575,
+        "n_over": 303,
+        "n_under": 272
+      },
+      {
+        "proj_mid": 1.275,
+        "proj_lo": 1.25,
+        "proj_hi": 1.3,
+        "p_over": 0.4836,
+        "p_under": 0.5164,
+        "n": 366,
+        "n_over": 177,
+        "n_under": 189
+      },
+      {
+        "proj_mid": 1.325,
+        "proj_lo": 1.3,
+        "proj_hi": 1.35,
+        "p_over": 0.4884,
+        "p_under": 0.5116,
+        "n": 215,
+        "n_over": 105,
+        "n_under": 110
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "doubles": {
+    "line": 0.5,
+    "points": [
+      {
+        "proj_mid": 0.625,
+        "proj_lo": 0.6,
+        "proj_hi": 0.65,
+        "p_over": 0.1425,
+        "p_under": 0.8575,
+        "n": 758,
+        "n_over": 108,
+        "n_under": 650
+      },
+      {
+        "proj_mid": 0.675,
+        "proj_lo": 0.65,
+        "proj_hi": 0.7,
+        "p_over": 0.133,
+        "p_under": 0.867,
+        "n": 1760,
+        "n_over": 234,
+        "n_under": 1526
+      },
+      {
+        "proj_mid": 0.725,
+        "proj_lo": 0.7,
+        "proj_hi": 0.75,
+        "p_over": 0.1519,
+        "p_under": 0.8481,
+        "n": 2950,
+        "n_over": 448,
+        "n_under": 2502
+      },
+      {
+        "proj_mid": 0.775,
+        "proj_lo": 0.75,
+        "proj_hi": 0.8,
+        "p_over": 0.15,
+        "p_under": 0.85,
+        "n": 4294,
+        "n_over": 644,
+        "n_under": 3650
+      },
+      {
+        "proj_mid": 0.825,
+        "proj_lo": 0.8,
+        "proj_hi": 0.85,
+        "p_over": 0.1519,
+        "p_under": 0.8481,
+        "n": 5391,
+        "n_over": 819,
+        "n_under": 4572
+      },
+      {
+        "proj_mid": 0.875,
+        "proj_lo": 0.85,
+        "proj_hi": 0.9,
+        "p_over": 0.1478,
+        "p_under": 0.8522,
+        "n": 5811,
+        "n_over": 859,
+        "n_under": 4952
+      },
+      {
+        "proj_mid": 0.925,
+        "proj_lo": 0.9,
+        "proj_hi": 0.95,
+        "p_over": 0.1569,
+        "p_under": 0.8431,
+        "n": 5416,
+        "n_over": 850,
+        "n_under": 4566
+      },
+      {
+        "proj_mid": 0.975,
+        "proj_lo": 0.95,
+        "proj_hi": 1.0,
+        "p_over": 0.1666,
+        "p_under": 0.8334,
+        "n": 4593,
+        "n_over": 765,
+        "n_under": 3828
+      },
+      {
+        "proj_mid": 1.025,
+        "proj_lo": 1.0,
+        "proj_hi": 1.05,
+        "p_over": 0.1699,
+        "p_under": 0.8301,
+        "n": 3207,
+        "n_over": 545,
+        "n_under": 2662
+      },
+      {
+        "proj_mid": 1.075,
+        "proj_lo": 1.05,
+        "proj_hi": 1.1,
+        "p_over": 0.1716,
+        "p_under": 0.8284,
+        "n": 2208,
+        "n_over": 379,
+        "n_under": 1829
+      },
+      {
+        "proj_mid": 1.125,
+        "proj_lo": 1.1,
+        "proj_hi": 1.15,
+        "p_over": 0.1721,
+        "p_under": 0.8279,
+        "n": 1418,
+        "n_over": 244,
+        "n_under": 1174
+      },
+      {
+        "proj_mid": 1.175,
+        "proj_lo": 1.15,
+        "proj_hi": 1.2,
+        "p_over": 0.1888,
+        "p_under": 0.8112,
+        "n": 805,
+        "n_over": 152,
+        "n_under": 653
+      },
+      {
+        "proj_mid": 1.225,
+        "proj_lo": 1.2,
+        "proj_hi": 1.25,
+        "p_over": 0.1983,
+        "p_under": 0.8017,
+        "n": 575,
+        "n_over": 114,
+        "n_under": 461
+      },
+      {
+        "proj_mid": 1.275,
+        "proj_lo": 1.25,
+        "proj_hi": 1.3,
+        "p_over": 0.2322,
+        "p_under": 0.7678,
+        "n": 366,
+        "n_over": 85,
+        "n_under": 281
+      },
+      {
+        "proj_mid": 1.325,
+        "proj_lo": 1.3,
+        "proj_hi": 1.35,
+        "p_over": 0.186,
+        "p_under": 0.814,
+        "n": 215,
+        "n_over": 40,
+        "n_under": 175
+      }
+    ],
+    "total_predictions": 40346
+  },
+  "pitching_outs": {
+    "line": 17.5,
+    "points": [
+      {
+        "proj_mid": 10.625,
+        "proj_lo": 10.5,
+        "proj_hi": 10.75,
+        "p_over": 0.1159,
+        "p_under": 0.8841,
+        "n": 69,
+        "n_over": 8,
+        "n_under": 61
+      },
+      {
+        "proj_mid": 11.125,
+        "proj_lo": 11.0,
+        "proj_hi": 11.25,
+        "p_over": 0.4286,
+        "p_under": 0.5714,
+        "n": 56,
+        "n_over": 24,
+        "n_under": 32
+      },
+      {
+        "proj_mid": 11.375,
+        "proj_lo": 11.25,
+        "proj_hi": 11.5,
+        "p_over": 0.4074,
+        "p_under": 0.5926,
+        "n": 54,
+        "n_over": 22,
+        "n_under": 32
+      },
+      {
+        "proj_mid": 11.625,
+        "proj_lo": 11.5,
+        "proj_hi": 11.75,
+        "p_over": 0.3415,
+        "p_under": 0.6585,
+        "n": 41,
+        "n_over": 14,
+        "n_under": 27
+      },
+      {
+        "proj_mid": 11.875,
+        "proj_lo": 11.75,
+        "proj_hi": 12.0,
+        "p_over": 0.1905,
+        "p_under": 0.8095,
+        "n": 42,
+        "n_over": 8,
+        "n_under": 34
+      },
+      {
+        "proj_mid": 12.625,
+        "proj_lo": 12.5,
+        "proj_hi": 12.75,
+        "p_over": 0.4462,
+        "p_under": 0.5538,
+        "n": 65,
+        "n_over": 29,
+        "n_under": 36
+      },
+      {
+        "proj_mid": 12.875,
+        "proj_lo": 12.75,
+        "proj_hi": 13.0,
+        "p_over": 0.4343,
+        "p_under": 0.5657,
+        "n": 99,
+        "n_over": 43,
+        "n_under": 56
+      },
+      {
+        "proj_mid": 13.125,
+        "proj_lo": 13.0,
+        "proj_hi": 13.25,
+        "p_over": 0.4146,
+        "p_under": 0.5854,
+        "n": 82,
+        "n_over": 34,
+        "n_under": 48
+      },
+      {
+        "proj_mid": 13.375,
+        "proj_lo": 13.25,
+        "proj_hi": 13.5,
+        "p_over": 0.3815,
+        "p_under": 0.6185,
+        "n": 173,
+        "n_over": 66,
+        "n_under": 107
+      },
+      {
+        "proj_mid": 13.625,
+        "proj_lo": 13.5,
+        "proj_hi": 13.75,
+        "p_over": 0.3596,
+        "p_under": 0.6404,
+        "n": 89,
+        "n_over": 32,
+        "n_under": 57
+      },
+      {
+        "proj_mid": 13.875,
+        "proj_lo": 13.75,
+        "proj_hi": 14.0,
+        "p_over": 0.374,
+        "p_under": 0.626,
+        "n": 123,
+        "n_over": 46,
+        "n_under": 77
+      },
+      {
+        "proj_mid": 14.125,
+        "proj_lo": 14.0,
+        "proj_hi": 14.25,
+        "p_over": 0.3467,
+        "p_under": 0.6533,
+        "n": 199,
+        "n_over": 69,
+        "n_under": 130
+      },
+      {
+        "proj_mid": 14.375,
+        "proj_lo": 14.25,
+        "proj_hi": 14.5,
+        "p_over": 0.4218,
+        "p_under": 0.5782,
+        "n": 147,
+        "n_over": 62,
+        "n_under": 85
+      },
+      {
+        "proj_mid": 14.625,
+        "proj_lo": 14.5,
+        "proj_hi": 14.75,
+        "p_over": 0.3594,
+        "p_under": 0.6406,
+        "n": 192,
+        "n_over": 69,
+        "n_under": 123
+      },
+      {
+        "proj_mid": 14.875,
+        "proj_lo": 14.75,
+        "proj_hi": 15.0,
+        "p_over": 0.4309,
+        "p_under": 0.5691,
+        "n": 181,
+        "n_over": 78,
+        "n_under": 103
+      },
+      {
+        "proj_mid": 15.125,
+        "proj_lo": 15.0,
+        "proj_hi": 15.25,
+        "p_over": 0.4516,
+        "p_under": 0.5484,
+        "n": 155,
+        "n_over": 70,
+        "n_under": 85
+      },
+      {
+        "proj_mid": 15.375,
+        "proj_lo": 15.25,
+        "proj_hi": 15.5,
+        "p_over": 0.4597,
+        "p_under": 0.5403,
+        "n": 248,
+        "n_over": 114,
+        "n_under": 134
+      },
+      {
+        "proj_mid": 15.625,
+        "proj_lo": 15.5,
+        "proj_hi": 15.75,
+        "p_over": 0.416,
+        "p_under": 0.584,
+        "n": 250,
+        "n_over": 104,
+        "n_under": 146
+      },
+      {
+        "proj_mid": 15.875,
+        "proj_lo": 15.75,
+        "proj_hi": 16.0,
+        "p_over": 0.4196,
+        "p_under": 0.5804,
+        "n": 143,
+        "n_over": 60,
+        "n_under": 83
+      },
+      {
+        "proj_mid": 16.125,
+        "proj_lo": 16.0,
+        "proj_hi": 16.25,
+        "p_over": 0.5251,
+        "p_under": 0.4749,
+        "n": 219,
+        "n_over": 115,
+        "n_under": 104
+      },
+      {
+        "proj_mid": 16.375,
+        "proj_lo": 16.25,
+        "proj_hi": 16.5,
+        "p_over": 0.4917,
+        "p_under": 0.5083,
+        "n": 181,
+        "n_over": 89,
+        "n_under": 92
+      },
+      {
+        "proj_mid": 16.625,
+        "proj_lo": 16.5,
+        "proj_hi": 16.75,
+        "p_over": 0.4949,
+        "p_under": 0.5051,
+        "n": 196,
+        "n_over": 97,
+        "n_under": 99
+      },
+      {
+        "proj_mid": 16.875,
+        "proj_lo": 16.75,
+        "proj_hi": 17.0,
+        "p_over": 0.4436,
+        "p_under": 0.5564,
+        "n": 133,
+        "n_over": 59,
+        "n_under": 74
+      },
+      {
+        "proj_mid": 17.125,
+        "proj_lo": 17.0,
+        "proj_hi": 17.25,
+        "p_over": 0.379,
+        "p_under": 0.621,
+        "n": 219,
+        "n_over": 83,
+        "n_under": 136
+      },
+      {
+        "proj_mid": 17.375,
+        "proj_lo": 17.25,
+        "proj_hi": 17.5,
+        "p_over": 0.4098,
+        "p_under": 0.5902,
+        "n": 122,
+        "n_over": 50,
+        "n_under": 72
+      },
+      {
+        "proj_mid": 17.625,
+        "proj_lo": 17.5,
+        "proj_hi": 17.75,
+        "p_over": 0.3702,
+        "p_under": 0.6298,
+        "n": 235,
+        "n_over": 87,
+        "n_under": 148
+      },
+      {
+        "proj_mid": 17.875,
+        "proj_lo": 17.75,
+        "proj_hi": 18.0,
+        "p_over": 0.3173,
+        "p_under": 0.6827,
+        "n": 104,
+        "n_over": 33,
+        "n_under": 71
+      },
+      {
+        "proj_mid": 18.125,
+        "proj_lo": 18.0,
+        "proj_hi": 18.25,
+        "p_over": 0.3291,
+        "p_under": 0.6709,
+        "n": 79,
+        "n_over": 26,
+        "n_under": 53
+      }
+    ],
+    "total_predictions": 4074
+  },
+  "earned_runs": {
+    "line": 1.5,
+    "points": [
+      {
+        "proj_mid": 1.65,
+        "proj_lo": 1.6,
+        "proj_hi": 1.7,
+        "p_over": 0.4823,
+        "p_under": 0.5177,
+        "n": 141,
+        "n_over": 68,
+        "n_under": 73
+      },
+      {
+        "proj_mid": 1.75,
+        "proj_lo": 1.7,
+        "proj_hi": 1.8,
+        "p_over": 0.5194,
+        "p_under": 0.4806,
+        "n": 129,
+        "n_over": 67,
+        "n_under": 62
+      },
+      {
+        "proj_mid": 1.85,
+        "proj_lo": 1.8,
+        "proj_hi": 1.9,
+        "p_over": 0.5944,
+        "p_under": 0.4056,
+        "n": 180,
+        "n_over": 107,
+        "n_under": 73
+      },
+      {
+        "proj_mid": 1.95,
+        "proj_lo": 1.9,
+        "proj_hi": 2.0,
+        "p_over": 0.6165,
+        "p_under": 0.3835,
+        "n": 498,
+        "n_over": 307,
+        "n_under": 191
+      },
+      {
+        "proj_mid": 2.05,
+        "proj_lo": 2.0,
+        "proj_hi": 2.1,
+        "p_over": 0.6258,
+        "p_under": 0.3742,
+        "n": 481,
+        "n_over": 301,
+        "n_under": 180
+      },
+      {
+        "proj_mid": 2.15,
+        "proj_lo": 2.1,
+        "proj_hi": 2.2,
+        "p_over": 0.6168,
+        "p_under": 0.3832,
+        "n": 582,
+        "n_over": 359,
+        "n_under": 223
+      },
+      {
+        "proj_mid": 2.25,
+        "proj_lo": 2.2,
+        "proj_hi": 2.3,
+        "p_over": 0.6353,
+        "p_under": 0.3647,
+        "n": 617,
+        "n_over": 392,
+        "n_under": 225
+      },
+      {
+        "proj_mid": 2.35,
+        "proj_lo": 2.3,
+        "proj_hi": 2.4,
+        "p_over": 0.6635,
+        "p_under": 0.3365,
+        "n": 416,
+        "n_over": 276,
+        "n_under": 140
+      },
+      {
+        "proj_mid": 2.45,
+        "proj_lo": 2.4,
+        "proj_hi": 2.5,
+        "p_over": 0.6624,
+        "p_under": 0.3376,
+        "n": 234,
+        "n_over": 155,
+        "n_under": 79
+      },
+      {
+        "proj_mid": 2.55,
+        "proj_lo": 2.5,
+        "proj_hi": 2.6,
+        "p_over": 0.6268,
+        "p_under": 0.3732,
+        "n": 209,
+        "n_over": 131,
+        "n_under": 78
+      },
+      {
+        "proj_mid": 2.65,
+        "proj_lo": 2.6,
+        "proj_hi": 2.7,
+        "p_over": 0.619,
+        "p_under": 0.381,
+        "n": 126,
+        "n_over": 78,
+        "n_under": 48
+      },
+      {
+        "proj_mid": 2.75,
+        "proj_lo": 2.7,
+        "proj_hi": 2.8,
+        "p_over": 0.5305,
+        "p_under": 0.4695,
+        "n": 164,
+        "n_over": 87,
+        "n_under": 77
+      },
+      {
+        "proj_mid": 2.85,
+        "proj_lo": 2.8,
+        "proj_hi": 2.9,
+        "p_over": 0.7327,
+        "p_under": 0.2673,
+        "n": 101,
+        "n_over": 74,
+        "n_under": 27
+      },
+      {
+        "proj_mid": 2.95,
+        "proj_lo": 2.9,
+        "proj_hi": 3.0,
+        "p_over": 0.6167,
+        "p_under": 0.3833,
+        "n": 60,
+        "n_over": 37,
+        "n_under": 23
+      },
+      {
+        "proj_mid": 3.05,
+        "proj_lo": 3.0,
+        "proj_hi": 3.1,
+        "p_over": 0.5517,
+        "p_under": 0.4483,
+        "n": 58,
+        "n_over": 32,
+        "n_under": 26
+      }
+    ],
+    "total_predictions": 4074
+  },
+  "walks_allowed": {
+    "line": 1.5,
+    "points": [
+      {
+        "proj_mid": 0.85,
+        "proj_lo": 0.8,
+        "proj_hi": 0.9,
+        "p_over": 0.3654,
+        "p_under": 0.6346,
+        "n": 52,
+        "n_over": 19,
+        "n_under": 33
+      },
+      {
+        "proj_mid": 0.95,
+        "proj_lo": 0.9,
+        "proj_hi": 1.0,
+        "p_over": 0.2791,
+        "p_under": 0.7209,
+        "n": 43,
+        "n_over": 12,
+        "n_under": 31
+      },
+      {
+        "proj_mid": 1.05,
+        "proj_lo": 1.0,
+        "proj_hi": 1.1,
+        "p_over": 0.3852,
+        "p_under": 0.6148,
+        "n": 122,
+        "n_over": 47,
+        "n_under": 75
+      },
+      {
+        "proj_mid": 1.15,
+        "proj_lo": 1.1,
+        "proj_hi": 1.2,
+        "p_over": 0.3473,
+        "p_under": 0.6527,
+        "n": 167,
+        "n_over": 58,
+        "n_under": 109
+      },
+      {
+        "proj_mid": 1.25,
+        "proj_lo": 1.2,
+        "proj_hi": 1.3,
+        "p_over": 0.514,
+        "p_under": 0.486,
+        "n": 214,
+        "n_over": 110,
+        "n_under": 104
+      },
+      {
+        "proj_mid": 1.35,
+        "proj_lo": 1.3,
+        "proj_hi": 1.4,
+        "p_over": 0.4292,
+        "p_under": 0.5708,
+        "n": 480,
+        "n_over": 206,
+        "n_under": 274
+      },
+      {
+        "proj_mid": 1.45,
+        "proj_lo": 1.4,
+        "proj_hi": 1.5,
+        "p_over": 0.4932,
+        "p_under": 0.5068,
+        "n": 517,
+        "n_over": 255,
+        "n_under": 262
+      },
+      {
+        "proj_mid": 1.55,
+        "proj_lo": 1.5,
+        "proj_hi": 1.6,
+        "p_over": 0.5582,
+        "p_under": 0.4418,
+        "n": 464,
+        "n_over": 259,
+        "n_under": 205
+      },
+      {
+        "proj_mid": 1.65,
+        "proj_lo": 1.6,
+        "proj_hi": 1.7,
+        "p_over": 0.5553,
+        "p_under": 0.4447,
+        "n": 389,
+        "n_over": 216,
+        "n_under": 173
+      },
+      {
+        "proj_mid": 1.75,
+        "proj_lo": 1.7,
+        "proj_hi": 1.8,
+        "p_over": 0.5794,
+        "p_under": 0.4206,
+        "n": 321,
+        "n_over": 186,
+        "n_under": 135
+      },
+      {
+        "proj_mid": 1.85,
+        "proj_lo": 1.8,
+        "proj_hi": 1.9,
+        "p_over": 0.5727,
+        "p_under": 0.4273,
+        "n": 440,
+        "n_over": 252,
+        "n_under": 188
+      },
+      {
+        "proj_mid": 1.95,
+        "proj_lo": 1.9,
+        "proj_hi": 2.0,
+        "p_over": 0.5603,
+        "p_under": 0.4397,
+        "n": 282,
+        "n_over": 158,
+        "n_under": 124
+      },
+      {
+        "proj_mid": 2.05,
+        "proj_lo": 2.0,
+        "proj_hi": 2.1,
+        "p_over": 0.5083,
+        "p_under": 0.4917,
+        "n": 181,
+        "n_over": 92,
+        "n_under": 89
+      },
+      {
+        "proj_mid": 2.15,
+        "proj_lo": 2.1,
+        "proj_hi": 2.2,
+        "p_over": 0.5211,
+        "p_under": 0.4789,
+        "n": 142,
+        "n_over": 74,
+        "n_under": 68
+      },
+      {
+        "proj_mid": 2.25,
+        "proj_lo": 2.2,
+        "proj_hi": 2.3,
+        "p_over": 0.6557,
+        "p_under": 0.3443,
+        "n": 61,
+        "n_over": 40,
+        "n_under": 21
+      },
+      {
+        "proj_mid": 2.35,
+        "proj_lo": 2.3,
+        "proj_hi": 2.4,
+        "p_over": 0.475,
+        "p_under": 0.525,
+        "n": 40,
+        "n_over": 19,
+        "n_under": 21
+      }
+    ],
+    "total_predictions": 4074
+  },
+  "hits_allowed": {
+    "line": 5.5,
+    "points": [
+      {
+        "proj_mid": 3.85,
+        "proj_lo": 3.8,
+        "proj_hi": 3.9,
+        "p_over": 0.3077,
+        "p_under": 0.6923,
+        "n": 78,
+        "n_over": 24,
+        "n_under": 54
+      },
+      {
+        "proj_mid": 3.95,
+        "proj_lo": 3.9,
+        "proj_hi": 4.0,
+        "p_over": 0.2913,
+        "p_under": 0.7087,
+        "n": 127,
+        "n_over": 37,
+        "n_under": 90
+      },
+      {
+        "proj_mid": 4.05,
+        "proj_lo": 4.0,
+        "proj_hi": 4.1,
+        "p_over": 0.3375,
+        "p_under": 0.6625,
+        "n": 80,
+        "n_over": 27,
+        "n_under": 53
+      },
+      {
+        "proj_mid": 4.15,
+        "proj_lo": 4.1,
+        "proj_hi": 4.2,
+        "p_over": 0.3768,
+        "p_under": 0.6232,
+        "n": 69,
+        "n_over": 26,
+        "n_under": 43
+      },
+      {
+        "proj_mid": 4.25,
+        "proj_lo": 4.2,
+        "proj_hi": 4.3,
+        "p_over": 0.3548,
+        "p_under": 0.6452,
+        "n": 62,
+        "n_over": 22,
+        "n_under": 40
+      },
+      {
+        "proj_mid": 4.35,
+        "proj_lo": 4.3,
+        "proj_hi": 4.4,
+        "p_over": 0.2555,
+        "p_under": 0.7445,
+        "n": 137,
+        "n_over": 35,
+        "n_under": 102
+      },
+      {
+        "proj_mid": 4.45,
+        "proj_lo": 4.4,
+        "proj_hi": 4.5,
+        "p_over": 0.3504,
+        "p_under": 0.6496,
+        "n": 137,
+        "n_over": 48,
+        "n_under": 89
+      },
+      {
+        "proj_mid": 4.55,
+        "proj_lo": 4.5,
+        "proj_hi": 4.6,
+        "p_over": 0.3356,
+        "p_under": 0.6644,
+        "n": 146,
+        "n_over": 49,
+        "n_under": 97
+      },
+      {
+        "proj_mid": 4.65,
+        "proj_lo": 4.6,
+        "proj_hi": 4.7,
+        "p_over": 0.3333,
+        "p_under": 0.6667,
+        "n": 75,
+        "n_over": 25,
+        "n_under": 50
+      },
+      {
+        "proj_mid": 4.75,
+        "proj_lo": 4.7,
+        "proj_hi": 4.8,
+        "p_over": 0.2759,
+        "p_under": 0.7241,
+        "n": 116,
+        "n_over": 32,
+        "n_under": 84
+      },
+      {
+        "proj_mid": 4.85,
+        "proj_lo": 4.8,
+        "proj_hi": 4.9,
+        "p_over": 0.3543,
+        "p_under": 0.6457,
+        "n": 223,
+        "n_over": 79,
+        "n_under": 144
+      },
+      {
+        "proj_mid": 4.95,
+        "proj_lo": 4.9,
+        "proj_hi": 5.0,
+        "p_over": 0.3708,
+        "p_under": 0.6292,
+        "n": 178,
+        "n_over": 66,
+        "n_under": 112
+      },
+      {
+        "proj_mid": 5.05,
+        "proj_lo": 5.0,
+        "proj_hi": 5.1,
+        "p_over": 0.4076,
+        "p_under": 0.5924,
+        "n": 238,
+        "n_over": 97,
+        "n_under": 141
+      },
+      {
+        "proj_mid": 5.15,
+        "proj_lo": 5.1,
+        "proj_hi": 5.2,
+        "p_over": 0.4381,
+        "p_under": 0.5619,
+        "n": 226,
+        "n_over": 99,
+        "n_under": 127
+      },
+      {
+        "proj_mid": 5.25,
+        "proj_lo": 5.2,
+        "proj_hi": 5.3,
+        "p_over": 0.3929,
+        "p_under": 0.6071,
+        "n": 280,
+        "n_over": 110,
+        "n_under": 170
+      },
+      {
+        "proj_mid": 5.35,
+        "proj_lo": 5.3,
+        "proj_hi": 5.4,
+        "p_over": 0.436,
+        "p_under": 0.564,
+        "n": 211,
+        "n_over": 92,
+        "n_under": 119
+      },
+      {
+        "proj_mid": 5.45,
+        "proj_lo": 5.4,
+        "proj_hi": 5.5,
+        "p_over": 0.3595,
+        "p_under": 0.6405,
+        "n": 153,
+        "n_over": 55,
+        "n_under": 98
+      },
+      {
+        "proj_mid": 5.55,
+        "proj_lo": 5.5,
+        "proj_hi": 5.6,
+        "p_over": 0.4407,
+        "p_under": 0.5593,
+        "n": 118,
+        "n_over": 52,
+        "n_under": 66
+      },
+      {
+        "proj_mid": 5.65,
+        "proj_lo": 5.6,
+        "proj_hi": 5.7,
+        "p_over": 0.3889,
+        "p_under": 0.6111,
+        "n": 144,
+        "n_over": 56,
+        "n_under": 88
+      },
+      {
+        "proj_mid": 5.75,
+        "proj_lo": 5.7,
+        "proj_hi": 5.8,
+        "p_over": 0.4832,
+        "p_under": 0.5168,
+        "n": 149,
+        "n_over": 72,
+        "n_under": 77
+      },
+      {
+        "proj_mid": 5.85,
+        "proj_lo": 5.8,
+        "proj_hi": 5.9,
+        "p_over": 0.4536,
+        "p_under": 0.5464,
+        "n": 97,
+        "n_over": 44,
+        "n_under": 53
+      },
+      {
+        "proj_mid": 5.95,
+        "proj_lo": 5.9,
+        "proj_hi": 6.0,
+        "p_over": 0.3716,
+        "p_under": 0.6284,
+        "n": 148,
+        "n_over": 55,
+        "n_under": 93
+      },
+      {
+        "proj_mid": 6.05,
+        "proj_lo": 6.0,
+        "proj_hi": 6.1,
+        "p_over": 0.4416,
+        "p_under": 0.5584,
+        "n": 77,
+        "n_over": 34,
+        "n_under": 43
+      },
+      {
+        "proj_mid": 6.15,
+        "proj_lo": 6.1,
+        "proj_hi": 6.2,
+        "p_over": 0.3902,
+        "p_under": 0.6098,
+        "n": 82,
+        "n_over": 32,
+        "n_under": 50
+      },
+      {
+        "proj_mid": 6.25,
+        "proj_lo": 6.2,
+        "proj_hi": 6.3,
+        "p_over": 0.4348,
+        "p_under": 0.5652,
+        "n": 46,
+        "n_over": 20,
+        "n_under": 26
+      },
+      {
+        "proj_mid": 6.35,
+        "proj_lo": 6.3,
+        "proj_hi": 6.4,
+        "p_over": 0.4286,
+        "p_under": 0.5714,
+        "n": 49,
+        "n_over": 21,
+        "n_under": 28
+      },
+      {
+        "proj_mid": 6.45,
+        "proj_lo": 6.4,
+        "proj_hi": 6.5,
+        "p_over": 0.5,
+        "p_under": 0.5,
+        "n": 74,
+        "n_over": 37,
+        "n_under": 37
+      },
+      {
+        "proj_mid": 6.85,
+        "proj_lo": 6.8,
+        "proj_hi": 6.9,
+        "p_over": 0.4091,
+        "p_under": 0.5909,
+        "n": 44,
+        "n_over": 18,
+        "n_under": 26
+      }
+    ],
+    "total_predictions": 4074
   }
 }

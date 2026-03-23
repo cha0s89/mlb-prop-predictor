@@ -94,12 +94,12 @@ _MARKET_TO_DIST_KEY = {
     "batter_hits": "hits",
     "batter_total_bases": "total_bases",
     "batter_home_runs": "home_runs",
-    "batter_rbis": "hits_runs_rbis",  # closest proxy
-    "batter_runs_scored": "hits_runs_rbis",
+    "batter_rbis": "rbis",
+    "batter_runs_scored": "runs",
     "batter_stolen_bases": "stolen_bases",
-    "batter_singles": "hits",
-    "batter_doubles": "hits",
-    "batter_walks": "walks_allowed",
+    "batter_singles": "singles",
+    "batter_doubles": "doubles",
+    "batter_walks": "walks",
     "batter_strikeouts": "batter_strikeouts",
     "pitcher_hits_allowed": "hits_allowed",
     "pitcher_walks": "walks_allowed",
@@ -128,9 +128,21 @@ def _load_dist_params() -> dict:
     return _DIST_PARAMS_CACHE
 
 
+def _market_distribution_config(market: str) -> tuple[str, float, float]:
+    """Return distribution settings for an Odds API market key."""
+    dist_params = _load_dist_params()
+    dist_key = _MARKET_TO_DIST_KEY.get(market, "")
+    params = dist_params.get(dist_key, {})
+    return (
+        params.get("type", "negbin"),
+        float(params.get("vr", 1.5)),
+        float(params.get("phi", 25.0)),
+    )
+
+
 def _prob_over_at_line(line: float, mu: float, dist_type: str,
                        vr: float = 1.5, phi: float = 25.0) -> float:
-    """Compute P(X >= ceil(line)) for a given mean mu and distribution type.
+    """Compute the resolved MORE probability at a given line.
 
     Delegates to distributions.compute_probabilities() as single source of truth.
 
@@ -145,7 +157,58 @@ def _prob_over_at_line(line: float, mu: float, dist_type: str,
         line=line, mu=mu, dist_type=dist_type,
         var_ratio=vr, phi=phi,
     )
-    return result["p_over"]
+    non_push_mass = result["p_over"] + result["p_under"]
+    if non_push_mass <= 0:
+        return 0.5
+    return result["p_over"] / non_push_mass
+
+
+def _repriced_probabilities(line: float, mu: float, dist_type: str,
+                            vr: float = 1.5, phi: float = 25.0) -> dict:
+    """Return raw and resolved probabilities at a line for a latent mean."""
+    result = compute_probabilities(
+        line=line, mu=mu, dist_type=dist_type,
+        var_ratio=vr, phi=phi,
+    )
+    non_push_mass = result["p_over"] + result["p_under"]
+    if non_push_mass > 0:
+        resolved_over = result["p_over"] / non_push_mass
+        resolved_under = result["p_under"] / non_push_mass
+    else:
+        resolved_over = 0.5
+        resolved_under = 0.5
+    return {
+        "p_over": result["p_over"],
+        "p_under": result["p_under"],
+        "p_push": result["p_push"],
+        "resolved_over": resolved_over,
+        "resolved_under": resolved_under,
+    }
+
+
+def _repriced_probabilities_for_market(market: str, line: float, mu: float) -> dict:
+    """Return repriced probabilities at a line for the market's distribution."""
+    dist_type, vr, phi = _market_distribution_config(market)
+    repriced = _repriced_probabilities(line, mu, dist_type, vr, phi)
+    repriced["mu"] = mu
+    return repriced
+
+
+def _filter_outlier_mu_points(points: list[dict]) -> list[dict]:
+    """Drop extreme latent-mean outliers when enough books are present."""
+    if len(points) < 5:
+        return points
+
+    mus = np.array([float(pt["mu"]) for pt in points], dtype=float)
+    median = float(np.median(mus))
+    mad = float(np.median(np.abs(mus - median)))
+    if mad <= 1e-6:
+        return points
+
+    scale = 1.4826 * mad
+    cutoff = 2.5 * scale
+    filtered = [pt for pt in points if abs(float(pt["mu"]) - median) <= cutoff]
+    return filtered or points
 
 
 def _solve_mu_from_fair_over(fair_over: float, line: float,
@@ -178,7 +241,7 @@ def _solve_mu_from_fair_over(fair_over: float, line: float,
 
 
 def distribution_reprice(market: str, sharp_line: float, pp_line: float,
-                         fair_over: float, fair_under: float) -> tuple:
+                         fair_over: float, fair_under: float) -> dict:
     """Replace the heuristic `* 0.08` line-difference adjustment with
     distribution-based repricing.
 
@@ -193,30 +256,27 @@ def distribution_reprice(market: str, sharp_line: float, pp_line: float,
         fair_under: Sharp fair P(under) at sharp_line
 
     Returns:
-        (fair_over_at_pp, fair_under_at_pp) — adjusted probabilities
+        Dict with repriced raw and resolved probabilities at the PrizePicks line.
     """
     if pp_line == sharp_line:
-        return fair_over, fair_under
+        dist_type, vr, phi = _market_distribution_config(market)
+        mu = _solve_mu_from_fair_over(fair_over, sharp_line, dist_type, vr, phi)
+        return {
+            "mu": mu,
+            **_repriced_probabilities(pp_line, mu, dist_type, vr, phi),
+        }
 
     # Look up distribution type for this market
-    dist_params = _load_dist_params()
-    dist_key = _MARKET_TO_DIST_KEY.get(market, "")
-    params = dist_params.get(dist_key, {})
-    dist_type = params.get("type", "negbin")
-    vr = params.get("vr", 1.5)
-    phi = params.get("phi", 25.0)
+    dist_type, vr, phi = _market_distribution_config(market)
 
-    # Step 1: solve for mu from the sharp fair_over at sharp_line
+    # Step 1: solve for mu from the sharp fair_over at sharp_line.
+    # Sportsbook over/under odds at integer lines are conditional on no push,
+    # so we invert against resolved non-push probabilities.
     mu = _solve_mu_from_fair_over(fair_over, sharp_line, dist_type, vr, phi)
 
-    # Step 2: compute P(over) at pp_line using that mu
-    new_fair_over = _prob_over_at_line(pp_line, mu, dist_type, vr, phi)
-
-    # Sanity bounds
-    new_fair_over = min(0.95, max(0.05, new_fair_over))
-    new_fair_under = min(0.95, max(0.05, 1.0 - new_fair_over))
-
-    return new_fair_over, new_fair_under
+    repriced = _repriced_probabilities(pp_line, mu, dist_type, vr, phi)
+    repriced["mu"] = mu
+    return repriced
 
 
 def get_api_key() -> str:
@@ -529,15 +589,16 @@ def extract_sharp_lines(event_data: dict) -> list:
     if not bookmakers:
         return []
 
-    # Collect all lines by (player, market, line_value)
+    # Collect two-way book prices by player + market, then invert each quoted
+    # line into a latent mean so books at different points can be compared.
     lines_by_player = {}
 
     for book in bookmakers:
         book_key = book.get("key", "").lower()
-        book_weight = BOOK_WEIGHTS.get(book_key, 0.3)
 
         for market in book.get("markets", []):
             market_key = market.get("key", "")
+            book_weight = get_effective_book_weight(book_key, market_key)
 
             for outcome in market.get("outcomes", []):
                 player = outcome.get("description", "")
@@ -548,18 +609,18 @@ def extract_sharp_lines(event_data: dict) -> list:
                 if not player or not price:
                     continue
 
-                key = (player, market_key, point)
+                key = (player, market_key)
                 if key not in lines_by_player:
                     lines_by_player[key] = {
                         "player": player,
                         "market": market_key,
-                        "line": point,
                         "books": {},
                     }
 
                 if book_key not in lines_by_player[key]["books"]:
                     lines_by_player[key]["books"][book_key] = {
                         "weight": book_weight,
+                        "line": point,
                     }
 
                 if name == "Over":
@@ -567,21 +628,27 @@ def extract_sharp_lines(event_data: dict) -> list:
                 elif name == "Under":
                     lines_by_player[key]["books"][book_key]["under_odds"] = price
 
-    # Now devig each book's line and compute weighted consensus
+    # Now devig each book line, invert into latent mu, and compute consensus in
+    # parameter space rather than averaging probabilities quoted at different lines.
     results = []
     for key, data in lines_by_player.items():
-        fair_probs = []
+        mu_points = []
 
         for book_key, book_data in data["books"].items():
             over_odds = book_data.get("over_odds")
             under_odds = book_data.get("under_odds")
             weight = book_data.get("weight", 0.3)
+            line = book_data.get("line")
 
-            if over_odds is not None and under_odds is not None:
+            if over_odds is not None and under_odds is not None and line is not None:
                 devigged = devig_two_way(over_odds, under_odds, method="power")
-                fair_probs.append({
+                dist_type, vr, phi = _market_distribution_config(data["market"])
+                mu = _solve_mu_from_fair_over(devigged["fair_over"], line, dist_type, vr, phi)
+                mu_points.append({
                     "book": book_key,
                     "weight": weight,
+                    "line": line,
+                    "mu": mu,
                     "fair_over": devigged["fair_over"],
                     "fair_under": devigged["fair_under"],
                     "vig_pct": devigged["vig_pct"],
@@ -589,30 +656,39 @@ def extract_sharp_lines(event_data: dict) -> list:
                     "under_odds": under_odds,
                 })
 
-        if not fair_probs:
+        if not mu_points:
             continue
 
-        # Weighted average fair probability
-        total_weight = sum(fp["weight"] for fp in fair_probs)
+        filtered_points = _filter_outlier_mu_points(mu_points)
+        total_weight = sum(fp["weight"] for fp in filtered_points)
         if total_weight == 0:
             continue
 
-        consensus_over = sum(fp["fair_over"] * fp["weight"] for fp in fair_probs) / total_weight
-        consensus_under = sum(fp["fair_under"] * fp["weight"] for fp in fair_probs) / total_weight
+        consensus_mu = sum(fp["mu"] * fp["weight"] for fp in filtered_points) / total_weight
+        representative_line = sum(float(fp["line"]) * fp["weight"] for fp in filtered_points) / total_weight
+        consensus_probs = _repriced_probabilities_for_market(data["market"], representative_line, consensus_mu)
 
-        # FanDuel-specific line (most important for MLB)
-        fanduel_line = next((fp for fp in fair_probs if fp["book"] == "fanduel"), None)
+        # FanDuel-specific repricing at its posted point remains a useful reference.
+        fanduel_line = next((fp for fp in filtered_points if fp["book"] == "fanduel"), None)
+        fanduel_probs = None
+        if fanduel_line is not None:
+            fanduel_probs = _repriced_probabilities_for_market(
+                data["market"], float(fanduel_line["line"]), float(fanduel_line["mu"])
+            )
 
         results.append({
             "player": data["player"],
             "market": data["market"],
-            "line": data["line"],
-            "consensus_fair_over": round(consensus_over, 4),
-            "consensus_fair_under": round(consensus_under, 4),
-            "fanduel_fair_over": round(fanduel_line["fair_over"], 4) if fanduel_line else None,
-            "fanduel_fair_under": round(fanduel_line["fair_under"], 4) if fanduel_line else None,
-            "num_books": len(fair_probs),
-            "book_details": fair_probs,
+            "line": round(representative_line, 3),
+            "consensus_mu": round(float(consensus_mu), 4),
+            "consensus_fair_over": round(consensus_probs["resolved_over"], 4),
+            "consensus_fair_under": round(consensus_probs["resolved_under"], 4),
+            "consensus_push": round(consensus_probs["p_push"], 4),
+            "fanduel_fair_over": round(fanduel_probs["resolved_over"], 4) if fanduel_probs else None,
+            "fanduel_fair_under": round(fanduel_probs["resolved_under"], 4) if fanduel_probs else None,
+            "fanduel_push": round(fanduel_probs["p_push"], 4) if fanduel_probs else None,
+            "num_books": len(filtered_points),
+            "book_details": filtered_points,
         })
 
     return results
@@ -672,6 +748,7 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
         player = sharp["player"]
         market = sharp["market"]
         sharp_line_val = sharp["line"]
+        consensus_mu = sharp.get("consensus_mu")
 
         # Map Odds API market key back to PrizePicks stat names
         pp_stat_names = [k for k, v in PP_TO_ODDS_API.items() if v == market]
@@ -691,11 +768,16 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
         for _, pp_row in matching_pp.iterrows():
             pp_line = pp_row["line"]
 
-            # Use FanDuel line if available, otherwise consensus
             fair_over = sharp.get("fanduel_fair_over") or sharp["consensus_fair_over"]
             fair_under = sharp.get("fanduel_fair_under") or sharp["consensus_fair_under"]
-            repriced_over = fair_over
-            repriced_under = fair_under
+            repriced = {
+                "p_over": fair_over,
+                "p_under": fair_under,
+                "p_push": 0.0,
+                "resolved_over": fair_over,
+                "resolved_under": fair_under,
+                "mu": consensus_mu if consensus_mu is not None else sharp_line_val,
+            }
 
             # PrizePicks breakeven thresholds (implied odds of each entry type)
             # 5-pick flex: ~54.2% per leg
@@ -703,34 +785,41 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
             pp_implied = 0.50  # PrizePicks treats each leg as 50/50
 
             # Determine which side has edge
-            if pp_line == sharp_line_val:
+            if consensus_mu is not None:
+                repriced = _repriced_probabilities_for_market(market, pp_line, float(consensus_mu))
+            elif pp_line == sharp_line_val:
+                repriced = distribution_reprice(market, sharp_line_val, pp_line, fair_over, fair_under)
+
+            if pp_line == sharp_line_val or consensus_mu is not None:
                 # Same line — direct comparison
-                if fair_over > pp_implied + (min_ev_pct / 100):
+                if repriced["resolved_over"] > pp_implied + (min_ev_pct / 100):
                     pick = "MORE"
-                    edge = fair_over - pp_implied
-                    fair_prob = fair_over
-                elif fair_under > pp_implied + (min_ev_pct / 100):
+                    edge = repriced["resolved_over"] - pp_implied
+                    fair_prob = repriced["resolved_over"]
+                    outright_prob = repriced["p_over"]
+                elif repriced["resolved_under"] > pp_implied + (min_ev_pct / 100):
                     pick = "LESS"
-                    edge = fair_under - pp_implied
-                    fair_prob = fair_under
+                    edge = repriced["resolved_under"] - pp_implied
+                    fair_prob = repriced["resolved_under"]
+                    outright_prob = repriced["p_under"]
                 else:
                     continue
             elif pp_line < sharp_line_val:
                 # PP line is lower → MORE is easier on PP
                 # Distribution-based repricing: compute exact P(over) at PP line
-                repriced_over, repriced_under = distribution_reprice(
-                    market, sharp_line_val, pp_line, fair_over, fair_under
-                )
+                repriced = distribution_reprice(market, sharp_line_val, pp_line, fair_over, fair_under)
                 pick = "MORE"
-                fair_prob = repriced_over
+                fair_prob = repriced["resolved_over"]
+                outright_prob = repriced["p_over"]
                 edge = fair_prob - pp_implied
             elif pp_line > sharp_line_val:
                 # PP line is higher → LESS is easier on PP
-                repriced_over, repriced_under = distribution_reprice(
+                repriced = distribution_reprice(
                     market, sharp_line_val, pp_line, fair_over, fair_under
                 )
                 pick = "LESS"
-                fair_prob = repriced_under
+                fair_prob = repriced["resolved_under"]
+                outright_prob = repriced["p_under"]
                 edge = fair_prob - pp_implied
             else:
                 continue
@@ -766,13 +855,15 @@ def find_ev_edges(pp_lines: pd.DataFrame, sharp_lines: list,
                 "pp_line": pp_line,
                 "sharp_line": sharp_line_val,
                 "line": pp_line,
-                # Sharp lines are the best same-unit proxy we have for a market-implied projection.
-                "projection": round(float(sharp_line_val), 3),
+                # Consensus latent mean is the strongest market-implied projection proxy.
+                "projection": round(float(repriced.get("mu", sharp_line_val)), 3),
                 "pick": pick,
                 "confidence": round(fair_prob, 4),
                 "fair_prob": round(fair_prob, 4),
-                "p_over": round(repriced_over, 4),
-                "p_under": round(repriced_under, 4),
+                "p_over": round(repriced["p_over"], 4),
+                "p_under": round(repriced["p_under"], 4),
+                "p_push": round(repriced.get("p_push", 0.0), 4),
+                "win_prob": round(outright_prob, 4),
                 "edge": round(edge, 4),
                 "edge_pct": round(edge * 100, 2),
                 "rating": rating,
