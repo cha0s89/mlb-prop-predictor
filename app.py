@@ -73,6 +73,13 @@ from src.board_logger import (
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
 from src.selection import annotate_prediction_floor, get_confidence_floor
+from src.tail_signals import build_tail_reason_lists, tail_signal_labels, tail_target_text
+from src.team_context import (
+    extract_schedule_dates,
+    normalize_team_code,
+    pitcher_row_matches_team,
+    register_team_value,
+)
 
 
 # ─────────────────────────────────────────────
@@ -99,6 +106,14 @@ def _safe_num(val, fallback=0.0):
         return fallback if math.isnan(f) else f
     except (ValueError, TypeError):
         return fallback
+
+
+def _has_real_number(val) -> bool:
+    try:
+        num = float(val)
+    except (TypeError, ValueError):
+        return False
+    return not math.isnan(num)
 
 
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
@@ -1178,16 +1193,9 @@ with tab_edge:
                         teams_in_slate.add(r)
             # Extract actual game dates from PrizePicks data (may be future dates
             # like Opening Day), NOT today's date which could be spring training.
-            _pp_game_dates = set()
-            if "start_time" in pp_lines.columns:
-                for _st in pp_lines["start_time"].dropna():
-                    try:
-                        _pp_game_dates.add(pd.Timestamp(_st).strftime("%Y-%m-%d"))
-                    except Exception:
-                        pass
-            if not _pp_game_dates:
-                from datetime import datetime as _dt
-                _pp_game_dates = {_dt.now().strftime("%Y-%m-%d")}
+            _pp_game_dates = extract_schedule_dates(
+                pp_lines["start_time"].dropna() if "start_time" in pp_lines.columns else [],
+            )
             # Fetch games for the actual dates PP has props for
             try:
                 todays_games = _cached_todays_games(game_dates=tuple(sorted(_pp_game_dates)))
@@ -1230,57 +1238,76 @@ with tab_edge:
             opp_pitcher_lookup = {}  # team_abbr -> dict with pitcher info + FanGraphs profile
             team_pitcher_lookup = {}  # team_abbr -> own probable starting pitcher
             opp_team_k_lookup = {}   # team_abbr -> team K% for pitcher K projections
+            team_k_rate_map = {}
+            if not batting_df.empty and "Team" in batting_df.columns and "K%" in batting_df.columns:
+                try:
+                    _team_rates = batting_df[["Team", "K%"]].copy()
+                    _team_rates["_team_code"] = _team_rates["Team"].apply(normalize_team_code)
+                    _team_rates = _team_rates[_team_rates["_team_code"] != ""]
+                    for _team_code, _subset in _team_rates.groupby("_team_code"):
+                        k_vals = _subset["K%"].apply(
+                            lambda x: float(str(x).replace("%", "").strip()) if pd.notna(x) else 22.7
+                        )
+                        team_k_rate_map[_team_code] = round(k_vals.mean(), 1)
+                except Exception:
+                    team_k_rate_map = {}
             try:
                 for game in todays_games:
                     home_team = game.get("home_team", "")
                     away_team = game.get("away_team", "")
-                    if home_team and game.get("home_pitcher_name") != "TBD":
-                        team_pitcher_lookup[home_team] = game.get("home_pitcher_name", "")
-                    if away_team and game.get("away_pitcher_name") != "TBD":
-                        team_pitcher_lookup[away_team] = game.get("away_pitcher_name", "")
+                    home_pitcher_name = game.get("home_pitcher_name", "")
+                    away_pitcher_name = game.get("away_pitcher_name", "")
+                    home_matched = None
+                    away_matched = None
+                    if home_team and home_pitcher_name and home_pitcher_name != "TBD" and not pitching_df.empty:
+                        home_matched = match_pitcher_stats(home_pitcher_name, pitching_df)
+                    if away_team and away_pitcher_name and away_pitcher_name != "TBD" and not pitching_df.empty:
+                        away_matched = match_pitcher_stats(away_pitcher_name, pitching_df)
+                    home_pitcher_valid = bool(home_pitcher_name and home_pitcher_name != "TBD")
+                    away_pitcher_valid = bool(away_pitcher_name and away_pitcher_name != "TBD")
+                    if home_pitcher_valid and not pitcher_row_matches_team(home_matched, home_team):
+                        home_pitcher_valid = False
+                    if away_pitcher_valid and not pitcher_row_matches_team(away_matched, away_team):
+                        away_pitcher_valid = False
+                    if home_team:
+                        register_team_value(
+                            team_pitcher_lookup,
+                            home_team,
+                            home_pitcher_name if home_pitcher_valid else "",
+                        )
+                    if away_team:
+                        register_team_value(
+                            team_pitcher_lookup,
+                            away_team,
+                            away_pitcher_name if away_pitcher_valid else "",
+                        )
                     # Home batters face the AWAY pitcher
-                    if away_team and game.get("away_pitcher_name") != "TBD":
+                    if away_team:
                         opp_info = {
-                            "name": game.get("away_pitcher_name", ""),
+                            "name": away_pitcher_name if away_pitcher_valid else "",
                             "hand": game.get("away_pitcher_hand", ""),
                             "id": game.get("away_pitcher_id"),
                         }
-                        # Try to find opposing pitcher in FanGraphs stats
-                        if not pitching_df.empty:
-                            opp_matched = match_pitcher_stats(opp_info["name"], pitching_df)
-                            if opp_matched is not None:
-                                opp_info["profile"] = build_pitcher_profile(opp_matched)
-                        opp_pitcher_lookup[home_team] = opp_info
+                        if away_pitcher_valid and away_matched is not None:
+                            opp_info["profile"] = build_pitcher_profile(away_matched)
+                        register_team_value(opp_pitcher_lookup, home_team, opp_info)
                     # Away batters face the HOME pitcher
-                    if home_team and game.get("home_pitcher_name") != "TBD":
+                    if home_team:
                         opp_info = {
-                            "name": game.get("home_pitcher_name", ""),
+                            "name": home_pitcher_name if home_pitcher_valid else "",
                             "hand": game.get("home_pitcher_hand", ""),
                             "id": game.get("home_pitcher_id"),
                         }
-                        if not pitching_df.empty:
-                            opp_matched = match_pitcher_stats(opp_info["name"], pitching_df)
-                            if opp_matched is not None:
-                                opp_info["profile"] = build_pitcher_profile(opp_matched)
-                        opp_pitcher_lookup[away_team] = opp_info
+                        if home_pitcher_valid and home_matched is not None:
+                            opp_info["profile"] = build_pitcher_profile(home_matched)
+                        register_team_value(opp_pitcher_lookup, away_team, opp_info)
 
                     # Build opposing team K rate for pitcher K projections
                     # Pitcher on home team faces away lineup, and vice versa
-                    if not batting_df.empty:
-                        for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
-                            if pitcher_team:
-                                # Average K% of opposing team's batters in our FanGraphs data
-                                team_batters = batting_df[
-                                    batting_df["Team"].str.contains(opp_batting_team, case=False, na=False)
-                                ] if "Team" in batting_df.columns else pd.DataFrame()
-                                if not team_batters.empty and "K%" in team_batters.columns:
-                                    try:
-                                        k_vals = team_batters["K%"].apply(
-                                            lambda x: float(str(x).replace("%", "").strip()) if pd.notna(x) else 22.7
-                                        )
-                                        opp_team_k_lookup[pitcher_team] = round(k_vals.mean(), 1)
-                                    except Exception:
-                                        pass
+                    for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
+                        norm_opp_team = normalize_team_code(opp_batting_team)
+                        if pitcher_team and norm_opp_team in team_k_rate_map:
+                            register_team_value(opp_team_k_lookup, pitcher_team, team_k_rate_map[norm_opp_team])
             except Exception:
                 pass
 
@@ -1317,12 +1344,12 @@ with tab_edge:
                         (away_team, home_team, False),
                     ]:
                         if team_abbr:
-                            game_context_cache[team_abbr] = {
+                            register_team_value(game_context_cache, team_abbr, {
                                 "opponent": opp_abbr,
                                 "game_time": game.get("game_time", ""),
                                 "game_pk": game_pk,
                                 "is_home": is_home,
-                            }
+                            })
             except Exception:
                 pass
 
@@ -1814,11 +1841,13 @@ with tab_edge:
                             _score_text = "-"
                             _winner = "-"
                             _margin = "-"
-                            if isinstance(_away_runs, (int, float)) and isinstance(_home_runs, (int, float)):
-                                _score_text = f"{_away['team']} {int(round(_away_runs))} - {int(round(_home_runs))} {_home['team']}"
-                                if _away_runs > _home_runs + 0.05:
+                            if _has_real_number(_away_runs) and _has_real_number(_home_runs):
+                                _away_score = int(round(_away_runs))
+                                _home_score = int(round(_home_runs))
+                                _score_text = f"{_away['team']} {_away_score} - {_home_score} {_home['team']}"
+                                if _away_score > _home_score:
                                     _winner = _away["team"]
-                                elif _home_runs > _away_runs + 0.05:
+                                elif _home_score > _away_score:
                                     _winner = _home["team"]
                                 else:
                                     _winner = "Toss-up"
@@ -1836,7 +1865,7 @@ with tab_edge:
 
                         if _matchup_rows:
                             _matchup_df = pd.DataFrame(_matchup_rows).sort_values(["Start", "Game"])
-                            st.caption("Projected winner uses the decimal team-run estimates; displayed scores are rounded to whole runs for readability.")
+                            st.caption("Projected scores are rounded to whole runs. If the rounded score is tied, the winner stays Toss-up.")
                             st.dataframe(_matchup_df, hide_index=True, width="stretch")
                         else:
                             st.caption("Projected score rows need both teams in a game to have enough source props on the current board.")
@@ -1846,20 +1875,20 @@ with tab_edge:
                         _team_display = _team_df.copy()
                         for _col in ("Est Runs", "Est Hits"):
                             _team_display[_col] = _team_display[_col].apply(
-                                lambda x: f"{x:.1f}" if isinstance(x, (int, float)) else "-"
+                                lambda x: f"{x:.1f}" if _has_real_number(x) else "-"
                             )
                         _team_display["Avg HR Proj"] = _team_display["Avg HR Proj"].apply(
-                            lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else "-"
+                            lambda x: f"{x:.2f}" if _has_real_number(x) else "-"
                         )
                         _team_display["# Players"] = _team_display["# Players"].apply(
-                            lambda x: str(int(x)) if isinstance(x, (int, float)) else "-"
+                            lambda x: str(int(x)) if _has_real_number(x) else "-"
                         )
                         st.dataframe(_team_display, hide_index=True, width="stretch")
                         st.caption("- means the current slate has no matching run/hit source props for that team, not a literal zero projection.")
 
                         _run_vals = [
                             row["Est Runs"] for row in _team_rows
-                            if isinstance(row["Est Runs"], (int, float)) and row["Est Runs"] > 0
+                            if _has_real_number(row["Est Runs"]) and row["Est Runs"] > 0
                         ]
                         if len(_run_vals) >= 4:
                             _run_mean = sum(_run_vals) / len(_run_vals)
@@ -1939,20 +1968,21 @@ with tab_edge:
                         proj = _safe_num(pick_row.get('projection'), 0)
                         breakout_watch = _safe(pick_row.get("breakout_watch"), "Low")
                         dud_risk = _safe(pick_row.get("dud_risk"), "Low")
+                        _tail_labels = tail_signal_labels(_safe(pick_row.get("stat_internal"), ""))
                         tail_badges = []
                         if breakout_watch in ("Medium", "High"):
                             tail_color = "#00C853" if breakout_watch == "High" else "#29B6F6"
                             tail_badges.append(
                                 f'<span style="font-size:0.64rem;padding:0.12rem 0.35rem;border-radius:999px;'
                                 f'background:rgba(0,200,83,0.10);color:{tail_color};border:1px solid rgba(0,200,83,0.20);">'
-                                f'Ceiling {breakout_watch}</span>'
+                                f'{_tail_labels["breakout"]} {breakout_watch}</span>'
                             )
                         if dud_risk in ("Medium", "High"):
                             dud_color = "#FFB300" if dud_risk == "Medium" else "#FF5252"
                             tail_badges.append(
                                 f'<span style="font-size:0.64rem;padding:0.12rem 0.35rem;border-radius:999px;'
                                 f'background:rgba(255,82,82,0.10);color:{dud_color};border:1px solid rgba(255,82,82,0.18);">'
-                                f'Dud {dud_risk}</span>'
+                                f'{_tail_labels["dud"]} {dud_risk}</span>'
                             )
                         tail_badges_html = (
                             f'<div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.45rem;">{"".join(tail_badges)}</div>'
@@ -2035,21 +2065,32 @@ with tab_edge:
                                 dud_prob = _safe_num(pick_row.get("dud_prob"), 0.0) * 100
                                 breakout_target = pick_row.get("breakout_target")
                                 dud_target = pick_row.get("dud_target")
+                                tail_reasons = build_tail_reason_lists(dict(pick_row))
                                 tail_lines = []
                                 if breakout_target is not None:
                                     tail_lines.append(
-                                        f"**Breakout Watch:** {breakout_watch} ({breakout_prob:.1f}% for "
-                                        + (f"{pick_row['stat_type']} >= {breakout_target}" if _si not in ('earned_runs', 'walks_allowed', 'hits_allowed', 'batter_strikeouts') else f"{pick_row['stat_type']} <= {breakout_target}")
+                                        f"**{_tail_labels['breakout']}:** {breakout_watch} ({breakout_prob:.1f}% for "
+                                        + tail_target_text(pick_row["stat_type"], _si, breakout_target, "breakout")
                                         + ")"
                                     )
                                 if dud_target is not None:
                                     tail_lines.append(
-                                        f"**Dud Risk:** {dud_risk} ({dud_prob:.1f}% for "
-                                        + (f"{pick_row['stat_type']} <= {dud_target}" if _si not in ('earned_runs', 'walks_allowed', 'hits_allowed', 'batter_strikeouts') else f"{pick_row['stat_type']} >= {dud_target}")
+                                        f"**{_tail_labels['dud']}:** {dud_risk} ({dud_prob:.1f}% for "
+                                        + tail_target_text(pick_row["stat_type"], _si, dud_target, "dud")
                                         + ")"
                                     )
                                 if tail_lines:
                                     st.markdown("  \n".join(tail_lines))
+                                if breakout_watch in ("Medium", "High") and tail_reasons["breakout"]:
+                                    st.markdown(
+                                        f"**Why {_tail_labels['breakout'].lower()}:**  \n"
+                                        + "\n".join(f"- {reason}" for reason in tail_reasons["breakout"])
+                                    )
+                                if dud_risk in ("Medium", "High") and tail_reasons["dud"]:
+                                    st.markdown(
+                                        f"**Why {_tail_labels['dud'].lower()}:**  \n"
+                                        + "\n".join(f"- {reason}" for reason in tail_reasons["dud"])
+                                    )
                                 if _bat_ord:
                                     _pa_mult = _safe_num(pick_row.get('pa_multiplier'), 1.0)
                                     st.markdown(f"**PA Multiplier:** {_pa_mult:.2f}x (lineup spot #{_bat_ord})")
@@ -2114,20 +2155,37 @@ with tab_edge:
 
                                     # v018: Monte Carlo EV for suggested slip
                                     try:
-                                        _sg_probs = [
-                                            sp.get("win_prob", sp.get("confidence", 0.55))
-                                            for sp in _sg["picks"]
-                                        ]
-                                        _sg_ev = quick_slip_ev(_sg_probs, entry_type=f"{_slip_size}_flex")
+                                        _sg_legs = [{
+                                            "team": sp.get("team", ""),
+                                            "pick": sp.get("pick", "MORE"),
+                                            "stat_type": sp.get("stat_internal", sp.get("stat_type", "")),
+                                            "line": sp.get("line", 0.5),
+                                            "win_prob": sp.get("win_prob", sp.get("confidence", 0.55)),
+                                            "p_push": sp.get("p_push", 0.0),
+                                            "game_id": sp.get("game_pk") or sp.get("game_id") or sp.get("opponent", ""),
+                                        } for sp in _sg["picks"]]
+                                        _line_type_counts = {}
+                                        for _sp in _sg["picks"]:
+                                            _lt = _sp.get("line_type", "standard")
+                                            _line_type_counts[_lt] = _line_type_counts.get(_lt, 0) + 1
+                                        _sg_line_type = max(_line_type_counts, key=_line_type_counts.get)
+                                        _sg_ev = simulate_slip_ev(
+                                            _sg_legs,
+                                            entry_type=f"{_slip_size}_flex",
+                                            n_sims=25_000,
+                                            correlation_matrix=build_correlation_matrix(_sg_legs),
+                                            seed=42,
+                                            line_type=_sg_line_type,
+                                        )
                                         _sg_ev_pct = _sg_ev["ev_profit_pct"]
                                         _sg_ev_color = "#00C853" if _sg_ev_pct > 0 else ("#FFB300" if _sg_ev_pct > -10 else "#FF4444")
                                         _sg_ev_label = f"{_sg_ev_pct:+.1f}%"
                                         st.markdown(
                                             f'<div style="margin-top:0.4rem;padding:0.4rem 0.6rem;background:rgba(0,100,200,0.04);border:1px solid rgba(0,100,200,0.08);border-radius:8px;font-size:0.72rem;">'
-                                            f'<span style="color:rgba(232,236,241,0.4);">Approx EV (no ties):</span> '
+                                            f'<span style="color:rgba(232,236,241,0.4);">Modeled EV:</span> '
                                             f'<span style="font-family:JetBrains Mono;font-weight:700;color:{_sg_ev_color};">{_sg_ev_label}</span>'
-                                            f' · <span style="color:rgba(232,236,241,0.4);">Perfect:</span> '
-                                            f'<span style="font-family:JetBrains Mono;font-size:0.7rem;color:rgba(232,236,241,0.5);">{_sg_ev["prob_perfect"]*100:.1f}%</span>'
+                                            f' · <span style="color:rgba(232,236,241,0.4);">Positive Return:</span> '
+                                            f'<span style="font-family:JetBrains Mono;font-size:0.7rem;color:rgba(232,236,241,0.5);">{_sg_ev["win_rate"]*100:.1f}%</span>'
                                             f'</div>',
                                             unsafe_allow_html=True
                                         )

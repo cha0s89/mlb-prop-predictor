@@ -4,6 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from src.kelly import calculate_slip_sizing
 from src.parlay_suggest import suggest_slips
 
 
@@ -57,6 +58,39 @@ class SlipSuggestionTests(unittest.TestCase):
             for j in range(i + 1, len(leg_sets)):
                 overlap = len(leg_sets[i] & leg_sets[j])
                 self.assertLessEqual(overlap, 3)
+
+    def test_suggested_slips_do_not_repeat_players_within_a_slip(self):
+        predictions = [
+            self._prediction(1, "LESS", "BOS", "runs", 0.68),
+            self._prediction(1, "LESS", "BOS", "total_bases", 0.67),
+            self._prediction(2, "MORE", "NYY", "hits", 0.70),
+            self._prediction(3, "MORE", "LAD", "rbis", 0.69),
+            self._prediction(4, "LESS", "PHI", "hits", 0.68),
+            self._prediction(5, "MORE", "HOU", "total_bases", 0.68),
+            self._prediction(6, "LESS", "SEA", "earned_runs", 0.67),
+            self._prediction(7, "MORE", "ATL", "runs", 0.67),
+            self._prediction(8, "LESS", "CLE", "hits_allowed", 0.66),
+            self._prediction(9, "MORE", "MIL", "hits_runs_rbis", 0.66),
+        ]
+
+        slips = suggest_slips(predictions, num_slips=1, slip_size=5)
+        self.assertEqual(len(slips), 1)
+        players = [pick["player_name"] for pick in slips[0]["picks"]]
+        self.assertEqual(len(players), len(set(players)))
+
+    def test_flex_kelly_sizing_no_longer_uses_power_play_payouts(self):
+        picks = [
+            self._prediction(1, "LESS", "BOS", "runs", 0.66),
+            self._prediction(2, "MORE", "NYY", "hits", 0.66),
+            self._prediction(3, "LESS", "LAD", "total_bases", 0.66),
+            self._prediction(4, "MORE", "ATL", "rbis", 0.66),
+            self._prediction(5, "LESS", "SEA", "hits_allowed", 0.66),
+            self._prediction(6, "MORE", "MIL", "hits_runs_rbis", 0.66),
+        ]
+
+        sizing = calculate_slip_sizing(picks, bankroll=100.0, slip_type="6_flex")
+        self.assertLess(sizing["payout_mult"], 25.0)
+        self.assertLess(sizing["edge_pct"], 100.0)
 
 
 if __name__ == "__main__":

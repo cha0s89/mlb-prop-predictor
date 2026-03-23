@@ -80,6 +80,12 @@ from src.consistency import enforce_consistency
 from src.selection import annotate_prediction_floor, get_confidence_floor
 from src.autolearn import load_current_weights
 from src.combined import score_picks
+from src.team_context import (
+    extract_schedule_dates,
+    normalize_team_code,
+    pitcher_row_matches_team,
+    register_team_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -397,15 +403,10 @@ def build_board(
 
     # ── STEP 3: Extract game dates + fetch schedule ──────────────────────────
     logger.info("Step 3/13: Resolving game dates and fetching schedule")
-    pp_game_dates: set = set()
-    if "start_time" in pp_lines.columns:
-        for st_val in pp_lines["start_time"].dropna():
-            try:
-                pp_game_dates.add(pd.Timestamp(st_val).strftime("%Y-%m-%d"))
-            except Exception:
-                pass
-    if not pp_game_dates:
-        pp_game_dates = {datetime.now().strftime("%Y-%m-%d")}
+    pp_game_dates = set(extract_schedule_dates(
+        pp_lines["start_time"].dropna() if "start_time" in pp_lines.columns else [],
+        fallback_date=datetime.now().strftime("%Y-%m-%d"),
+    ))
 
     todays_games: list = []
     try:
@@ -462,66 +463,77 @@ def build_board(
     opp_pitcher_lookup: dict = {}
     team_pitcher_lookup: dict = {}
     opp_team_k_lookup: dict = {}
+    team_k_rate_map: dict = {}
+    if not batting_df.empty and "Team" in batting_df.columns and "K%" in batting_df.columns:
+        try:
+            team_rates = batting_df[["Team", "K%"]].copy()
+            team_rates["_team_code"] = team_rates["Team"].apply(normalize_team_code)
+            team_rates = team_rates[team_rates["_team_code"] != ""]
+            for team_code, subset in team_rates.groupby("_team_code"):
+                k_vals = subset["K%"].apply(
+                    lambda x: float(str(x).replace("%", "").strip()) if pd.notna(x) else 22.7
+                )
+                team_k_rate_map[team_code] = round(k_vals.mean(), 1)
+        except Exception:
+            team_k_rate_map = {}
     try:
         for game in todays_games:
             home_team = game.get("home_team", "")
             away_team = game.get("away_team", "")
-            if home_team and game.get("home_pitcher_name") != "TBD":
-                team_pitcher_lookup[home_team] = game.get("home_pitcher_name", "")
-            if away_team and game.get("away_pitcher_name") != "TBD":
-                team_pitcher_lookup[away_team] = game.get("away_pitcher_name", "")
+            home_pitcher_name = game.get("home_pitcher_name", "")
+            away_pitcher_name = game.get("away_pitcher_name", "")
+            home_matched = None
+            away_matched = None
+            if home_team and home_pitcher_name and home_pitcher_name != "TBD" and not pitching_df.empty:
+                home_matched = match_pitcher_stats(home_pitcher_name, pitching_df)
+            if away_team and away_pitcher_name and away_pitcher_name != "TBD" and not pitching_df.empty:
+                away_matched = match_pitcher_stats(away_pitcher_name, pitching_df)
+            home_pitcher_valid = bool(home_pitcher_name and home_pitcher_name != "TBD")
+            away_pitcher_valid = bool(away_pitcher_name and away_pitcher_name != "TBD")
+            if home_pitcher_valid and not pitcher_row_matches_team(home_matched, home_team):
+                home_pitcher_valid = False
+            if away_pitcher_valid and not pitcher_row_matches_team(away_matched, away_team):
+                away_pitcher_valid = False
+            if home_team:
+                register_team_value(
+                    team_pitcher_lookup,
+                    home_team,
+                    home_pitcher_name if home_pitcher_valid else "",
+                )
+            if away_team:
+                register_team_value(
+                    team_pitcher_lookup,
+                    away_team,
+                    away_pitcher_name if away_pitcher_valid else "",
+                )
             # Home batters face AWAY pitcher
-            if away_team and game.get("away_pitcher_name") != "TBD":
+            if away_team:
                 opp_info = {
-                    "name": game.get("away_pitcher_name", ""),
+                    "name": away_pitcher_name if away_pitcher_valid else "",
                     "hand": game.get("away_pitcher_hand", ""),
                     "id": game.get("away_pitcher_id"),
                 }
-                if not pitching_df.empty:
-                    opp_matched = match_pitcher_stats(opp_info["name"], pitching_df)
-                    if opp_matched is not None:
-                        opp_info["profile"] = build_pitcher_profile(opp_matched)
-                opp_pitcher_lookup[home_team] = opp_info
+                if away_pitcher_valid and away_matched is not None:
+                    opp_info["profile"] = build_pitcher_profile(away_matched)
+                register_team_value(opp_pitcher_lookup, home_team, opp_info)
             # Away batters face HOME pitcher
-            if home_team and game.get("home_pitcher_name") != "TBD":
+            if home_team:
                 opp_info = {
-                    "name": game.get("home_pitcher_name", ""),
+                    "name": home_pitcher_name if home_pitcher_valid else "",
                     "hand": game.get("home_pitcher_hand", ""),
                     "id": game.get("home_pitcher_id"),
                 }
-                if not pitching_df.empty:
-                    opp_matched = match_pitcher_stats(opp_info["name"], pitching_df)
-                    if opp_matched is not None:
-                        opp_info["profile"] = build_pitcher_profile(opp_matched)
-                opp_pitcher_lookup[away_team] = opp_info
+                if home_pitcher_valid and home_matched is not None:
+                    opp_info["profile"] = build_pitcher_profile(home_matched)
+                register_team_value(opp_pitcher_lookup, away_team, opp_info)
             # Opposing team K rate for pitcher K projections
-            if not batting_df.empty:
-                for pitcher_team, opp_batting_team in [
-                    (home_team, away_team),
-                    (away_team, home_team),
-                ]:
-                    if pitcher_team:
-                        team_batters = (
-                            batting_df[
-                                batting_df["Team"].str.contains(
-                                    opp_batting_team, case=False, na=False
-                                )
-                            ]
-                            if "Team" in batting_df.columns
-                            else pd.DataFrame()
-                        )
-                        if not team_batters.empty and "K%" in team_batters.columns:
-                            try:
-                                k_vals = team_batters["K%"].apply(
-                                    lambda x: (
-                                        float(str(x).replace("%", "").strip())
-                                        if pd.notna(x)
-                                        else 22.7
-                                    )
-                                )
-                                opp_team_k_lookup[pitcher_team] = round(k_vals.mean(), 1)
-                            except Exception:
-                                pass
+            for pitcher_team, opp_batting_team in [
+                (home_team, away_team),
+                (away_team, home_team),
+            ]:
+                norm_opp_team = normalize_team_code(opp_batting_team)
+                if pitcher_team and norm_opp_team in team_k_rate_map:
+                    register_team_value(opp_team_k_lookup, pitcher_team, team_k_rate_map[norm_opp_team])
     except Exception as exc:
         errors.append(f"Pitcher lookup build: {exc}")
 
@@ -555,12 +567,12 @@ def build_board(
                 (away_team, home_team, False),
             ]:
                 if team_abbr:
-                    game_context_cache[team_abbr] = {
+                    register_team_value(game_context_cache, team_abbr, {
                         "opponent": opp_abbr,
                         "game_time": game.get("game_time", ""),
                         "game_pk": game_pk,
                         "is_home": is_home,
-                    }
+                    })
     except Exception as exc:
         errors.append(f"Lineup cache build: {exc}")
 

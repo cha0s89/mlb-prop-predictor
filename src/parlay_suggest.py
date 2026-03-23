@@ -48,6 +48,11 @@ def _pick_identity(pick: dict) -> tuple[str, str, str]:
     )
 
 
+def _pick_player_key(pick: dict) -> str:
+    """Stable player identity for reuse checks."""
+    return str(pick.get("player_name", "")).strip().lower()
+
+
 def _slip_identities(picks: list[dict]) -> frozenset[tuple[str, str, str]]:
     """Return the set of leg identities in a slip."""
     return frozenset(_pick_identity(p) for p in picks)
@@ -77,14 +82,17 @@ def _portfolio_penalty(picks: list[dict], existing_slips: list[dict], slip_size:
     max_overlap = _max_allowed_overlap(slip_size)
     overlap_penalty = 0.0
     reused_legs = Counter()
+    reused_players = Counter()
     for slip in existing_slips:
         overlap = _overlap_count(picks, slip["picks"])
         if overlap > max_overlap:
             overlap_penalty += 40.0 * (overlap - max_overlap)
         reused_legs.update(_slip_identities(slip["picks"]))
+        reused_players.update(_pick_player_key(p) for p in slip["picks"])
 
     reuse_penalty = 6.0 * sum(reused_legs.get(leg, 0) for leg in _slip_identities(picks))
-    return overlap_penalty + reuse_penalty
+    player_penalty = 4.0 * sum(reused_players.get(player, 0) for player in {_pick_player_key(p) for p in picks})
+    return overlap_penalty + reuse_penalty + player_penalty
 
 
 def _select_portfolio(candidates: list[dict], num_slips: int, slip_size: int) -> list[dict]:
@@ -332,9 +340,9 @@ def suggest_slips(
     # Build target mixes dynamically based on what's available
     target_mixes = []
     if slip_size == 6:
-        candidates = [(4, 2), (3, 3), (2, 4), (5, 1), (1, 5), (6, 0), (0, 6)]
+        candidates = [(3, 3), (4, 2), (2, 4), (5, 1), (1, 5)]
     else:
-        candidates = [(3, 2), (2, 3), (4, 1), (1, 4), (5, 0), (0, 5)]
+        candidates = [(3, 2), (2, 3), (4, 1), (1, 4)]
 
     for m, l in candidates:
         if m <= len(more_picks) and l <= len(less_picks) and m + l == slip_size:
@@ -427,6 +435,10 @@ def _is_valid_slip(picks: list[dict], slip_size: int) -> bool:
     if len(picks) != slip_size:
         return False
 
+    players = [_pick_player_key(p) for p in picks if _pick_player_key(p)]
+    if len(players) != len(set(players)):
+        return False
+
     # Max 2 from same team
     teams = [p.get('team') for p in picks]
     team_counts = Counter(teams)
@@ -452,19 +464,19 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
     leg_win_probs = [p.get('win_prob', p.get('confidence', 0.5)) for p in picks]
     avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
 
-    # Estimated win probability with empirical correlation adjustment
+    # Estimated perfect-hit probability from outright leg win chances.
     win_prob = 1.0
     for leg_win_prob in leg_win_probs:
         win_prob *= leg_win_prob
 
-    # Apply correlation multiplier (research: positive correlation drops effective breakeven from 54.2% to ~51.5%)
     correlation_mult = estimate_slip_correlation(picks)
-    win_prob *= correlation_mult
+    corr_pen = correlation_penalty(picks)
+    direction_skew = abs(more_count - less_count) / len(picks) if picks else 1.0
 
-    # Determine risk level based on average confidence
-    if avg_confidence >= 0.65:
+    # Determine risk level based on confidence, concentration, and correlation.
+    if avg_confidence >= 0.64 and direction_skew <= 0.34 and corr_pen <= 0.12:
         risk_level = "low"
-    elif avg_confidence >= 0.55:
+    elif avg_confidence >= 0.58 and direction_skew <= 0.67 and corr_pen <= 0.22:
         risk_level = "medium"
     else:
         risk_level = "high"
@@ -474,7 +486,6 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
     stat_types = list(set(p.get('stat_type') for p in picks))
 
     quality_score = score_slip_quality(picks)
-    corr_pen = correlation_penalty(picks)
 
     result = {
         'picks': picks,
@@ -486,6 +497,8 @@ def _build_slip_dict(picks: list[dict], more_count: int, less_count: int) -> dic
         'estimated_win_prob': round(win_prob, 4),
         'quality_score': round(quality_score, 1),
         'correlation_penalty': round(corr_pen, 3),
+        'direction_skew': round(direction_skew, 3),
+        'correlation_factor': round(correlation_mult, 3),
         'label': None,  # Assigned later
     }
 
@@ -527,6 +540,8 @@ def _generate_fallback_slips(
     slips = []
     used_signatures = set(existing_signatures or set())
     portfolio_slips = portfolio_slips or []
+    has_more_available = any(p.get("pick") == "MORE" for p in sorted_preds)
+    has_less_available = any(p.get("pick") == "LESS" for p in sorted_preds)
 
     for start_idx in range(0, len(sorted_preds) - slip_size, max(1, slip_size // 2)):
         if len(slips) >= num_needed:
@@ -545,12 +560,15 @@ def _generate_fallback_slips(
 
             team = pick.get('team')
             stat_type = pick.get('stat_type')
+            player_key = _pick_player_key(pick)
 
             # Constraint checks — relaxed to allow up to 3 of same type
             # (early season may have limited prop diversity)
             if used_teams[team] >= 2:
                 continue
             if used_types[stat_type] >= 3:
+                continue
+            if any(_pick_player_key(existing) == player_key for existing in selected):
                 continue
 
             selected.append(pick)
@@ -565,6 +583,9 @@ def _generate_fallback_slips(
                 continue
             more_count = sum(1 for p in selected if p.get('pick') == 'MORE')
             less_count = slip_size - more_count
+            direction_skew = abs(more_count - less_count) / slip_size if slip_size else 1.0
+            if has_more_available and has_less_available and direction_skew > 0.67:
+                continue
             slip = _build_slip_dict(selected, more_count, less_count)
             slips.append(slip)
             used_signatures.add(signature)

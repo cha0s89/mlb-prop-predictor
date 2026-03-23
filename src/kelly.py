@@ -1,25 +1,28 @@
 """
-Kelly Criterion Bankroll Sizing for PrizePicks Props
+Kelly Criterion Bankroll Sizing for PrizePicks Props.
 
-Implements conservative Kelly fractional betting strategy to maximize long-term
-growth while limiting drawdown risk. Recommended approach: quarter-Kelly (0.25x),
-the professional standard for player props.
-
-Formula: f = (p * b - q) / b
-  where p = prob_win, b = net_odds (payout - 1), q = 1 - p
-  result is clamped to [0, 0.25] to limit aggressive sizing
+Flex slips are not binary wagers, so sizing uses a conservative binary
+approximation derived from the simulated positive-return rate and average
+positive payout.
 """
 
+from collections import Counter
 from typing import Optional
+
+from src.slip_ev import build_correlation_matrix, simulate_slip_ev
 
 
 # PrizePicks payout multipliers (imported from slips.py logic)
 PAYOUT_MULTIPLIERS = {
     "2_power": 3.0,
-    "3_power": 5.0,
-    "4_flex": 5.0,
+    "3_power": 6.0,
+    "4_power": 10.0,
+    "5_power": 20.0,
+    "6_power": 25.0,
+    "3_flex": 3.0,
+    "4_flex": 6.0,
     "5_flex": 10.0,
-    "6_flex": 25.0,
+    "6_flex": 12.5,
 }
 
 # Correlation discount for same-game picks (picks on same game are correlated)
@@ -159,11 +162,11 @@ def calculate_slip_sizing(
         }
 
     # Get payout multiplier for this slip type
-    payout_mult = PAYOUT_MULTIPLIERS.get(slip_type, 1.0)
-    if payout_mult <= 1:
+    base_payout_mult = PAYOUT_MULTIPLIERS.get(slip_type, 1.0)
+    if base_payout_mult <= 1:
         return {
             "win_prob": 0.0,
-            "payout_mult": payout_mult,
+            "payout_mult": base_payout_mult,
             "kelly_pct": 0.0,
             "quarter_kelly_pct": 0.0,
             "recommended_wager": 0.0,
@@ -172,18 +175,37 @@ def calculate_slip_sizing(
             "edge_pct": 0.0,
         }
 
-    # Calculate joint win probability from the outright leg win chances.
-    joint_prob = 1.0
+    line_type = Counter(str(p.get("line_type", "standard")) for p in picks).most_common(1)[0][0]
+    legs = []
     for pick in picks:
         leg_win_prob = pick.get("win_prob")
         if leg_win_prob is None:
             leg_win_prob = pick.get("confidence", 0.5)
         leg_win_prob = max(0.01, min(0.99, float(leg_win_prob)))
-        joint_prob *= leg_win_prob
+        legs.append({
+            "team": pick.get("team", ""),
+            "pick": pick.get("pick", "MORE"),
+            "stat_type": pick.get("stat_internal", pick.get("stat_type", "")),
+            "line": pick.get("line", 0.5),
+            "win_prob": leg_win_prob,
+            "p_push": pick.get("p_push", 0.0),
+            "game_id": pick.get("game_pk") or pick.get("game_id") or pick.get("opponent", ""),
+        })
 
-    # Apply same-game correlation discount
-    # (assume all picks are same-game parlay for conservative estimate)
-    win_prob = joint_prob * SAME_GAME_CORRELATION_DISCOUNT
+    sim = simulate_slip_ev(
+        legs,
+        entry_type=slip_type,
+        n_sims=25_000,
+        correlation_matrix=build_correlation_matrix(legs) if len(legs) > 1 else None,
+        seed=42,
+        line_type=line_type,
+    )
+
+    # Use only profitable outcomes for a conservative Kelly approximation.
+    win_prob = max(0.0, min(1.0, float(sim.get("win_rate", 0.0))))
+    payout_mult = float(sim.get("avg_positive_payout") or base_payout_mult)
+    if payout_mult <= 1:
+        payout_mult = base_payout_mult
 
     # Calculate Kelly fractions
     kelly_pct = kelly_fraction(win_prob, payout_mult) * 100
@@ -191,18 +213,17 @@ def calculate_slip_sizing(
 
     # Calculate recommended wager: quarter-Kelly * bankroll, round to nearest $0.50, min $1
     recommended_raw = (quarter_kelly_pct / 100) * bankroll
-    recommended_wager = max(1.0, round(recommended_raw * 2) / 2)
+    if quarter_kelly_pct <= 0 or sim.get("ev_profit_pct", 0) <= 0:
+        recommended_wager = 0.0
+    else:
+        recommended_wager = max(1.0, round(recommended_raw * 2) / 2)
 
     # Max wager: full Kelly * bankroll
     max_wager = (kelly_pct / 100) * bankroll
 
-    # Expected value: (prob_win * payout) - (prob_loss * wager)
-    prob_loss = 1 - win_prob
-    payout_return = recommended_wager * payout_mult
-    ev = (win_prob * payout_return) - (prob_loss * recommended_wager)
-
-    # Edge percentage: how much better than break-even
-    edge_pct = (win_prob * payout_mult - 1) * 100
+    # Expected value and edge come from the simulation, not the binary approximation.
+    ev = recommended_wager * sim.get("ev_profit", 0.0)
+    edge_pct = float(sim.get("ev_profit_pct", 0.0))
 
     return {
         "win_prob": round(win_prob, 4),

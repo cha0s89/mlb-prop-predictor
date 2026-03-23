@@ -151,6 +151,8 @@ def simulate_slip_ev(
     partial_count = 0
     loss_count = 0
     tie_games = 0  # count of sims where at least one tie
+    positive_payout_sum = 0.0
+    perfect_count = 0
 
     for _ in range(n_sims):
         if use_copula:
@@ -182,10 +184,13 @@ def simulate_slip_ev(
 
         if mult > 1:
             win_count += 1
+            positive_payout_sum += mult
         elif mult > 0 and mult < 1:
             partial_count += 1
         elif mult == 0:
             loss_count += 1
+        if outcomes.count("W") == n_legs and not has_tie:
+            perfect_count += 1
 
     mean_mult = payout_sum / n_sims
     var_mult = payout_sq_sum / n_sims - mean_mult ** 2
@@ -200,6 +205,8 @@ def simulate_slip_ev(
         "partial_rate": round(partial_count / n_sims, 4),
         "loss_rate": round(loss_count / n_sims, 4),
         "tie_impact": round(tie_games / n_sims, 4),
+        "perfect_rate": round(perfect_count / n_sims, 4),
+        "avg_positive_payout": round(positive_payout_sum / win_count, 4) if win_count else 0.0,
         "n_sims": n_sims,
         "entry_type": entry_type,
         "sharpe_ratio": round(
