@@ -35,6 +35,7 @@ from scipy import stats as sp_stats  # kept for potential future use
 from typing import Optional
 
 from src import distributions
+from src.weather import get_stat_specific_weather_adjustment
 
 
 # ═══════════════════════════════════════════════════════
@@ -107,14 +108,33 @@ def _clear_weights_cache() -> None:
     _CALIBRATION_CACHE.clear()
 
 
+def _merge_weight_overrides(base: dict, override: dict) -> dict:
+    """Recursively merge a runtime override onto the active weight set."""
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _merge_weight_overrides(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
 def _load_weights() -> dict:
-    """Load learned weights from current.json. Cached after first call."""
+    """Load learned weights from current.json plus any runtime override."""
     if _WEIGHTS_CACHE:
         return _WEIGHTS_CACHE
-    weights_path = os.path.join(os.path.dirname(__file__), "..", "data", "weights", "current.json")
+    weights_dir = os.path.join(os.path.dirname(__file__), "..", "data", "weights")
+    weights_path = os.path.join(weights_dir, "current.json")
+    runtime_override_path = os.path.join(weights_dir, "runtime_override.json")
     try:
         with open(weights_path, encoding="utf-8") as f:
             w = json.load(f)
+        if os.path.exists(runtime_override_path):
+            try:
+                with open(runtime_override_path, encoding="utf-8") as f:
+                    runtime_override = json.load(f)
+                w = _merge_weight_overrides(w, runtime_override)
+            except (OSError, json.JSONDecodeError):
+                pass
         _WEIGHTS_CACHE.update(w)
     except (FileNotFoundError, json.JSONDecodeError):
         pass
@@ -777,7 +797,8 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         proj += ump.get("k_adjustment", 0)
 
     # Weather
-    if wx: proj *= wx.get("weather_k_mult", 1.0)
+    if wx:
+        proj *= get_stat_specific_weather_adjustment(wx, "pitcher_strikeouts")
 
     # Platoon (if entire lineup skews one hand)
     if platoon and platoon.get("k_adjustment"):
@@ -847,7 +868,8 @@ def project_pitcher_outs(p, park=None, wx=None):
     proj_outs = bf_result["effective_ip"] * 3
 
     if park: proj_outs *= (1 + (_park(park, PARK) - 1) * -0.1)  # Hitter parks = fewer outs
-    if wx: proj_outs *= (1 + (wx.get("weather_offense_mult", 1.0) - 1) * -0.1)
+    if wx:
+        proj_outs *= get_stat_specific_weather_adjustment(wx, "pitching_outs")
 
     # v018: ABS Challenge System adjustment (more walks → fewer outs)
     proj_outs *= abs_adjustment_factor("pitching_outs")
@@ -899,7 +921,8 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
     if park: proj_er *= _park(park, PARK)
 
     # Weather (warm = more offense = more ER)
-    if wx: proj_er *= wx.get("weather_offense_mult", 1.0)
+    if wx:
+        proj_er *= get_stat_specific_weather_adjustment(wx, "earned_runs")
 
     mu = max(proj_er, 0.5)
 
@@ -973,7 +996,8 @@ def project_pitcher_hits_allowed(p, park=None, wx=None, opp_avg=None):
         proj *= (opp_avg / LG["avg"])
 
     if park: proj *= _park(park, PARK)
-    if wx: proj *= wx.get("weather_offense_mult", 1.0)
+    if wx:
+        proj *= get_stat_specific_weather_adjustment(wx, "hits_allowed")
 
     mu = max(proj, 2.0)
     return {"projection": round(mu, 2), "mu": mu}
@@ -1068,7 +1092,8 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
 
     # Park + weather
     if park: reg_avg *= (1 + (_park(park, PARK) - 1) * 0.25)
-    if wx: reg_avg *= wx.get("weather_offense_mult", 1.0)
+    if wx:
+        reg_avg *= get_stat_specific_weather_adjustment(wx, "hits")
 
     # v018 Task 3A: Opportunity-first PA estimation
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
@@ -1152,8 +1177,7 @@ def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
 
     # Weather (HR mult matters more for TB)
     if wx:
-        blended_wx = wx.get("weather_offense_mult", 1.0) * 0.5 + wx.get("weather_hr_mult", 1.0) * 0.5
-        reg_slg *= blended_wx
+        reg_slg *= get_stat_specific_weather_adjustment(wx, "total_bases")
 
     # v018 Task 3A: Opportunity-first PA estimation
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
@@ -1219,7 +1243,8 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
     if park: reg_hr_rate *= _park(park, PARK_HR)
 
     # Weather (temp is huge for HR — 2% per degree C above 72F)
-    if wx: reg_hr_rate *= wx.get("weather_hr_mult", 1.0)
+    if wx:
+        reg_hr_rate *= get_stat_specific_weather_adjustment(wx, "home_runs")
 
     # v018 Task 3A: Opportunity-first PA estimation
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
@@ -1288,7 +1313,8 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
         proj *= platoon["adjustment"]
 
     if park: proj *= _park(park, PARK)
-    if wx: proj *= wx.get("weather_offense_mult", 1.0)
+    if wx:
+        proj *= get_stat_specific_weather_adjustment(wx, "rbis")
 
     mu = max(proj, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_woba": round(reg_woba, 3)}
@@ -1338,7 +1364,8 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
         proj *= platoon["adjustment"]
 
     if park: proj *= _park(park, PARK)
-    if wx: proj *= wx.get("weather_offense_mult", 1.0)
+    if wx:
+        proj *= get_stat_specific_weather_adjustment(wx, "runs")
 
     mu = max(proj, 0.1)
     return {"projection": round(mu, 2), "mu": mu, "regressed_obp": round(reg_obp, 3)}
@@ -1598,8 +1625,7 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     # Weather
     wx_mult = 1.0
     if wx:
-        wx_mult = (wx.get("weather_offense_mult", 1.0) * 0.5 +
-                   wx.get("weather_hr_mult", 1.0) * 0.5)
+        wx_mult = get_stat_specific_weather_adjustment(wx, "hitter_fantasy_score")
 
     total_mult = context_mult * bvp_mult * platoon_mult * park_mult * wx_mult
 

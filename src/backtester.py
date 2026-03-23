@@ -77,7 +77,18 @@ DEFAULT_PROP_TYPES = [
     "hits",
     "total_bases",
     "home_runs",
+    "runs",
+    "rbis",
+    "hits_runs_rbis",
+    "batter_strikeouts",
+    "walks",
+    "singles",
+    "doubles",
     "pitcher_strikeouts",
+    "pitching_outs",
+    "earned_runs",
+    "walks_allowed",
+    "hits_allowed",
 ]
 
 DEFAULT_LINES = {
@@ -85,7 +96,26 @@ DEFAULT_LINES = {
     "hits": 1.5,
     "total_bases": 1.5,
     "home_runs": 0.5,
+    "runs": 0.5,
+    "rbis": 0.5,
+    "hits_runs_rbis": 1.5,
+    "batter_strikeouts": 0.5,
+    "walks": 0.5,
+    "singles": 0.5,
+    "doubles": 0.5,
     "pitcher_strikeouts": 4.5,
+    "pitching_outs": 17.5,
+    "earned_runs": 1.5,
+    "walks_allowed": 1.5,
+    "hits_allowed": 5.5,
+}
+
+PITCHER_BACKTEST_PROPS = {
+    "pitcher_strikeouts",
+    "pitching_outs",
+    "earned_runs",
+    "walks_allowed",
+    "hits_allowed",
 }
 
 # FanGraphs column mapping — convert DF columns to batter_profile keys
@@ -120,6 +150,13 @@ FANGRAPHS_PITCHER_MAP = {
     "BB%": "bb_pct",
     "GS": "gs",
 }
+
+BATTER_RATE_KEYS = {"avg", "obp", "slg", "iso", "woba", "babip", "k_rate", "bb_rate"}
+BATTER_EVENT_KEYS = {"hr", "sb", "rbi", "r", "2b", "3b"}
+PITCHER_RATE_KEYS = {"era", "fip", "xfip", "whip", "k9", "bb9", "hr9", "k_pct", "bb_pct"}
+
+BATTER_PSEUDO_PA = 250.0
+PITCHER_PSEUDO_IP = 60.0
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -179,6 +216,7 @@ def _extract_batter_stats(player_data: dict) -> dict | None:
     return {
         "ab": batting.get("atBats", 0),
         "pa": batting.get("plateAppearances", 0),
+        "batting_order": _safe_int(str(player_data.get("battingOrder", ""))[:1], 0),
         "hits": batting.get("hits", 0),
         "doubles": batting.get("doubles", 0),
         "triples": batting.get("triples", 0),
@@ -199,8 +237,11 @@ def _extract_pitcher_stats(player_data: dict) -> dict | None:
         return None
     ip_str = pitching.get("inningsPitched", "0")
     try:
-        ip = float(ip_str)
+        whole, frac = str(ip_str).split(".") if "." in str(ip_str) else (str(ip_str), "0")
+        outs = int(whole) * 3 + int(frac)
+        ip = outs / 3.0
     except (ValueError, TypeError):
+        outs = 0
         ip = 0.0
 
     if ip == 0:
@@ -208,6 +249,7 @@ def _extract_pitcher_stats(player_data: dict) -> dict | None:
 
     return {
         "ip": ip,
+        "outs": outs,
         "k": pitching.get("strikeOuts", 0),
         "bb": pitching.get("baseOnBalls", 0),
         "hits_allowed": pitching.get("hits", 0),
@@ -313,6 +355,29 @@ def _actual_value_for_prop(prop_type: str, batter_stats: dict,
         return calculate_fantasy_score(batter_stats)
     elif prop_type == "hits":
         return float(batter_stats.get("hits", 0))
+    elif prop_type == "runs":
+        return float(batter_stats.get("runs", 0))
+    elif prop_type == "rbis":
+        return float(batter_stats.get("rbi", 0))
+    elif prop_type == "hits_runs_rbis":
+        return float(
+            batter_stats.get("hits", 0)
+            + batter_stats.get("runs", 0)
+            + batter_stats.get("rbi", 0)
+        )
+    elif prop_type == "batter_strikeouts":
+        return float(batter_stats.get("k", 0))
+    elif prop_type == "walks":
+        return float(batter_stats.get("bb", 0))
+    elif prop_type == "singles":
+        return float(
+            batter_stats.get("hits", 0)
+            - batter_stats.get("doubles", 0)
+            - batter_stats.get("triples", 0)
+            - batter_stats.get("hr", 0)
+        )
+    elif prop_type == "doubles":
+        return float(batter_stats.get("doubles", 0))
     elif prop_type == "total_bases":
         h = batter_stats.get("hits", 0)
         d = batter_stats.get("doubles", 0)
@@ -325,6 +390,22 @@ def _actual_value_for_prop(prop_type: str, batter_stats: dict,
     elif prop_type == "pitcher_strikeouts":
         if pitcher_stats:
             return float(pitcher_stats.get("k", 0))
+        return None
+    elif prop_type == "pitching_outs":
+        if pitcher_stats:
+            return float(pitcher_stats.get("outs", 0))
+        return None
+    elif prop_type == "earned_runs":
+        if pitcher_stats:
+            return float(pitcher_stats.get("er", 0))
+        return None
+    elif prop_type == "walks_allowed":
+        if pitcher_stats:
+            return float(pitcher_stats.get("bb", 0))
+        return None
+    elif prop_type == "hits_allowed":
+        if pitcher_stats:
+            return float(pitcher_stats.get("hits_allowed", 0))
         return None
     return None
 
@@ -620,89 +701,22 @@ def _match_player_row(player_name: str, df: pd.DataFrame) -> pd.Series | None:
     return None
 
 
-def build_walkforward_profile(player_name: str, game_date: str,
-                              is_pitcher: bool = False) -> dict | None:
-    """
-    Build a batter (or pitcher) profile using ONLY data available before
-    *game_date*.
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
 
-    Walk-forward logic:
-      - Current-year stats are fetched from the MLB Stats API with an
-        endDate of (game_date - 1 day), ensuring NO future data leaks
-        into the profile.  This is the key guard against inflated backtest
-        accuracy.
-      - If game_date is in the first month of the season (April), rely
-        heavily on the PRIOR year stats (the current-year sample is too
-        small to be meaningful).
-      - As the season progresses, the current-year stats accumulate PA
-        and the Bayesian regression in the predictor naturally up-weights
-        them.
-      - Prior-year stats use full-season FanGraphs data (no leakage risk
-        since that season is already complete).
 
-    Returns None if the player cannot be matched.
-    """
-    dt = datetime.strptime(game_date, "%Y-%m-%d")
-    year = dt.year
-    month = dt.month
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(float(value)) if value is not None else default
+    except (TypeError, ValueError):
+        return default
 
-    if is_pitcher:
-        # Current year stats — filtered to BEFORE game_date (walk-forward)
-        df_current = _get_season_pitching(year, cutoff_date=game_date)
-        row = _match_player_row(player_name, df_current)
 
-        # If early season or no match, try prior year (full season, no leakage)
-        if row is None or (month <= 5 and (row is None or float(row.get("IP", 0)) < 10)):
-            df_prior = _get_season_pitching(year - 1, cutoff_date=None)
-            row_prior = _match_player_row(player_name, df_prior)
-            if row_prior is not None:
-                row = row_prior
-
-        if row is None:
-            return None
-
-        profile: dict = {}
-        for fg_col, key in FANGRAPHS_PITCHER_MAP.items():
-            val = row.get(fg_col, 0)
-            if key in ("k_pct", "bb_pct"):
-                profile[key] = _strip_pct(val)
-            else:
-                try:
-                    profile[key] = float(val) if val is not None else 0.0
-                except (ValueError, TypeError):
-                    profile[key] = 0.0
-
-        # Guard against decimal-vs-percentage confusion (FanGraphs CSVs
-        # store K%/BB% as decimals like 0.227; predictor expects 22.7).
-        for rate_key in ("k_pct", "bb_pct"):
-            v = profile.get(rate_key, 0)
-            if v and v < 1.0:
-                profile[rate_key] = v * 100
-
-        return profile
-
-    # ── Batter path ──
-    # Current year stats — filtered to BEFORE game_date (walk-forward)
-    df_current = _get_season_batting(year, cutoff_date=game_date)
-    row = _match_player_row(player_name, df_current)
-
-    # Early season or no current-year match: fall back to prior year (full season, no leakage)
-    if row is None or (month <= 5 and float(row.get("PA", 0)) < 50):
-        df_prior = _get_season_batting(year - 1, cutoff_date=None)
-        row_prior = _match_player_row(player_name, df_prior)
-        if row_prior is not None:
-            # If we have BOTH years, blend (weight current by fraction of 500 PA)
-            if row is not None and float(row.get("PA", 0)) > 0:
-                # We keep the current-year row and let the predictor's Bayesian
-                # stabilization handle the small sample — but we patch in the
-                # prior-year counting stats for events that need a base (HR, SB,
-                # RBI, R, 2B, 3B) if the current-year counts are tiny.
-                pa_current = float(row.get("PA", 0))
-                if pa_current < 50:
-                    row = row_prior
-            else:
-                row = row_prior
-
+def _row_to_batter_profile(row: pd.Series | None) -> dict | None:
+    """Convert a FanGraphs batting row into a predictor profile dict."""
     if row is None:
         return None
 
@@ -712,34 +726,143 @@ def build_walkforward_profile(player_name: str, game_date: str,
         if key in ("k_rate", "bb_rate"):
             profile[key] = _strip_pct(val)
         elif key in ("hr", "sb", "rbi", "r", "2b", "3b", "pa"):
-            try:
-                profile[key] = int(val) if val is not None else 0
-            except (ValueError, TypeError):
-                profile[key] = 0
+            profile[key] = _safe_int(val)
         else:
-            try:
-                profile[key] = float(val) if val is not None else 0.0
-            except (ValueError, TypeError):
-                profile[key] = 0.0
+            profile[key] = _safe_float(val)
 
-    # Guard against decimal-vs-percentage confusion (FanGraphs CSVs
-    # store K%/BB% as decimals like 0.227; predictor expects 22.7).
     for rate_key in ("k_rate", "bb_rate"):
         v = profile.get(rate_key, 0)
         if v and v < 1.0:
             profile[rate_key] = v * 100
 
-    # Statcast expected stats — set to 0 so the predictor uses season-only;
-    # pulling per-player Statcast for every batter-day in a 6-month backtest
-    # would be extremely slow. The predictor gracefully ignores zeros.
     profile.setdefault("xba", 0)
     profile.setdefault("xslg", 0)
     profile.setdefault("barrel_rate", 0)
     profile.setdefault("recent_barrel_rate", 0)
     profile.setdefault("recent_hard_hit_pct", 0)
     profile.setdefault("sprint_speed", 0)
-
     return profile
+
+
+def _row_to_pitcher_profile(row: pd.Series | None) -> dict | None:
+    """Convert a FanGraphs pitching row into a predictor profile dict."""
+    if row is None:
+        return None
+
+    profile: dict = {}
+    for fg_col, key in FANGRAPHS_PITCHER_MAP.items():
+        val = row.get(fg_col, 0)
+        if key in ("k_pct", "bb_pct"):
+            profile[key] = _strip_pct(val)
+        else:
+            profile[key] = _safe_float(val)
+
+    for rate_key in ("k_pct", "bb_pct"):
+        v = profile.get(rate_key, 0)
+        if v and v < 1.0:
+            profile[rate_key] = v * 100
+    return profile
+
+
+def _blend_batter_profiles(current_profile: dict | None, prior_profile: dict | None) -> dict | None:
+    """Empirical-Bayes blend of current-year and prior-year hitter profiles."""
+    if current_profile is None:
+        return prior_profile
+    if prior_profile is None:
+        return current_profile
+
+    current_pa = max(_safe_float(current_profile.get("pa", 0)), 0.0)
+    prior_pa = max(_safe_float(prior_profile.get("pa", 0)), 0.0)
+    if current_pa <= 0:
+        return prior_profile
+
+    pseudo_pa = max(BATTER_PSEUDO_PA - current_pa, 0.0)
+    if pseudo_pa <= 0:
+        current_profile["season_current_weight"] = 1.0
+        current_profile["season_prior_equivalent_pa"] = 0.0
+        return current_profile
+
+    blended = dict(current_profile)
+    total_weight = current_pa + pseudo_pa
+
+    rate_keys = BATTER_RATE_KEYS | {"xba", "xslg", "barrel_rate", "recent_barrel_rate", "recent_hard_hit_pct", "sprint_speed"}
+    for key in rate_keys:
+        cur = _safe_float(current_profile.get(key, 0.0))
+        prior = _safe_float(prior_profile.get(key, cur))
+        blended[key] = ((cur * current_pa) + (prior * pseudo_pa)) / total_weight
+
+    for key in BATTER_EVENT_KEYS:
+        cur_rate = _safe_float(current_profile.get(key, 0.0)) / max(current_pa, 1.0)
+        prior_rate = _safe_float(prior_profile.get(key, 0.0)) / max(prior_pa, 1.0)
+        blended[key] = int(round(((cur_rate * current_pa) + (prior_rate * pseudo_pa)) / total_weight * total_weight))
+
+    blended["pa"] = int(round(total_weight))
+    blended["season_current_weight"] = round(current_pa / total_weight, 4)
+    blended["season_prior_equivalent_pa"] = round(pseudo_pa, 1)
+    return blended
+
+
+def _blend_pitcher_profiles(current_profile: dict | None, prior_profile: dict | None) -> dict | None:
+    """Empirical-Bayes blend of current-year and prior-year pitcher profiles."""
+    if current_profile is None:
+        return prior_profile
+    if prior_profile is None:
+        return current_profile
+
+    current_ip = max(_safe_float(current_profile.get("ip", 0)), 0.0)
+    if current_ip <= 0:
+        return prior_profile
+
+    pseudo_ip = max(PITCHER_PSEUDO_IP - current_ip, 0.0)
+    if pseudo_ip <= 0:
+        current_profile["season_current_weight"] = 1.0
+        current_profile["season_prior_equivalent_ip"] = 0.0
+        return current_profile
+
+    blended = dict(current_profile)
+    total_weight = current_ip + pseudo_ip
+
+    for key in PITCHER_RATE_KEYS | {"avg_ip_start"}:
+        cur = _safe_float(current_profile.get(key, 0.0))
+        prior = _safe_float(prior_profile.get(key, cur))
+        blended[key] = ((cur * current_ip) + (prior * pseudo_ip)) / total_weight
+
+    blended["ip"] = round(total_weight, 1)
+    blended["season_current_weight"] = round(current_ip / total_weight, 4)
+    blended["season_prior_equivalent_ip"] = round(pseudo_ip, 1)
+    return blended
+
+
+def build_walkforward_profile(player_name: str, game_date: str,
+                              is_pitcher: bool = False) -> dict | None:
+    """
+    Build a batter (or pitcher) profile using ONLY data available before
+    *game_date*.
+
+    Current-season data is blended with prior-season skill using an
+    empirical-Bayes pseudo-sample so early-season samples do not whip the
+    model around, but current-season performance naturally takes over as the
+    sample grows.
+    """
+    dt = datetime.strptime(game_date, "%Y-%m-%d")
+    year = dt.year
+
+    if is_pitcher:
+        df_current = _get_season_pitching(year, cutoff_date=game_date)
+        df_prior = _get_season_pitching(year - 1, cutoff_date=None)
+        row_current = _match_player_row(player_name, df_current)
+        row_prior = _match_player_row(player_name, df_prior)
+        current_profile = _row_to_pitcher_profile(row_current)
+        prior_profile = _row_to_pitcher_profile(row_prior)
+        return _blend_pitcher_profiles(current_profile, prior_profile)
+
+    df_current = _get_season_batting(year, cutoff_date=game_date)
+    df_prior = _get_season_batting(year - 1, cutoff_date=None)
+    row_current = _match_player_row(player_name, df_current)
+    row_prior = _match_player_row(player_name, df_prior)
+    current_profile = _row_to_batter_profile(row_current)
+    prior_profile = _row_to_batter_profile(row_prior)
+    return _blend_batter_profiles(current_profile, prior_profile)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -807,47 +930,50 @@ def backtest_single_day(game_date: str,
         if not boxscore:
             continue
 
+        home_team = (
+            boxscore.get("teams", {}).get("home", {}).get("team", {}).get("abbreviation")
+            or home_team
+        )
+        away_team = (
+            boxscore.get("teams", {}).get("away", {}).get("team", {}).get("abbreviation")
+            or away_team
+        )
+
         batters = extract_all_batters(boxscore)
 
         # Get starting pitchers for context
         home_sp = extract_starting_pitcher(boxscore, "home")
         away_sp = extract_starting_pitcher(boxscore, "away")
 
+        home_sp_profile = (
+            build_walkforward_profile(home_sp["full_name"], game_date, is_pitcher=True)
+            if home_sp else None
+        )
+        away_sp_profile = (
+            build_walkforward_profile(away_sp["full_name"], game_date, is_pitcher=True)
+            if away_sp else None
+        )
+
         for batter in batters:
             player_name = batter["full_name"]
             batter_team = batter["team"]
+            profile = build_walkforward_profile(player_name, game_date, is_pitcher=False)
+            if profile is None:
+                continue
+
+            opponent = away_team if batter["game_side"] == "home" else home_team
+            park = home_team
+            opp_pitcher_name = away_sp["full_name"] if batter["game_side"] == "home" and away_sp else ""
+            opp_pitcher_profile = away_sp_profile if batter["game_side"] == "home" else home_sp_profile
+            if batter["game_side"] != "home" and home_sp:
+                opp_pitcher_name = home_sp["full_name"]
 
             for prop_type in prop_types:
-                # Skip pitcher_strikeouts for batters — handled separately
-                if prop_type == "pitcher_strikeouts":
+                if prop_type in PITCHER_BACKTEST_PROPS:
                     continue
 
                 line = DEFAULT_LINES.get(prop_type, 1.5)
 
-                # Build walk-forward profile
-                profile = build_walkforward_profile(player_name, game_date,
-                                                    is_pitcher=False)
-                if profile is None:
-                    continue
-
-                # Determine opposing pitcher for context
-                opp_pitcher_profile = None
-                park = batter_team  # Approximate: use batter's team as park
-                if batter["game_side"] == "home":
-                    park = home_team
-                    if away_sp:
-                        opp_pitcher_profile = build_walkforward_profile(
-                            away_sp["full_name"], game_date, is_pitcher=True
-                        )
-                else:
-                    park = away_team  # Away batters face home park
-                    park = home_team  # Actually home park is where game is
-                    if home_sp:
-                        opp_pitcher_profile = build_walkforward_profile(
-                            home_sp["full_name"], game_date, is_pitcher=True
-                        )
-
-                # Run prediction
                 try:
                     pred = generate_prediction(
                         player_name=player_name,
@@ -858,16 +984,13 @@ def backtest_single_day(game_date: str,
                         opp_pitcher_profile=opp_pitcher_profile,
                         park_team=park,
                     )
-                except Exception as exc:
-                    # Never let one prediction crash the whole day
+                except Exception:
                     continue
 
-                # Compute actual value
                 actual = _actual_value_for_prop(prop_type, batter)
                 if actual is None:
                     continue
 
-                # Grade
                 pick = pred.get("pick", "MORE")
                 if actual > line:
                     grade = "W" if pick == "MORE" else "L"
@@ -890,65 +1013,111 @@ def backtest_single_day(game_date: str,
                     "edge": pred.get("edge", 0),
                     "p_over": pred.get("p_over", 0.5),
                     "p_under": pred.get("p_under", 0.5),
+                    "p_push": pred.get("p_push", 0.0),
+                    "win_prob": pred.get("win_prob", pred.get("confidence", 0.5)),
+                    "mu": pred.get("mu"),
+                    "regressed_avg": pred.get("regressed_avg"),
+                    "expected_pa": pred.get("expected_pa"),
+                    "expected_ab": pred.get("expected_ab"),
+                    "p10": pred.get("p10"),
+                    "p50": pred.get("p50"),
+                    "p90": pred.get("p90"),
+                    "breakout_prob": pred.get("breakout_prob"),
+                    "breakout_watch": pred.get("breakout_watch"),
+                    "breakout_target": pred.get("breakout_target"),
+                    "dud_prob": pred.get("dud_prob"),
+                    "dud_risk": pred.get("dud_risk"),
+                    "dud_target": pred.get("dud_target"),
+                    "has_lineup_pos": pred.get("has_lineup_pos"),
+                    "has_opp_data": pred.get("has_opp_data"),
+                    "has_park": pred.get("has_park"),
+                    "opponent": opponent,
+                    "park_team": park,
+                    "opp_pitcher": opp_pitcher_name,
+                    "lineup_pos": batter.get("batting_order", 0),
+                    "season_current_weight": profile.get("season_current_weight"),
+                    "season_prior_equivalent": profile.get("season_prior_equivalent_pa"),
                     "plate_appearances": batter.get("pa", 0),
                     "actual": actual,
                     "result": grade,
                 })
 
-        # ── Pitcher strikeouts (starting pitchers only) ──
-        if "pitcher_strikeouts" in prop_types:
-            for sp, sp_side in [(home_sp, "home"), (away_sp, "away")]:
-                if sp is None:
+        # ── Starting pitcher props ──
+        pitcher_prop_types = [pt for pt in prop_types if pt in PITCHER_BACKTEST_PROPS]
+        if pitcher_prop_types:
+            for sp, sp_side, pitcher_profile in [
+                (home_sp, "home", home_sp_profile),
+                (away_sp, "away", away_sp_profile),
+            ]:
+                if sp is None or pitcher_profile is None:
                     continue
 
                 sp_name = sp["full_name"]
-                line = DEFAULT_LINES.get("pitcher_strikeouts", 4.5)
+                opponent = away_team if sp_side == "home" else home_team
 
-                pitcher_profile = build_walkforward_profile(
-                    sp_name, game_date, is_pitcher=True
-                )
-                if pitcher_profile is None:
-                    continue
+                for prop_type in pitcher_prop_types:
+                    line = DEFAULT_LINES.get(prop_type, 1.5)
 
-                try:
-                    pred = generate_prediction(
-                        player_name=sp_name,
-                        stat_type="Pitcher Strikeouts",
-                        stat_internal="pitcher_strikeouts",
-                        line=line,
-                        pitcher_profile=pitcher_profile,
-                        park_team=home_team,
-                    )
-                except Exception:
-                    continue
+                    try:
+                        pred = generate_prediction(
+                            player_name=sp_name,
+                            stat_type=prop_type.replace("_", " ").title(),
+                            stat_internal=prop_type,
+                            line=line,
+                            pitcher_profile=pitcher_profile,
+                            park_team=home_team,
+                        )
+                    except Exception:
+                        continue
 
-                actual_k = float(sp.get("k", 0))
-                pick = pred.get("pick", "MORE")
-                if actual_k > line:
-                    grade = "W" if pick == "MORE" else "L"
-                elif actual_k < line:
-                    grade = "W" if pick == "LESS" else "L"
-                else:
-                    grade = "push"
+                    actual = _actual_value_for_prop(prop_type, {}, pitcher_stats=sp)
+                    if actual is None:
+                        continue
 
-                results.append({
-                    "game_date": game_date,
-                    "game_pk": game_pk,
-                    "player_name": sp_name,
-                    "team": sp["team"],
-                    "prop_type": "pitcher_strikeouts",
-                    "line": line,
-                    "projection": pred.get("projection", 0),
-                    "pick": pick,
-                    "confidence": pred.get("confidence", 0.5),
-                    "rating": pred.get("rating", "D"),
+                    pick = pred.get("pick", "MORE")
+                    if actual > line:
+                        grade = "W" if pick == "MORE" else "L"
+                    elif actual < line:
+                        grade = "W" if pick == "LESS" else "L"
+                    else:
+                        grade = "push"
+
+                    results.append({
+                        "game_date": game_date,
+                        "game_pk": game_pk,
+                        "player_name": sp_name,
+                        "team": sp["team"],
+                        "prop_type": prop_type,
+                        "line": line,
+                        "projection": pred.get("projection", 0),
+                        "pick": pick,
+                        "confidence": pred.get("confidence", 0.5),
+                        "rating": pred.get("rating", "D"),
                     "edge": pred.get("edge", 0),
                     "p_over": pred.get("p_over", 0.5),
                     "p_under": pred.get("p_under", 0.5),
+                    "p_push": pred.get("p_push", 0.0),
+                    "win_prob": pred.get("win_prob", pred.get("confidence", 0.5)),
+                    "mu": pred.get("mu"),
+                    "p10": pred.get("p10"),
+                    "p50": pred.get("p50"),
+                    "p90": pred.get("p90"),
+                    "breakout_prob": pred.get("breakout_prob"),
+                    "breakout_watch": pred.get("breakout_watch"),
+                    "breakout_target": pred.get("breakout_target"),
+                    "dud_prob": pred.get("dud_prob"),
+                    "dud_risk": pred.get("dud_risk"),
+                    "dud_target": pred.get("dud_target"),
+                    "has_opp_data": pred.get("has_opp_data"),
+                    "has_park": pred.get("has_park"),
+                    "opponent": opponent,
+                    "park_team": home_team,
+                    "season_current_weight": pitcher_profile.get("season_current_weight"),
+                    "season_prior_equivalent": pitcher_profile.get("season_prior_equivalent_ip"),
                     "innings_pitched": sp.get("ip", 0.0),
-                    "actual": actual_k,
-                    "result": grade,
-                })
+                        "actual": actual,
+                        "result": grade,
+                    })
 
     return results
 
@@ -966,7 +1135,14 @@ def save_results(results: list[dict],
     temp_p = Path(str(p) + ".tmp")
     with open(temp_p, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, default=str)
-    temp_p.replace(p)  # Atomic move
+    for attempt in range(8):
+        try:
+            temp_p.replace(p)  # Atomic move
+            break
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(0.5 * (attempt + 1))
     print(f"  [SAVED] {len(results)} results -> {p}")
 
 
@@ -1228,6 +1404,8 @@ def run_backtest(
     end_date: str = "2025-09-30",
     prop_types: list[str] | None = None,
     save_interval: int = 1,
+    filepath: str = DEFAULT_RESULTS_PATH,
+    clear_existing: bool = False,
 ) -> dict:
     """
     Run the full historical backtest over the specified date range.
@@ -1253,7 +1431,7 @@ def run_backtest(
     _clear_weights_cache()
 
     # Load any previously saved results so we can resume
-    all_results = load_results()
+    all_results = [] if clear_existing else load_results(filepath)
     processed_dates: set[str] = {r["game_date"] for r in all_results}
 
     dt_start = datetime.strptime(start_date, "%Y-%m-%d")
@@ -1297,14 +1475,14 @@ def run_backtest(
 
         days_since_save += 1
         if days_since_save >= save_interval:
-            save_results(all_results)
+            save_results(all_results, filepath=filepath)
             days_since_save = 0
 
         current += timedelta(days=1)
         days_processed += 1
 
     # Final save
-    save_results(all_results)
+    save_results(all_results, filepath=filepath)
 
     # Generate report
     print("\n" + "=" * 70)
@@ -1334,12 +1512,16 @@ if __name__ == "__main__":
     parser.add_argument("--end", default="2025-09-30", help="End date YYYY-MM-DD")
     parser.add_argument("--props", nargs="*", default=None,
                         help="Prop types to backtest (space-separated)")
+    parser.add_argument("--filepath", default=DEFAULT_RESULTS_PATH,
+                        help="Output path for saved backtest rows")
+    parser.add_argument("--fresh", action="store_true",
+                        help="Ignore/resume logic and rebuild the backtest file from scratch")
     parser.add_argument("--report-only", action="store_true",
                         help="Only generate report from existing results")
     args = parser.parse_args()
 
     if args.report_only:
-        results = load_results()
+        results = load_results(args.filepath)
         if results:
             report = generate_backtest_report(results)
             print(json.dumps(report.get("overall", {}), indent=2))
@@ -1350,4 +1532,6 @@ if __name__ == "__main__":
             start_date=args.start,
             end_date=args.end,
             prop_types=args.props,
+            filepath=args.filepath,
+            clear_existing=args.fresh,
         )

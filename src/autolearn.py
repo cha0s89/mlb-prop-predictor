@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 WEIGHTS_DIR = Path("data/weights")
 CURRENT_WEIGHTS_PATH = WEIGHTS_DIR / "current.json"
 WEIGHT_HISTORY_PATH = WEIGHTS_DIR / "weight_history.json"
+RUNTIME_OVERRIDE_PATH = WEIGHTS_DIR / "runtime_override.json"
 
 # Maximum percentage change per adjustment cycle (±5% — conservative)
 MAX_ADJUSTMENT_PCT = 0.05
@@ -212,6 +213,27 @@ def get_baseline_weights() -> dict:
             "default": 0.70,
         },
 
+        # Spring adjustments should fade as real regular-season sample accrues.
+        "seasonal_spring_blend": {
+            "post_open_decay_days": 60,
+            "hitter_sample_stabilization": 220,
+            "pitcher_sample_stabilization": 45,
+            "prop_strength": {
+                "hits": 1.0,
+                "total_bases": 1.15,
+                "home_runs": 1.20,
+                "rbis": 1.05,
+                "runs": 1.05,
+                "hits_runs_rbis": 1.10,
+                "hitter_fantasy_score": 1.10,
+                "pitcher_strikeouts": 1.05,
+                "pitching_outs": 0.90,
+                "earned_runs": 1.00,
+                "hits_allowed": 1.00,
+                "walks_allowed": 0.95,
+            },
+        },
+
         # Metadata for tracking
         "metadata": {
             "parent_version": None,
@@ -231,6 +253,16 @@ def _ensure_dirs() -> None:
     WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _merge_weight_layers(base: dict, override: dict) -> dict:
+    """Recursively merge one weight layer onto another."""
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _merge_weight_layers(base[key], value)
+        else:
+            base[key] = copy.deepcopy(value)
+    return base
+
+
 def load_current_weights() -> dict:
     """
     Load the active weight configuration from data/weights/current.json.
@@ -245,18 +277,21 @@ def load_current_weights() -> dict:
         try:
             with open(CURRENT_WEIGHTS_PATH, "r", encoding="utf-8") as f:
                 weights = json.load(f)
-            # Validate structure — fill in any missing keys from baseline
             baseline = get_baseline_weights()
-            for top_key in baseline:
-                if top_key not in weights:
-                    weights[top_key] = baseline[top_key]
-                elif isinstance(baseline[top_key], dict) and isinstance(weights.get(top_key), dict):
-                    for sub_key in baseline[top_key]:
-                        if sub_key not in weights[top_key]:
-                            weights[top_key][sub_key] = baseline[top_key][sub_key]
+            weights = _merge_weight_layers(copy.deepcopy(baseline), weights)
+            if RUNTIME_OVERRIDE_PATH.exists():
+                try:
+                    with open(RUNTIME_OVERRIDE_PATH, "r", encoding="utf-8") as f:
+                        runtime_override = json.load(f)
+                    weights = _merge_weight_layers(weights, runtime_override)
+                    weights.setdefault("metadata", {})
+                    weights["metadata"]["runtime_override_loaded"] = True
+                except (json.JSONDecodeError, OSError) as exc:
+                    logger.warning("Failed to load runtime_override.json: %s", exc)
             return weights
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Failed to load current.json, reverting to baseline: %s", e)
+
 
     # No current weights — initialize from baseline
     weights = get_baseline_weights()

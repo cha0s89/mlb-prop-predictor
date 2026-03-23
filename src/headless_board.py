@@ -59,6 +59,7 @@ from src.database import (
 )
 from src.stats import fetch_batting_leaders, fetch_pitching_leaders
 from src.spring import (
+    apply_seasonal_spring_blend,
     get_player_injury_status,
     get_spring_form_multiplier,
     fetch_spring_training_stats,
@@ -726,7 +727,21 @@ def build_board(
                 prior_season_avg=prior_avg,
                 st_stats=st_stats,
             )
-            spring_mult = spring["spring_mult"]
+            season_sample = 0.0
+            sample_key = "IP" if is_pitcher_prop else "PA"
+            if matched is not None and sample_key in matched.index:
+                try:
+                    season_sample = float(matched.get(sample_key, 0) or 0)
+                except (TypeError, ValueError):
+                    season_sample = 0.0
+            spring_mult = apply_seasonal_spring_blend(
+                spring["spring_mult"],
+                game_date=p["game_date"],
+                current_sample=season_sample,
+                is_pitcher=is_pitcher_prop,
+                prop_type=stat_int,
+                config=active_weights.get("seasonal_spring_blend", {}),
+            )
             if _is_count_prop:
                 p["projection"] = round(p["projection"] * spring_mult, 2)
             p["spring_mult"] = spring_mult

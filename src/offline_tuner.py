@@ -29,6 +29,18 @@ SUPPORTED_PROPS = {
     "total_bases",
     "pitcher_strikeouts",
     "hitter_fantasy_score",
+    "home_runs",
+    "runs",
+    "rbis",
+    "hits_runs_rbis",
+    "batter_strikeouts",
+    "walks",
+    "singles",
+    "doubles",
+    "pitching_outs",
+    "earned_runs",
+    "walks_allowed",
+    "hits_allowed",
 }
 DEFAULT_GRID = [round(x, 2) for x in np.arange(0.54, 0.91, 0.02)]
 MIN_TRAIN_PICKS = 80
@@ -42,6 +54,17 @@ MODEL_TUNING_PROPS = {
     "pitcher_strikeouts",
     "hitter_fantasy_score",
     "home_runs",
+    "runs",
+    "rbis",
+    "hits_runs_rbis",
+    "batter_strikeouts",
+    "walks",
+    "singles",
+    "doubles",
+    "pitching_outs",
+    "earned_runs",
+    "walks_allowed",
+    "hits_allowed",
 }
 
 OFFSET_GRIDS = {
@@ -50,6 +73,17 @@ OFFSET_GRIDS = {
     "pitcher_strikeouts": [round(x, 2) for x in np.arange(-1.00, 1.01, 0.10)],
     "hitter_fantasy_score": [round(x, 2) for x in np.arange(-3.00, 3.01, 0.25)],
     "home_runs": [round(x, 3) for x in np.arange(-0.15, 0.151, 0.025)],
+    "runs": [round(x, 2) for x in np.arange(-0.60, 0.61, 0.05)],
+    "rbis": [round(x, 2) for x in np.arange(-0.70, 0.71, 0.05)],
+    "hits_runs_rbis": [round(x, 2) for x in np.arange(-1.50, 1.51, 0.10)],
+    "batter_strikeouts": [round(x, 2) for x in np.arange(-0.80, 0.81, 0.05)],
+    "walks": [round(x, 2) for x in np.arange(-0.50, 0.51, 0.05)],
+    "singles": [round(x, 2) for x in np.arange(-0.80, 0.81, 0.05)],
+    "doubles": [round(x, 2) for x in np.arange(-0.40, 0.41, 0.05)],
+    "pitching_outs": [round(x, 2) for x in np.arange(-4.00, 4.01, 0.25)],
+    "earned_runs": [round(x, 2) for x in np.arange(-1.20, 1.21, 0.10)],
+    "walks_allowed": [round(x, 2) for x in np.arange(-1.00, 1.01, 0.10)],
+    "hits_allowed": [round(x, 2) for x in np.arange(-2.00, 2.01, 0.10)],
 }
 VARIANCE_MULTIPLIERS = [0.70, 0.85, 1.0, 1.15, 1.30, 1.50]
 BLEND_GRID = [round(x, 2) for x in np.arange(0.0, 1.01, 0.1)]
@@ -59,6 +93,25 @@ MODEL_MIN_TRAIN_ROWS = 120
 MODEL_MIN_VALID_ROWS = 40
 MODEL_MIN_LOGLOSS_GAIN = 0.005
 MODEL_MAX_MAE_REGRESSION = 0.02
+
+
+def _offset_grid_for_prop(prop_type: str, subset: pd.DataFrame, current_offset: float) -> list[float]:
+    """Build a prop-specific offset search grid with a data-driven fallback."""
+    manual = OFFSET_GRIDS.get(prop_type)
+    if manual:
+        return sorted(set(manual + [round(current_offset, 4)]))
+
+    residual = pd.to_numeric(subset["actual"], errors="coerce") - pd.to_numeric(subset["projection"], errors="coerce")
+    residual = residual.replace([np.inf, -np.inf], np.nan).dropna()
+    if residual.empty:
+        return [round(current_offset, 4)]
+
+    bias = float(residual.mean())
+    spread = float(max(residual.std(ddof=0), abs(bias), 0.15))
+    radius = min(max(spread * 1.25, 0.25), 3.0)
+    center = current_offset + bias
+    grid = np.linspace(center - radius, center + radius, 11)
+    return sorted(set(round(float(x), 4) for x in list(grid) + [current_offset, center]))
 
 
 def _metric_or_default(metrics: dict, key: str, default: float = 1e9) -> float:
@@ -113,6 +166,34 @@ def split_backtest_dataframe(df: pd.DataFrame, train_frac: float = 0.75) -> tupl
     train_df = df[df["game_date"].dt.date.isin(train_dates)].copy()
     valid_df = df[df["game_date"].dt.date.isin(valid_dates)].copy()
     return train_df, valid_df
+
+
+def split_backtest_dataframe_three_way(
+    df: pd.DataFrame,
+    train_frac: float = 0.60,
+    valid_frac: float = 0.20,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Chronologically split the backtest into train/validation/holdout windows."""
+    if df.empty:
+        return df.copy(), df.copy(), df.copy()
+
+    unique_dates = sorted(df["game_date"].dt.date.unique().tolist())
+    if len(unique_dates) < 9:
+        train_df, valid_df = split_backtest_dataframe(df, train_frac=0.75)
+        return train_df, valid_df, df.iloc[0:0].copy()
+
+    train_idx = max(1, int(len(unique_dates) * train_frac))
+    valid_idx = max(train_idx + 1, int(len(unique_dates) * (train_frac + valid_frac)))
+    valid_idx = min(valid_idx, len(unique_dates) - 1)
+
+    train_dates = set(unique_dates[:train_idx])
+    valid_dates = set(unique_dates[train_idx:valid_idx])
+    holdout_dates = set(unique_dates[valid_idx:])
+
+    train_df = df[df["game_date"].dt.date.isin(train_dates)].copy()
+    valid_df = df[df["game_date"].dt.date.isin(valid_dates)].copy()
+    holdout_df = df[df["game_date"].dt.date.isin(holdout_dates)].copy()
+    return train_df, valid_df, holdout_df
 
 
 def load_model_backtest_dataframe(filepath: str = DEFAULT_RESULTS_PATH) -> pd.DataFrame:
@@ -388,7 +469,7 @@ def optimize_model_parameters(train_df: pd.DataFrame, base_weights: dict) -> dic
             _metric_or_default(best_offset_metrics, "mae"),
             _metric_or_default(best_offset_metrics, "rmse"),
         )
-        for offset in sorted(set(OFFSET_GRIDS.get(prop_type, [current_offset]) + [current_offset])):
+        for offset in _offset_grid_for_prop(prop_type, subset, current_offset):
             candidate_weights = _prop_candidate_weights(tuned, prop_type, offset=offset)
             metrics = evaluate_model_weights(subset, candidate_weights)["by_prop"].get(prop_type, {})
             score = (
@@ -605,18 +686,21 @@ def analyze_backtest_floors(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
     current_weights = load_current_weights()
     current_floors = current_weights.get("per_prop_confidence_floors", {})
 
-    train_df, valid_df = split_backtest_dataframe(df)
+    train_df, valid_df, holdout_df = split_backtest_dataframe_three_way(df)
     if valid_df.empty:
         return {"error": "Not enough distinct backtest dates to build a validation split."}
 
     tuned = optimize_confidence_floors(train_df, current_floors)
     current_eval = evaluate_floors(valid_df, current_floors)
     candidate_eval = evaluate_floors(valid_df, tuned["floors"])
+    holdout_current = evaluate_floors(holdout_df, current_floors) if not holdout_df.empty else {}
+    holdout_candidate = evaluate_floors(holdout_df, tuned["floors"]) if not holdout_df.empty else {}
 
     current_selected = current_eval.get("selected", 0)
     candidate_selected = candidate_eval.get("selected", 0)
     current_accuracy = current_eval.get("accuracy") or 0.0
     candidate_accuracy = candidate_eval.get("accuracy") or 0.0
+    holdout_accuracy_gain = (holdout_candidate.get("accuracy") or 0.0) - (holdout_current.get("accuracy") or 0.0)
 
     keep_volume = candidate_selected >= max(MIN_VALID_PICKS, int(current_selected * MIN_VOLUME_RETAIN))
     accuracy_gain = candidate_accuracy - current_accuracy
@@ -624,22 +708,34 @@ def analyze_backtest_floors(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
         candidate_selected >= MIN_VALID_PICKS
         and keep_volume
         and accuracy_gain >= MIN_ACCURACY_GAIN
+        and (
+            holdout_df.empty
+            or (
+                holdout_candidate.get("selected", 0) >= MIN_VALID_PICKS
+                and holdout_accuracy_gain >= 0.0
+            )
+        )
     )
 
     return {
         "backtest_path": str(filepath),
         "train_dates": int(train_df["game_date"].dt.date.nunique()),
         "validation_dates": int(valid_df["game_date"].dt.date.nunique()),
+        "holdout_dates": int(holdout_df["game_date"].dt.date.nunique()) if not holdout_df.empty else 0,
         "train_rows": int(len(train_df)),
         "validation_rows": int(len(valid_df)),
+        "holdout_rows": int(len(holdout_df)),
         "current": current_eval,
         "candidate": candidate_eval,
+        "holdout_current": holdout_current,
+        "holdout_candidate": holdout_candidate,
         "recommendations": tuned["recommendations"],
         "candidate_floors": tuned["floors"],
         "should_apply": should_apply,
         "reason": (
             f"validation accuracy {candidate_accuracy:.3f} vs {current_accuracy:.3f}, "
-            f"selected {candidate_selected} vs {current_selected}"
+            f"selected {candidate_selected} vs {current_selected}, "
+            f"holdout delta {holdout_accuracy_gain:.3f}"
         ),
     }
 
@@ -675,7 +771,7 @@ def analyze_backtest_model(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
     if df.empty:
         return {"error": "No graded model-tuning rows found in the backtest file."}
 
-    train_df, valid_df = split_backtest_dataframe(df)
+    train_df, valid_df, holdout_df = split_backtest_dataframe_three_way(df)
     if valid_df.empty:
         return {"error": "Not enough distinct backtest dates to build a validation split."}
 
@@ -684,26 +780,42 @@ def analyze_backtest_model(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
 
     current_eval = evaluate_model_weights(valid_df, current_weights)
     candidate_eval = evaluate_model_weights(valid_df, tuned["weights"])
+    holdout_current = evaluate_model_weights(holdout_df, current_weights) if not holdout_df.empty else {}
+    holdout_candidate = evaluate_model_weights(holdout_df, tuned["weights"]) if not holdout_df.empty else {}
 
     current_log_loss = _metric_or_default(current_eval, "log_loss")
     candidate_log_loss = _metric_or_default(candidate_eval, "log_loss")
     current_mae = _metric_or_default(current_eval, "mae")
     candidate_mae = _metric_or_default(candidate_eval, "mae")
+    holdout_log_loss_gain = _metric_or_default(holdout_current, "log_loss") - _metric_or_default(holdout_candidate, "log_loss")
+    holdout_mae_delta = _metric_or_default(holdout_candidate, "mae") - _metric_or_default(holdout_current, "mae")
 
     should_apply = (
         candidate_eval.get("rows", 0) >= MODEL_MIN_VALID_ROWS
         and (current_log_loss - candidate_log_loss) >= MODEL_MIN_LOGLOSS_GAIN
         and (candidate_mae - current_mae) <= MODEL_MAX_MAE_REGRESSION
+        and (
+            holdout_df.empty
+            or (
+                holdout_candidate.get("rows", 0) >= MODEL_MIN_VALID_ROWS
+                and holdout_log_loss_gain >= 0.0
+                and holdout_mae_delta <= MODEL_MAX_MAE_REGRESSION
+            )
+        )
     )
 
     return {
         "backtest_path": str(filepath),
         "train_dates": int(train_df["game_date"].dt.date.nunique()),
         "validation_dates": int(valid_df["game_date"].dt.date.nunique()),
+        "holdout_dates": int(holdout_df["game_date"].dt.date.nunique()) if not holdout_df.empty else 0,
         "train_rows": int(len(train_df)),
         "validation_rows": int(len(valid_df)),
+        "holdout_rows": int(len(holdout_df)),
         "current": current_eval,
         "candidate": candidate_eval,
+        "holdout_current": holdout_current,
+        "holdout_candidate": holdout_candidate,
         "recommendations": tuned["recommendations"],
         "candidate_weights": {
             "prop_type_offsets": tuned["weights"].get("prop_type_offsets", {}),
@@ -715,7 +827,8 @@ def analyze_backtest_model(filepath: str = DEFAULT_RESULTS_PATH) -> dict:
         "should_apply": should_apply,
         "reason": (
             f"validation log loss {candidate_log_loss:.4f} vs {current_log_loss:.4f}, "
-            f"mae {candidate_mae:.4f} vs {current_mae:.4f}"
+            f"mae {candidate_mae:.4f} vs {current_mae:.4f}, "
+            f"holdout log-loss delta {holdout_log_loss_gain:.4f}"
         ),
     }
 
@@ -753,6 +866,62 @@ def apply_candidate_model(analysis: dict) -> dict:
     description = "offline model tuning from historical backtest"
     save_path = save_weights(weights, version, description)
     return {"applied": True, "version": version, "path": save_path, "reason": analysis.get("reason")}
+
+
+def optimize_floors(backtest_path: str = DEFAULT_RESULTS_PATH) -> dict:
+    """
+    Compatibility wrapper for automation scripts.
+
+    Returns a lightweight status payload without mutating tracked weights.
+    """
+    analysis = analyze_backtest_floors(backtest_path)
+    if analysis.get("error"):
+        return {"status": "error", "reason": analysis["error"], "changes": {}}
+    if not analysis.get("should_apply"):
+        return {
+            "status": "no_change",
+            "reason": analysis.get("reason"),
+            "changes": {},
+            "analysis": analysis,
+        }
+    current = load_current_weights().get("per_prop_confidence_floors", {})
+    candidate = analysis.get("candidate_floors", {})
+    changes = {
+        key: value
+        for key, value in candidate.items()
+        if round(float(current.get(key, 0.0)), 4) != round(float(value), 4)
+    }
+    return {
+        "status": "updated" if changes else "no_change",
+        "reason": analysis.get("reason"),
+        "changes": changes,
+        "analysis": analysis,
+    }
+
+
+def tune_model_parameters(backtest_path: str = DEFAULT_RESULTS_PATH) -> dict:
+    """
+    Compatibility wrapper for automation scripts.
+
+    Returns only the candidate overrides that should be written to runtime
+    weights if holdout gates pass.
+    """
+    analysis = analyze_backtest_model(backtest_path)
+    if analysis.get("error"):
+        return {"status": "error", "reason": analysis["error"], "changes": {}}
+    if not analysis.get("should_apply"):
+        return {
+            "status": "no_change",
+            "reason": analysis.get("reason"),
+            "changes": {},
+            "analysis": analysis,
+        }
+    return {
+        "status": "updated",
+        "reason": analysis.get("reason"),
+        "changes": analysis.get("candidate_weights", {}),
+        "analysis": analysis,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

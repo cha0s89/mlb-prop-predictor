@@ -4,9 +4,11 @@ Fetches game-time weather forecasts from Open-Meteo (free, no API key).
 Calculates weather impact adjustments for prop predictions.
 """
 
-import requests
-import pandas as pd
+import math
 from datetime import datetime
+
+import pandas as pd
+import requests
 
 
 # MLB stadium coordinates and dome status
@@ -41,6 +43,44 @@ STADIUMS = {
     "TEX": {"name": "Globe Life Field", "lat": 32.7512, "lon": -97.0832, "dome": True},
     "TOR": {"name": "Rogers Centre", "lat": 43.6414, "lon": -79.3894, "dome": True},
     "WSH": {"name": "Nationals Park", "lat": 38.8730, "lon": -77.0074, "dome": False},
+}
+
+# Approximate home-plate-to-center-field bearings in degrees.
+# Source: publicly documented ballpark orientation maps. Values are coarse but
+# sufficient to distinguish tailwind, headwind, and crosswind relative to play.
+STADIUM_CENTER_FIELD_AZIMUTH = {
+    "ARI": 0.0,
+    "ATL": 22.5,
+    "BAL": 22.5,
+    "BOS": 45.0,
+    "CHC": 22.5,
+    "CWS": 135.0,
+    "CIN": 112.5,
+    "CLE": 0.0,
+    "COL": 0.0,
+    "DET": 157.5,
+    "HOU": 337.5,
+    "KC": 45.0,
+    "LAA": 45.0,
+    "LAD": 22.5,
+    "MIA": 135.0,
+    "MIL": 135.0,
+    "MIN": 90.0,
+    "NYM": 22.5,
+    "NYY": 67.5,
+    "OAK": 67.5,
+    "PHI": 13.0,
+    "PIT": 112.5,
+    "SD": 0.0,
+    "SEA": 45.0,
+    "SF": 90.0,
+    "STL": 67.5,
+    "TB": 45.0,
+    "TEX": 135.0,
+    "TOR": 0.0,
+    "WSH": 22.5,
+    # Temporary Sacramento home for the Athletics.
+    "ATH": 45.0,
 }
 
 # Common team abbreviation aliases
@@ -152,9 +192,12 @@ def fetch_game_weather(team: str, game_time: datetime = None) -> dict:
     wind_dir = hourly.get("wind_direction_10m", [0])[idx]
     precip = hourly.get("precipitation_probability", [0])[idx]
 
+    field_azimuth = STADIUM_CENTER_FIELD_AZIMUTH.get(team)
+    wind_context = _classify_field_relative_wind(wind_mph, wind_dir, field_azimuth)
+
     # Calculate weather adjustments
     offense_mult, hr_mult, k_mult = _calculate_weather_impact(
-        temp, wind_mph, wind_dir, humidity, stadium
+        temp, wind_mph, wind_dir, humidity, stadium, field_azimuth
     )
 
     wind_label = _wind_direction_label(wind_dir)
@@ -168,14 +211,71 @@ def fetch_game_weather(team: str, game_time: datetime = None) -> dict:
         "is_dome": False,
         "precip_chance": round(precip, 1),
         "stadium": stadium["name"],
+        "center_field_azimuth": field_azimuth,
         "weather_offense_mult": round(offense_mult, 4),
         "weather_hr_mult": round(hr_mult, 4),
         "weather_k_mult": round(k_mult, 4),
+        **wind_context,
+    }
+
+
+def _angle_delta(a: float, b: float) -> float:
+    """Return the signed shortest-path difference between two bearings."""
+    return ((a - b + 180.0) % 360.0) - 180.0
+
+
+def _classify_field_relative_wind(
+    wind_mph: float,
+    wind_dir: float,
+    field_azimuth: float | None,
+) -> dict:
+    """
+    Convert meteorological wind direction into baseball terms.
+
+    Open-Meteo reports the direction the wind is coming FROM. Baseball impact
+    depends on where the wind is blowing TO relative to center field.
+    """
+    if field_azimuth is None:
+        return {
+            "wind_to_center_mph": 0.0,
+            "wind_in_from_center_mph": 0.0,
+            "crosswind_mph": 0.0,
+            "wind_field_relation": "unknown",
+            "wind_relative_degrees": None,
+        }
+
+    try:
+        wind_to_deg = (float(wind_dir) + 180.0) % 360.0
+        rel = _angle_delta(wind_to_deg, float(field_azimuth))
+        tail_component = float(wind_mph) * math.cos(math.radians(rel))
+        cross_component = float(wind_mph) * math.sin(math.radians(rel))
+    except (TypeError, ValueError):
+        return {
+            "wind_to_center_mph": 0.0,
+            "wind_in_from_center_mph": 0.0,
+            "crosswind_mph": 0.0,
+            "wind_field_relation": "unknown",
+            "wind_relative_degrees": None,
+        }
+
+    if abs(rel) <= 35:
+        relation = "out"
+    elif abs(rel) >= 145:
+        relation = "in"
+    else:
+        relation = "cross"
+
+    return {
+        "wind_to_center_mph": round(max(tail_component, 0.0), 2),
+        "wind_in_from_center_mph": round(max(-tail_component, 0.0), 2),
+        "crosswind_mph": round(abs(cross_component), 2),
+        "wind_field_relation": relation,
+        "wind_relative_degrees": round(rel, 1),
     }
 
 
 def _calculate_weather_impact(temp: float, wind_mph: float, wind_dir: float,
-                                humidity: float, stadium: dict) -> tuple:
+                                humidity: float, stadium: dict, field_azimuth: float | None) -> tuple:
     """
     Calculate weather multipliers for offense, HR, and K props.
 
@@ -189,21 +289,23 @@ def _calculate_weather_impact(temp: float, wind_mph: float, wind_dir: float,
     temp_offense_adj = 1.0 + (temp_delta * 0.02 * 0.5)  # ~1% per degree C for general offense
     temp_hr_adj = 1.0 + (temp_delta * 0.02)  # ~2% per degree C for HR
 
-    # Wind effect (simplified - would need stadium orientation for full model)
-    # Positive = offense boost, negative = suppresses
-    wind_adj = 1.0
-    if wind_mph > 8:
-        # Very rough: assume slight boost for high winds (increases uncertainty)
-        wind_adj = 1.0 + (wind_mph - 8) * 0.005
+    wind_ctx = _classify_field_relative_wind(wind_mph, wind_dir, field_azimuth)
+    wind_out_factor = min(wind_ctx["wind_to_center_mph"] / 18.0, 1.0)
+    wind_in_factor = min(wind_ctx["wind_in_from_center_mph"] / 18.0, 1.0)
+    cross_factor = min(wind_ctx["crosswind_mph"] / 20.0, 1.0)
+
+    wind_offense_adj = 1.0 + (wind_out_factor * 0.035) - (wind_in_factor * 0.03) + (cross_factor * 0.005)
+    wind_hr_adj = 1.0 + (wind_out_factor * 0.08) - (wind_in_factor * 0.08) - (cross_factor * 0.01)
+    wind_k_adj = 1.0 - (wind_out_factor * 0.015) + (wind_in_factor * 0.02)
 
     # Cold weather slightly increases K rate (less grip, tighter zone)
     k_adj = 1.0
     if temp < 55:
         k_adj = 1.0 + (55 - temp) * 0.003
 
-    offense_mult = max(0.85, min(1.20, temp_offense_adj * wind_adj))
-    hr_mult = max(0.80, min(1.35, temp_hr_adj * wind_adj))
-    k_mult = max(0.95, min(1.10, k_adj))
+    offense_mult = max(0.85, min(1.20, temp_offense_adj * wind_offense_adj))
+    hr_mult = max(0.80, min(1.35, temp_hr_adj * wind_hr_adj))
+    k_mult = max(0.95, min(1.10, k_adj * wind_k_adj))
 
     return offense_mult, hr_mult, k_mult
 
@@ -262,29 +364,38 @@ def get_stat_specific_weather_adjustment(weather: dict, stat_internal: str) -> f
         except (ValueError, TypeError):
             pass
 
-    # Wind effect
+    # Wind effect: prefer field-relative components derived from stadium orientation.
     if wind_speed and wind_speed > 5:
         try:
             wind_speed = float(wind_speed)
-            wind_factor = min(wind_speed / 15.0, 1.0)  # Cap at 15 mph
+            tailwind = float(weather.get("wind_to_center_mph", 0.0) or 0.0)
+            headwind = float(weather.get("wind_in_from_center_mph", 0.0) or 0.0)
+            crosswind = float(weather.get("crosswind_mph", 0.0) or 0.0)
+            if not (tailwind or headwind or crosswind):
+                wind_factor = min(wind_speed / 15.0, 1.0)
+                tailwind = wind_speed if any(d in wind_dir for d in ["out", "left", "right", "center"]) else 0.0
+                headwind = wind_speed if "in" in wind_dir else 0.0
+                crosswind = wind_speed if not tailwind and not headwind else 0.0
+                tail_factor = min(tailwind / 15.0, 1.0)
+                head_factor = min(headwind / 15.0, 1.0)
+                cross_factor = min(crosswind / 20.0, 1.0)
+            else:
+                tail_factor = min(tailwind / 18.0, 1.0)
+                head_factor = min(headwind / 18.0, 1.0)
+                cross_factor = min(crosswind / 20.0, 1.0)
 
-            blowing_out = any(d in wind_dir for d in ["out", "left", "right", "center"])
-            blowing_in = "in" in wind_dir
-
-            if blowing_out:
-                if stat_internal in ("total_bases", "home_runs"):
-                    mult *= 1.0 + wind_factor * 0.05  # Up to +5%
-                elif stat_internal in ("hits", "hits_runs_rbis"):
-                    mult *= 1.0 + wind_factor * 0.015
-                elif stat_internal in ("earned_runs",):
-                    mult *= 1.0 + wind_factor * 0.03
-            elif blowing_in:
-                if stat_internal in ("total_bases", "home_runs"):
-                    mult *= 1.0 - wind_factor * 0.05  # Up to -5%
-                elif stat_internal in ("earned_runs",):
-                    mult *= 1.0 - wind_factor * 0.025
-                elif stat_internal in ("pitcher_strikeouts",):
-                    mult *= 1.0 + wind_factor * 0.01  # Slight K boost when wind suppresses offense
+            if stat_internal in ("total_bases", "home_runs"):
+                mult *= 1.0 + tail_factor * 0.08 - head_factor * 0.08 - cross_factor * 0.01
+            elif stat_internal in ("hits", "singles", "doubles"):
+                mult *= 1.0 + tail_factor * 0.03 - head_factor * 0.025 + cross_factor * 0.01
+            elif stat_internal in ("hits_runs_rbis", "rbis", "runs", "hitter_fantasy_score"):
+                mult *= 1.0 + tail_factor * 0.045 - head_factor * 0.04 + cross_factor * 0.012
+            elif stat_internal in ("earned_runs", "hits_allowed"):
+                mult *= 1.0 + tail_factor * 0.055 - head_factor * 0.045 + cross_factor * 0.015
+            elif stat_internal in ("pitcher_strikeouts", "batter_strikeouts"):
+                mult *= 1.0 - tail_factor * 0.02 + head_factor * 0.025
+            elif stat_internal in ("pitching_outs",):
+                mult *= 1.0 - tail_factor * 0.015 + head_factor * 0.02
         except (ValueError, TypeError):
             pass
 
@@ -300,6 +411,12 @@ def _default_weather(stadium_name: str = "Unknown") -> dict:
         "is_dome": False,
         "precip_chance": 0.0,
         "stadium": stadium_name,
+        "center_field_azimuth": None,
+        "wind_to_center_mph": 0.0,
+        "wind_in_from_center_mph": 0.0,
+        "crosswind_mph": 0.0,
+        "wind_field_relation": "unknown",
+        "wind_relative_degrees": None,
         "weather_offense_mult": 1.0,
         "weather_hr_mult": 1.0,
         "weather_k_mult": 1.0,

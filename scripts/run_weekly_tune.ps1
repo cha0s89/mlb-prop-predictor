@@ -14,6 +14,7 @@ try {
         & $venvActivate
     }
 
+    $env:PYTHONUTF8 = "1"
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Starting weekly tune..."
     python scripts/weekly_tune.py @args
     $exitCode = $LASTEXITCODE

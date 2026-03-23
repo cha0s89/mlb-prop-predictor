@@ -29,6 +29,11 @@ from zoneinfo import ZoneInfo
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
+os.environ.setdefault("PYTHONUTF8", "1")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 LOG_DIR = PROJECT_ROOT / "logs"
@@ -55,6 +60,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Weekly offline model tuning")
     parser.add_argument("--dry-run", action="store_true",
                         help="Compute optimal params but don't save")
+    parser.add_argument("--backtest-path", default="data/backtest/backtest_2025.json",
+                        help="Backtest results file to analyze")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -82,12 +89,16 @@ def main() -> int:
     try:
         from src.offline_tuner import optimize_floors
         logger.info("Phase 1: Optimizing confidence floors...")
-        floor_result = optimize_floors()
+        floor_result = optimize_floors(backtest_path=args.backtest_path)
+        if floor_result.get("status") == "error":
+            raise RuntimeError(floor_result.get('reason', 'unknown floor optimization error'))
         if floor_result.get("status") == "updated":
             logger.info("  Floor optimization produced updates: %s",
                         json.dumps(floor_result.get("changes", {}), indent=2))
         else:
-            logger.info("  Floor optimization: %s", floor_result.get("status", "no change"))
+            logger.info("  Floor optimization: %s (%s)",
+                        floor_result.get("status", "no change"),
+                        floor_result.get("reason", ""))
     except Exception as exc:
         errors.append(f"Floor optimization: {exc}")
         logger.error("Phase 1 failed: %s", exc, exc_info=True)
@@ -96,12 +107,16 @@ def main() -> int:
     try:
         from src.offline_tuner import tune_model_parameters
         logger.info("Phase 2: Tuning model parameters...")
-        model_result = tune_model_parameters()
+        model_result = tune_model_parameters(backtest_path=args.backtest_path)
+        if model_result.get("status") == "error":
+            raise RuntimeError(model_result.get("reason", "unknown model tuning error"))
         if model_result.get("status") == "updated":
             logger.info("  Model tuning produced updates for: %s",
                         list(model_result.get("changes", {}).keys()))
         else:
-            logger.info("  Model tuning: %s", model_result.get("status", "no change"))
+            logger.info("  Model tuning: %s (%s)",
+                        model_result.get("status", "no change"),
+                        model_result.get("reason", ""))
     except ImportError:
         logger.info("Phase 2: tune_model_parameters not available, skipping")
     except Exception as exc:

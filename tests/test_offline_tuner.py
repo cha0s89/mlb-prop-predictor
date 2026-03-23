@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -10,6 +11,8 @@ from src.autolearn import get_baseline_weights
 from src.offline_tuner import (
     evaluate_floors,
     evaluate_model_weights,
+    load_backtest_dataframe,
+    load_model_backtest_dataframe,
     optimize_confidence_floors,
     optimize_model_parameters,
 )
@@ -110,6 +113,59 @@ class OfflineTunerTests(unittest.TestCase):
         self.assertIn("log_loss", metrics)
         self.assertIn("mae", metrics)
         self.assertIn("total_bases", metrics["by_prop"])
+
+    def test_model_tuner_supports_expanded_prop_families(self):
+        rows = []
+        for i in range(220):
+            rows.append({
+                "game_date": pd.Timestamp("2025-04-01") + pd.Timedelta(days=i // 8),
+                "prop_type": "earned_runs",
+                "projection": 2.4,
+                "line": 1.5,
+                "actual": 1.2 + (0.1 if i % 2 else -0.1),
+                "actual_over": 0.0,
+            })
+        train_df = pd.DataFrame(rows)
+
+        tuned = optimize_model_parameters(train_df, get_baseline_weights())
+
+        self.assertIn("earned_runs", tuned["weights"]["prop_type_offsets"])
+        self.assertLess(tuned["weights"]["prop_type_offsets"]["earned_runs"], 0.0)
+
+    def test_backtest_loaders_keep_new_prop_families(self):
+        sample_rows = [
+            {
+                "game_date": "2025-06-01",
+                "prop_type": "earned_runs",
+                "projection": 2.0,
+                "line": 1.5,
+                "actual": 1.0,
+                "pick": "LESS",
+                "confidence": 0.64,
+                "result": "W",
+                "plate_appearances": 0,
+                "innings_pitched": 6.0,
+            },
+            {
+                "game_date": "2025-06-01",
+                "prop_type": "hits_runs_rbis",
+                "projection": 2.1,
+                "line": 1.5,
+                "actual": 3.0,
+                "pick": "MORE",
+                "confidence": 0.61,
+                "result": "W",
+                "plate_appearances": 4,
+                "innings_pitched": 0.0,
+            },
+        ]
+
+        with patch("src.offline_tuner.load_results", return_value=sample_rows):
+            floor_df = load_backtest_dataframe("unused.json")
+            model_df = load_model_backtest_dataframe("unused.json")
+
+        self.assertEqual(set(floor_df["prop_type"]), {"earned_runs", "hits_runs_rbis"})
+        self.assertEqual(set(model_df["prop_type"]), {"earned_runs", "hits_runs_rbis"})
 
 
 if __name__ == "__main__":

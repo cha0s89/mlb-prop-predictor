@@ -1,0 +1,388 @@
+{
+  "version": "v019",
+  "description": "offline model tuning from historical backtest",
+  "created_at": "2026-03-23T16:14:25.755079+00:00",
+  "confidence_thresholds": {
+    "A": 0.7,
+    "B": 0.62,
+    "C": 0.57,
+    "D": 0.0
+  },
+  "direction_bias": {
+    "more_multiplier": 1.0,
+    "less_multiplier": 1.0
+  },
+  "prop_type_offsets": {
+    "pitcher_strikeouts": 0.4,
+    "batter_strikeouts": 0.0,
+    "hits": 0.05,
+    "total_bases": -0.0,
+    "home_runs": -0.15,
+    "rbis": 0.0,
+    "runs": 0.0,
+    "stolen_bases": 0.0,
+    "hitter_fantasy_score": 0.0,
+    "hits_runs_rbis": 0.0,
+    "pitching_outs": 0.0,
+    "earned_runs": 0.0,
+    "walks_allowed": 0.0,
+    "walks": 0.0,
+    "hits_allowed": 0.0,
+    "singles": 0.0,
+    "doubles": 0.0
+  },
+  "per_prop_confidence_floors": {
+    "hits_more": 0.9,
+    "hits_less": 0.72,
+    "total_bases_more": 0.9,
+    "total_bases_less": 0.64,
+    "pitcher_strikeouts_more": 0.66,
+    "pitcher_strikeouts_less": 0.66,
+    "hitter_fantasy_score_more": 0.56,
+    "hitter_fantasy_score_less": 0.68,
+    "pitching_outs_more": 0.6,
+    "pitching_outs_less": 0.6,
+    "earned_runs_more": 0.6,
+    "earned_runs_less": 0.6,
+    "walks_allowed_more": 0.6,
+    "walks_allowed_less": 0.6,
+    "hits_allowed_more": 0.6,
+    "hits_allowed_less": 0.6,
+    "batter_strikeouts_more": 0.6,
+    "batter_strikeouts_less": 0.6,
+    "walks_more": 0.6,
+    "walks_less": 0.6,
+    "rbis_more": 0.6,
+    "rbis_less": 0.6,
+    "runs_more": 0.6,
+    "runs_less": 0.6,
+    "singles_more": 0.6,
+    "singles_less": 0.6,
+    "doubles_more": 0.6,
+    "doubles_less": 0.6,
+    "hits_runs_rbis_more": 0.6,
+    "hits_runs_rbis_less": 0.6
+  },
+  "factor_weights": {
+    "statcast_blend": 1.0,
+    "bvp_matchup": 1.0,
+    "platoon_split": 1.0,
+    "park_factor": 1.0,
+    "weather": 1.0,
+    "umpire": 1.0,
+    "opposing_quality": 1.0,
+    "barrel_rate": 1.0
+  },
+  "variance_ratios": {
+    "pitcher_strikeouts": 2.2,
+    "batter_strikeouts": 1.4,
+    "hits": 2.5875,
+    "total_bases": 1.225,
+    "home_runs": 1.19,
+    "rbis": 1.6,
+    "runs": 1.4,
+    "stolen_bases": 2.5,
+    "hitter_fantasy_score": 1.96,
+    "hits_runs_rbis": 1.5,
+    "pitching_outs": 1.3,
+    "earned_runs": 2.2,
+    "walks_allowed": 1.8,
+    "walks": 1.8,
+    "hits_allowed": 1.5,
+    "singles": 1.3,
+    "doubles": 2.5
+  },
+  "calibration_blend_weights": {
+    "hits": 0.0,
+    "total_bases": 0.5,
+    "pitcher_strikeouts": 0.5,
+    "hitter_fantasy_score": 0.7
+  },
+  "confidence_shrinkage": {
+    "default": 0.7,
+    "hits": 1.0,
+    "hitter_fantasy_score": 0.65,
+    "home_runs": 0.95,
+    "pitcher_strikeouts": 0.8,
+    "total_bases": 0.65
+  },
+  "seasonal_spring_blend": {
+    "post_open_decay_days": 60,
+    "hitter_sample_stabilization": 220,
+    "pitcher_sample_stabilization": 45,
+    "prop_strength": {
+      "hits": 1.0,
+      "total_bases": 1.15,
+      "home_runs": 1.2,
+      "rbis": 1.05,
+      "runs": 1.05,
+      "hits_runs_rbis": 1.1,
+      "hitter_fantasy_score": 1.1,
+      "pitcher_strikeouts": 1.05,
+      "pitching_outs": 0.9,
+      "earned_runs": 1.0,
+      "hits_allowed": 1.0,
+      "walks_allowed": 0.95
+    }
+  },
+  "metadata": {
+    "parent_version": "v017",
+    "adjustment_count": 0,
+    "total_picks_analyzed": 0,
+    "accuracy_at_creation": null,
+    "total_plays_analyzed": 128353,
+    "backtest_range": "2025-04-01 to 2025-09-30",
+    "optimization_methodology": "Four-stage optimization: (1) v014 distributions/offsets. (2) v015 projection formulas. (3) v016 empirical calibration layer. (4) v017 re-optimized confidence floors for post-calibration probability landscape via confidence-bucket + quintile analysis.",
+    "changes_from_v016": [
+      "FLOORS: hits_less 0.60 -> 0.72 (weak 0.62-0.70 picks filtered: +0.9pp, -1.5K picks)",
+      "FLOORS: hits_more 0.65 -> 0.90 (effectively disabled, only 2 picks)",
+      "FLOORS: pk_more 0.58 -> 0.66 (63.8% -> 69.6%, strong accuracy gain)",
+      "FLOORS: pk_less 0.60 -> 0.66 (63.7% -> 69.2%, strong accuracy gain)",
+      "FLOORS: tb_more 0.60 -> 0.90 (disabled, <10 picks in backtest)",
+      "FLOORS: tb_less 0.62 -> 0.64 (63.5% -> 65.8%, tighter filtering)",
+      "FLOORS: fs_less 0.62 -> 0.68 (60.7% -> 61.7%, removes weak buckets)",
+      "FLOORS: fs_more 0.62 -> 0.56 (LOWERED \u2014 59.3% on 118 -> 59.9% on 232, more volume at same accuracy)"
+    ],
+    "verified_accuracies_v017": {
+      "hits_less": "72.5% (26,875 picks) \u2014 tighter floor catches weak near-line picks",
+      "total_bases_less": "65.8% (281 picks) \u2014 aggressive floor keeps only high-edge picks",
+      "pitcher_strikeouts_more": "69.6% (507 picks) \u2014 nearly 70% accuracy!",
+      "pitcher_strikeouts_less": "69.2% (429 picks) \u2014 massive jump from 63.7%",
+      "hitter_fantasy_score_less": "61.7% (1,715 picks) \u2014 up from 60.7%",
+      "hitter_fantasy_score_more": "59.9% (232 picks) \u2014 doubled volume vs v016",
+      "combined_accuracy": "71.7% across all props (30,039 picks)"
+    },
+    "accuracy_progression": {
+      "v011_baseline": "~61% combined on all picks",
+      "v014_distribution_fix": "65.1% combined (58,784 picks)",
+      "v015_projection_fix": "64.1% combined (65,176 picks)",
+      "v016_empirical_calibration": "69.9% combined (37,467 picks)",
+      "v017_floor_reoptimization": "71.7% combined (30,039 picks)"
+    },
+    "calibration_blend_weights": {
+      "hits": 0.0,
+      "total_bases": 0.9,
+      "pitcher_strikeouts": 0.0,
+      "hitter_fantasy_score": 1.0
+    },
+    "daily_pick_volume_estimate": "~167 picks/day across all props (30,039 picks / 180 game days)",
+    "profitable_bets": [
+      "Hits LESS: 72.5% \u2014 highest volume AND accuracy, backbone of the model",
+      "Pitcher Ks MORE: 69.6% \u2014 near-70% accuracy, very strong signal",
+      "Pitcher Ks LESS: 69.2% \u2014 equally strong, complements MORE",
+      "Total Bases LESS: 65.8% \u2014 excellent accuracy, lower volume",
+      "Fantasy Score LESS: 61.7% \u2014 solid edge, good daily volume",
+      "Fantasy Score MORE: 59.9% \u2014 lower edge but decent volume after floor reduction"
+    ],
+    "avoid_bets": [
+      "Home Runs: removed (structural model limitation)",
+      "Stolen Bases: removed (too rare/binary)",
+      "Hits MORE / TB MORE: effectively disabled (too few picks, no reliable edge)",
+      "Dead zones: auto-filtered by empirical calibration + floors"
+    ],
+    "offline_model_tuning": {
+      "source_backtest": "data/backtest/backtest_2025.json",
+      "train_rows": 100912,
+      "validation_rows": 33255,
+      "applied_at": "2026-03-23T16:14:25.753980+00:00",
+      "reason": "validation log loss 0.5523 vs 0.5577, mae 1.8588 vs 1.9912, holdout log-loss delta 0.0044",
+      "recommendations": {
+        "hits": {
+          "offset": {
+            "from": 0.0,
+            "to": 0.05,
+            "train_mae": 0.6938,
+            "train_bias": 0.0679
+          },
+          "variance": {
+            "from": 2.25,
+            "to": 2.5875,
+            "train_log_loss": 0.5206,
+            "train_brier": 0.1691
+          },
+          "calibration_blend": {
+            "from": 0.0,
+            "to": 0.0,
+            "train_log_loss": 0.5206
+          },
+          "confidence_shrinkage": {
+            "from": 1.0,
+            "to": 1.0,
+            "train_log_loss": 0.5206
+          }
+        },
+        "hitter_fantasy_score": {
+          "offset": {
+            "from": -2.5,
+            "to": 0.0,
+            "train_mae": 5.1955,
+            "train_bias": -1.8542
+          },
+          "variance": {
+            "from": 2.8,
+            "to": 1.96,
+            "train_log_loss": 0.639,
+            "train_brier": 0.2235
+          },
+          "calibration_blend": {
+            "from": 0.8,
+            "to": 0.7,
+            "train_log_loss": 0.6389
+          },
+          "confidence_shrinkage": {
+            "from": 0.7,
+            "to": 0.65,
+            "train_log_loss": 0.6388
+          }
+        },
+        "home_runs": {
+          "offset": {
+            "from": -0.15,
+            "to": -0.15,
+            "train_mae": 0.1313,
+            "train_bias": -0.1101
+          },
+          "variance": {
+            "from": 1.4,
+            "to": 1.19,
+            "train_log_loss": 0.3591,
+            "train_brier": 0.1016
+          },
+          "confidence_shrinkage": {
+            "from": 1.0,
+            "to": 0.95,
+            "train_log_loss": 0.3542
+          }
+        },
+        "pitcher_strikeouts": {
+          "offset": {
+            "from": -0.4,
+            "to": 0.4,
+            "train_mae": 1.9266,
+            "train_bias": -0.0305
+          },
+          "calibration_blend": {
+            "from": 0.0,
+            "to": 0.5,
+            "train_log_loss": 0.677
+          },
+          "confidence_shrinkage": {
+            "from": 0.7,
+            "to": 0.8,
+            "train_log_loss": 0.6767
+          }
+        },
+        "total_bases": {
+          "offset": {
+            "from": -0.6,
+            "to": -0.0,
+            "train_mae": 1.2542,
+            "train_bias": -0.4844
+          },
+          "variance": {
+            "from": 1.75,
+            "to": 1.225,
+            "train_log_loss": 0.6447,
+            "train_brier": 0.2262
+          },
+          "calibration_blend": {
+            "from": 0.7,
+            "to": 0.5,
+            "train_log_loss": 0.6445
+          },
+          "confidence_shrinkage": {
+            "from": 0.7,
+            "to": 0.65,
+            "train_log_loss": 0.6445
+          }
+        }
+      }
+    },
+    "runtime_override_loaded": true
+  },
+  "distribution_params": {
+    "pitcher_strikeouts": {
+      "type": "betabinom",
+      "phi": 25
+    },
+    "hits": {
+      "type": "negbin",
+      "vr": 2.5875
+    },
+    "total_bases": {
+      "type": "negbin",
+      "vr": 1.225
+    },
+    "home_runs": {
+      "type": "negbin",
+      "vr": 1.19
+    },
+    "stolen_bases": {
+      "type": "negbin",
+      "vr": 2.5
+    },
+    "hitter_fantasy_score": {
+      "type": "gamma",
+      "vr": 1.96
+    },
+    "earned_runs": {
+      "type": "negbin",
+      "vr": 2.2
+    },
+    "batter_strikeouts": {
+      "type": "negbin",
+      "vr": 1.4
+    },
+    "walks_allowed": {
+      "type": "negbin",
+      "vr": 1.6
+    },
+    "hits_allowed": {
+      "type": "negbin",
+      "vr": 1.5
+    },
+    "rbis": {
+      "type": "negbin",
+      "vr": 1.8
+    },
+    "runs": {
+      "type": "negbin",
+      "vr": 1.7
+    },
+    "walks": {
+      "type": "negbin",
+      "vr": 1.5
+    },
+    "singles": {
+      "type": "negbin",
+      "vr": 1.3
+    },
+    "doubles": {
+      "type": "negbin",
+      "vr": 1.6
+    },
+    "pitching_outs": {
+      "type": "normal",
+      "vr": 1.3
+    },
+    "hits_runs_rbis": {
+      "type": "normal",
+      "vr": 1.5
+    }
+  },
+  "ensemble_weights": {
+    "sharp_odds": 0.65,
+    "projection": 0.3,
+    "recent_form": 0.05
+  },
+  "abs_adjustment_enabled": true,
+  "league_averages_2026": {
+    "k_rate": 0.22,
+    "bb_rate": 0.085,
+    "hit_rate": 0.245,
+    "hr_rate": 0.033,
+    "sb_rate": 0.018,
+    "avg_pa_per_game": 4.2,
+    "avg_bf_per_start": 23.5
+  }
+}

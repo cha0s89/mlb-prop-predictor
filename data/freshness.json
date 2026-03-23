@@ -1,17 +1,17 @@
 {
   "prizepicks_lines": {
-    "timestamp": "2026-03-22T20:58:30.912863",
-    "unix": 1774238310.9128635,
-    "details": "7915 projections"
+    "timestamp": "2026-03-23T08:00:06.338338",
+    "unix": 1774278006.3383386,
+    "details": "13003 projections"
   },
   "fangraphs_batting": {
-    "timestamp": "2026-03-20T17:40:24.453035",
-    "unix": 1774053624.453035,
+    "timestamp": "2026-03-23T02:02:08.454774",
+    "unix": 1774256528.4547744,
     "details": "season=2024, 651 players"
   },
   "fangraphs_pitching": {
-    "timestamp": "2026-03-20T17:40:24.892810",
-    "unix": 1774053624.8928106,
+    "timestamp": "2026-03-23T02:02:07.826772",
+    "unix": 1774256527.8267725,
     "details": "season=2024, 840 players"
   },
   "sharp_odds": {

@@ -16,10 +16,10 @@ Injury flags prevent the user from accidentally picking a player on the IL.
 Data source: MLB Stats API (statsapi.mlb.com) — completely free, no key needed.
 """
 
+import re
 import requests
 import unicodedata
-import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 from functools import lru_cache
 
@@ -52,6 +52,31 @@ FULL_WEIGHT_AB = 40
 
 # Request timeout so a hung API call doesn't freeze the app
 REQUEST_TIMEOUT = 10
+
+OPENING_DAY_BY_YEAR = {
+    2025: date(2025, 3, 27),
+    2026: date(2026, 3, 26),
+}
+
+SEASONAL_SPRING_DEFAULTS = {
+    "post_open_decay_days": 60,
+    "hitter_sample_stabilization": 220,
+    "pitcher_sample_stabilization": 45,
+    "prop_strength": {
+        "hits": 1.0,
+        "total_bases": 1.15,
+        "home_runs": 1.20,
+        "rbis": 1.05,
+        "runs": 1.05,
+        "hits_runs_rbis": 1.10,
+        "hitter_fantasy_score": 1.10,
+        "pitcher_strikeouts": 1.05,
+        "pitching_outs": 0.90,
+        "earned_runs": 1.00,
+        "hits_allowed": 1.00,
+        "walks_allowed": 0.95,
+    },
+}
 
 
 # ─────────────────────────────────────────────
@@ -374,6 +399,86 @@ def get_spring_form_multiplier(
         result["badge_label"] = f"ST Normal ({ab} AB, .{int(st_slg*1000):03d} SLG)"
 
     return result
+
+
+def get_opening_day_for_year(year: int) -> date:
+    """Return the configured Opening Day for a season year."""
+    return OPENING_DAY_BY_YEAR.get(year, date(year, 3, 28))
+
+
+def apply_seasonal_spring_blend(
+    base_multiplier: float,
+    *,
+    game_date: date | datetime | str | None = None,
+    current_sample: float = 0.0,
+    is_pitcher: bool = False,
+    prop_type: str | None = None,
+    config: dict | None = None,
+) -> float:
+    """
+    Decay spring influence as real regular-season sample arrives.
+
+    Preseason uses the full spring multiplier. After Opening Day the spring
+    effect fades both by days elapsed and by current-season sample size.
+    """
+    try:
+        base_multiplier = float(base_multiplier)
+    except (TypeError, ValueError):
+        return 1.0
+
+    if abs(base_multiplier - 1.0) < 1e-9:
+        return 1.0
+
+    cfg = dict(SEASONAL_SPRING_DEFAULTS)
+    if isinstance(config, dict):
+        for key in ("post_open_decay_days", "hitter_sample_stabilization", "pitcher_sample_stabilization"):
+            if key in config:
+                cfg[key] = config[key]
+        if isinstance(config.get("prop_strength"), dict):
+            merged_strength = dict(SEASONAL_SPRING_DEFAULTS["prop_strength"])
+            merged_strength.update(config["prop_strength"])
+            cfg["prop_strength"] = merged_strength
+
+    if isinstance(game_date, str):
+        try:
+            game_date = datetime.fromisoformat(game_date.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                game_date = datetime.strptime(game_date[:10], "%Y-%m-%d").date()
+            except ValueError:
+                game_date = date.today()
+    elif isinstance(game_date, datetime):
+        game_date = game_date.date()
+    elif game_date is None:
+        game_date = date.today()
+
+    opening_day = get_opening_day_for_year(game_date.year)
+    days_since_open = (game_date - opening_day).days
+    if days_since_open <= 0:
+        phase_scale = 1.0
+    else:
+        decay_days = max(float(cfg.get("post_open_decay_days", 60)), 1.0)
+        phase_scale = max(0.0, 1.0 - (days_since_open / decay_days))
+
+    stabilization = float(
+        cfg.get("pitcher_sample_stabilization" if is_pitcher else "hitter_sample_stabilization", 45 if is_pitcher else 220)
+    )
+    try:
+        current_sample = max(float(current_sample), 0.0)
+    except (TypeError, ValueError):
+        current_sample = 0.0
+    sample_scale = max(0.0, 1.0 - min(current_sample / max(stabilization, 1.0), 1.0))
+
+    strength = 1.0
+    if prop_type:
+        try:
+            strength = float(cfg.get("prop_strength", {}).get(prop_type, 1.0))
+        except (TypeError, ValueError):
+            strength = 1.0
+
+    net_scale = max(0.0, min(1.25, phase_scale * sample_scale * strength))
+    adjusted = 1.0 + ((base_multiplier - 1.0) * net_scale)
+    return round(max(MIN_SPRING_MULT, min(MAX_SPRING_MULT, adjusted)), 4)
 
 
 # ─────────────────────────────────────────────

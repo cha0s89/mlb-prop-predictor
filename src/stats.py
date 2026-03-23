@@ -4,11 +4,13 @@ Pulls batting and pitching stats from pybaseball (Statcast + FanGraphs).
 Uses caching to avoid hammering Baseball Savant.
 """
 
-import pandas as pd
-import numpy as np
+import logging
+import unicodedata
 from datetime import datetime, timedelta
 from functools import lru_cache
-import logging
+
+import numpy as np
+import pandas as pd
 
 try:
     from pybaseball import (
@@ -55,6 +57,15 @@ def _current_season() -> int:
     return now.year
 
 
+def _safe_console_text(text: str) -> str:
+    """Best-effort ASCII fallback for Windows consoles with non-UTF8 encodings."""
+    if not isinstance(text, str):
+        text = str(text)
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return " ".join(ascii_text.split()) or text
+
+
 def fetch_batting_leaders(season: int = None, min_pa: int = 50) -> pd.DataFrame:
     """
     Fetch FanGraphs batting leaderboard for the season.
@@ -66,13 +77,17 @@ def fetch_batting_leaders(season: int = None, min_pa: int = 50) -> pd.DataFrame:
     season = season or _current_season()
 
     # CRITICAL: Validate we're pulling the right season
-    try:
-        from src.freshness import validate_season_data, record_data_pull
-        sv = validate_season_data(season)
-        if sv.get("warning"):
-            print(f"[STALENESS WARNING] {sv['warning']}")
-    except ImportError:
-        pass
+    if season >= _current_season():
+        try:
+            from src.freshness import validate_season_data, record_data_pull
+            sv = validate_season_data(season)
+            if sv.get("warning"):
+                logging.getLogger(__name__).warning(
+                    "[STALENESS WARNING] %s",
+                    _safe_console_text(sv["warning"]),
+                )
+        except ImportError:
+            pass
 
     try:
         df = batting_stats(season, qual=min_pa)
@@ -101,13 +116,17 @@ def fetch_pitching_leaders(season: int = None, min_ip: int = 10) -> pd.DataFrame
     season = season or _current_season()
 
     # CRITICAL: Validate season
-    try:
-        from src.freshness import validate_season_data, record_data_pull
-        sv = validate_season_data(season)
-        if sv.get("warning"):
-            print(f"[STALENESS WARNING] {sv['warning']}")
-    except ImportError:
-        pass
+    if season >= _current_season():
+        try:
+            from src.freshness import validate_season_data, record_data_pull
+            sv = validate_season_data(season)
+            if sv.get("warning"):
+                logging.getLogger(__name__).warning(
+                    "[STALENESS WARNING] %s",
+                    _safe_console_text(sv["warning"]),
+                )
+        except ImportError:
+            pass
 
     try:
         df = pitching_stats(season, qual=min_ip)
