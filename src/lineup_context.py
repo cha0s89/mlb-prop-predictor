@@ -90,6 +90,19 @@ def _extract_metrics(row) -> dict[str, float]:
     }
 
 
+def _extract_profile_metrics(profile: dict[str, Any] | None) -> dict[str, float]:
+    profile = profile or {}
+    return {
+        "obp": _safe_float(profile.get("obp"), LEAGUE_DEFAULTS["obp"]),
+        "woba": _safe_float(profile.get("woba"), LEAGUE_DEFAULTS["woba"]),
+        "slg": _safe_float(profile.get("slg"), LEAGUE_DEFAULTS["slg"]),
+        "iso": _safe_float(profile.get("iso"), LEAGUE_DEFAULTS["iso"]),
+        "k_rate": _safe_float(profile.get("k_rate"), LEAGUE_DEFAULTS["k_rate"]),
+        "bb_rate": _safe_float(profile.get("bb_rate"), LEAGUE_DEFAULTS["bb_rate"]),
+        "sprint_speed": _safe_float(profile.get("sprint_speed"), LEAGUE_DEFAULTS["sprint_speed"]),
+    }
+
+
 def _mean_or_default(values: list[float], default_key: str) -> float:
     if not values:
         return LEAGUE_DEFAULTS[default_key]
@@ -146,6 +159,73 @@ def build_team_lineup_context(
 
     ordered = sorted(players, key=lambda item: item["batting_order"])
 
+    avg_k_rate = _mean_or_default([p["k_rate"] for p in ordered], "k_rate")
+    avg_obp = _mean_or_default([p["obp"] for p in ordered], "obp")
+    avg_woba = _mean_or_default([p["woba"] for p in ordered], "woba")
+    avg_slg = _mean_or_default([p["slg"] for p in ordered], "slg")
+    avg_iso = _mean_or_default([p["iso"] for p in ordered], "iso")
+
+    top = ordered[: min(6, len(ordered))]
+    bottom = ordered[-min(3, len(ordered)) :]
+    middle = ordered[2:7] if len(ordered) >= 5 else ordered
+
+    return {
+        "has_data": True,
+        "lineup_size": len(lineup),
+        "matched_count": len(ordered),
+        "avg_k_rate": round(avg_k_rate, 2),
+        "avg_obp": round(avg_obp, 3),
+        "avg_woba": round(avg_woba, 3),
+        "avg_slg": round(avg_slg, 3),
+        "avg_iso": round(avg_iso, 3),
+        "top6_k_rate": round(_mean_or_default([p["k_rate"] for p in top], "k_rate"), 2),
+        "top5_woba": round(_mean_or_default([p["woba"] for p in top[:5]], "woba"), 3),
+        "bottom3_k_rate": round(_mean_or_default([p["k_rate"] for p in bottom], "k_rate"), 2),
+        "lineup_depth_woba": round(_mean_or_default([p["woba"] for p in middle], "woba"), 3),
+        "players": ordered,
+    }
+
+
+def build_team_lineup_context_from_profiles(
+    lineup: list[dict],
+    profile_lookup: dict[str, dict[str, Any]],
+) -> dict:
+    """Return aggregate lineup context from pregame player profiles."""
+    if not lineup:
+        return {"has_data": False, "lineup_size": 0, "matched_count": 0}
+
+    players: list[dict[str, Any]] = []
+    for slot in sorted(lineup, key=lambda item: item.get("batting_order", 99)):
+        player_name = slot.get("player_name", "")
+        profile = profile_lookup.get(player_name)
+        if profile is None:
+            continue
+        players.append(
+            {
+                "player_name": player_name,
+                "batting_order": int(slot.get("batting_order", len(players) + 1) or len(players) + 1),
+                **_extract_profile_metrics(profile),
+            }
+        )
+
+    if not players:
+        return {
+            "has_data": False,
+            "lineup_size": len(lineup),
+            "matched_count": 0,
+            "avg_k_rate": LEAGUE_DEFAULTS["k_rate"],
+            "avg_obp": LEAGUE_DEFAULTS["obp"],
+            "avg_woba": LEAGUE_DEFAULTS["woba"],
+            "avg_slg": LEAGUE_DEFAULTS["slg"],
+            "avg_iso": LEAGUE_DEFAULTS["iso"],
+            "top6_k_rate": LEAGUE_DEFAULTS["k_rate"],
+            "top5_woba": LEAGUE_DEFAULTS["woba"],
+            "bottom3_k_rate": LEAGUE_DEFAULTS["k_rate"],
+            "lineup_depth_woba": LEAGUE_DEFAULTS["woba"],
+            "players": [],
+        }
+
+    ordered = sorted(players, key=lambda item: item["batting_order"])
     avg_k_rate = _mean_or_default([p["k_rate"] for p in ordered], "k_rate")
     avg_obp = _mean_or_default([p["obp"] for p in ordered], "obp")
     avg_woba = _mean_or_default([p["woba"] for p in ordered], "woba")

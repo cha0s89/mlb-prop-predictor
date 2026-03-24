@@ -6,7 +6,11 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.lineup_context import build_player_lineup_context, build_team_lineup_context
+from src.lineup_context import (
+    build_player_lineup_context,
+    build_team_lineup_context,
+    build_team_lineup_context_from_profiles,
+)
 
 
 class LineupContextTests(unittest.TestCase):
@@ -47,6 +51,22 @@ class LineupContextTests(unittest.TestCase):
         self.assertGreater(player_context["ahead_obp"], 0.39)
         self.assertGreater(player_context["behind_slg"], 0.43)
         self.assertGreater(player_context["team_avg_woba"], 0.35)
+
+    def test_team_context_can_be_built_from_walkforward_profiles(self):
+        profile_lookup = {
+            "Juan Soto": {"obp": 0.420, "woba": 0.405, "slg": 0.560, "iso": 0.230, "k_rate": 16.0, "bb_rate": 16.0},
+            "John Smith": {"obp": 0.380, "woba": 0.365, "slg": 0.520, "iso": 0.210, "k_rate": 18.0, "bb_rate": 11.0},
+            "Aaron Judge": {"obp": 0.410, "woba": 0.430, "slg": 0.620, "iso": 0.310, "k_rate": 25.0, "bb_rate": 15.0},
+            "Giancarlo Stanton": {"obp": 0.330, "woba": 0.335, "slg": 0.480, "iso": 0.210, "k_rate": 30.0, "bb_rate": 8.0},
+            "Anthony Volpe": {"obp": 0.310, "woba": 0.305, "slg": 0.390, "iso": 0.140, "k_rate": 22.0, "bb_rate": 7.0},
+        }
+
+        context = build_team_lineup_context_from_profiles(self.lineup, profile_lookup)
+
+        self.assertTrue(context["has_data"])
+        self.assertEqual(context["matched_count"], 5)
+        self.assertGreater(context["avg_obp"], 0.36)
+        self.assertGreater(context["top5_woba"], 0.35)
 
 
 if __name__ == "__main__":

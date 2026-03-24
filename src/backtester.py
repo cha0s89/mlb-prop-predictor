@@ -52,6 +52,10 @@ for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy
     os.environ.pop(var, None)
 
 # ── Project imports ──────────────────────────────────────────────────────────
+from src.lineup_context import (
+    build_player_lineup_context,
+    build_team_lineup_context_from_profiles,
+)
 from src.predictor import generate_prediction, _clear_weights_cache
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -117,6 +121,32 @@ PITCHER_BACKTEST_PROPS = {
     "walks_allowed",
     "hits_allowed",
 }
+
+
+def _progress_path_for_results(filepath: str) -> Path:
+    p = Path(filepath)
+    return p.with_name(f"{p.stem}_progress.json")
+
+
+def _atomic_json_write(payload, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_p = path.with_name(f"{path.name}.{os.getpid()}.{int(time.time() * 1000)}.tmp")
+    with open(temp_p, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)
+    for attempt in range(12):
+        try:
+            temp_p.replace(path)
+            return
+        except PermissionError:
+            if attempt == 11:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+
+
+def _write_backtest_progress(filepath: str, **payload) -> None:
+    progress_path = _progress_path_for_results(filepath)
+    payload["updated_at"] = datetime.now().isoformat()
+    _atomic_json_write(payload, progress_path)
 
 # FanGraphs column mapping — convert DF columns to batter_profile keys
 FANGRAPHS_BATTER_MAP = {
@@ -940,6 +970,26 @@ def backtest_single_day(game_date: str,
         )
 
         batters = extract_all_batters(boxscore)
+        lineup_by_team: dict[str, list[dict]] = {home_team: [], away_team: []}
+        batter_profiles: dict[str, dict] = {}
+
+        for batter in batters:
+            if batter.get("batting_order", 0) <= 0:
+                continue
+            lineup_by_team.setdefault(batter["team"], []).append(
+                {
+                    "player_name": batter["full_name"],
+                    "batting_order": batter.get("batting_order", 0),
+                }
+            )
+            profile = build_walkforward_profile(batter["full_name"], game_date, is_pitcher=False)
+            if profile is not None:
+                batter_profiles[batter["full_name"]] = profile
+
+        team_lineup_context = {
+            team: build_team_lineup_context_from_profiles(lineup, batter_profiles)
+            for team, lineup in lineup_by_team.items()
+        }
 
         # Get starting pitchers for context
         home_sp = extract_starting_pitcher(boxscore, "home")
@@ -957,7 +1007,7 @@ def backtest_single_day(game_date: str,
         for batter in batters:
             player_name = batter["full_name"]
             batter_team = batter["team"]
-            profile = build_walkforward_profile(player_name, game_date, is_pitcher=False)
+            profile = batter_profiles.get(player_name)
             if profile is None:
                 continue
 
@@ -967,6 +1017,11 @@ def backtest_single_day(game_date: str,
             opp_pitcher_profile = away_sp_profile if batter["game_side"] == "home" else home_sp_profile
             if batter["game_side"] != "home" and home_sp:
                 opp_pitcher_name = home_sp["full_name"]
+
+            batter_lineup_context = build_player_lineup_context(
+                player_name,
+                team_lineup_context.get(batter_team, {}),
+            )
 
             for prop_type in prop_types:
                 if prop_type in PITCHER_BACKTEST_PROPS:
@@ -983,6 +1038,7 @@ def backtest_single_day(game_date: str,
                         batter_profile=profile,
                         opp_pitcher_profile=opp_pitcher_profile,
                         park_team=park,
+                        batter_lineup_context=batter_lineup_context,
                     )
                 except Exception:
                     continue
@@ -1035,6 +1091,11 @@ def backtest_single_day(game_date: str,
                     "park_team": park,
                     "opp_pitcher": opp_pitcher_name,
                     "lineup_pos": batter.get("batting_order", 0),
+                    "team_lineup_woba": batter_lineup_context.get("team_avg_woba"),
+                    "ahead_obp": batter_lineup_context.get("ahead_obp"),
+                    "ahead_woba": batter_lineup_context.get("ahead_woba"),
+                    "behind_woba": batter_lineup_context.get("behind_woba"),
+                    "behind_slg": batter_lineup_context.get("behind_slg"),
                     "season_current_weight": profile.get("season_current_weight"),
                     "season_prior_equivalent": profile.get("season_prior_equivalent_pa"),
                     "plate_appearances": batter.get("pa", 0),
@@ -1054,6 +1115,7 @@ def backtest_single_day(game_date: str,
 
                 sp_name = sp["full_name"]
                 opponent = away_team if sp_side == "home" else home_team
+                opp_lineup_context = team_lineup_context.get(opponent, {})
 
                 for prop_type in pitcher_prop_types:
                     line = DEFAULT_LINES.get(prop_type, 1.5)
@@ -1066,6 +1128,7 @@ def backtest_single_day(game_date: str,
                             line=line,
                             pitcher_profile=pitcher_profile,
                             park_team=home_team,
+                            opp_lineup_context=opp_lineup_context,
                         )
                     except Exception:
                         continue
@@ -1112,6 +1175,8 @@ def backtest_single_day(game_date: str,
                     "has_park": pred.get("has_park"),
                     "opponent": opponent,
                     "park_team": home_team,
+                    "opp_lineup_k_rate": opp_lineup_context.get("avg_k_rate"),
+                    "opp_lineup_woba": opp_lineup_context.get("avg_woba"),
                     "season_current_weight": pitcher_profile.get("season_current_weight"),
                     "season_prior_equivalent": pitcher_profile.get("season_prior_equivalent_ip"),
                     "innings_pitched": sp.get("ip", 0.0),
@@ -1130,19 +1195,7 @@ def save_results(results: list[dict],
                  filepath: str = DEFAULT_RESULTS_PATH) -> None:
     """Save backtest results to JSON. Uses atomic write (write to temp, then move)."""
     p = Path(filepath)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    # Write to a temp file first, then atomically move it
-    temp_p = Path(str(p) + ".tmp")
-    with open(temp_p, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, default=str)
-    for attempt in range(8):
-        try:
-            temp_p.replace(p)  # Atomic move
-            break
-        except PermissionError:
-            if attempt == 7:
-                raise
-            time.sleep(0.5 * (attempt + 1))
+    _atomic_json_write(results, p)
     print(f"  [SAVED] {len(results)} results -> {p}")
 
 
@@ -1441,6 +1494,7 @@ def run_backtest(
     current = dt_start
     days_processed = 0
     days_since_save = 0
+    progress_path = _progress_path_for_results(filepath)
 
     print("=" * 70)
     print(f"  MLB PROP EDGE — HISTORICAL BACKTEST")
@@ -1449,15 +1503,55 @@ def run_backtest(
     print(f"  Resuming with {len(all_results)} existing results")
     print("=" * 70)
 
+    _write_backtest_progress(
+        filepath,
+        status="running",
+        start_date=start_date,
+        end_date=end_date,
+        total_days=total_days,
+        processed_days=days_processed,
+        processed_results=len(all_results),
+        resumed_results=len(all_results),
+        current_date=current.strftime("%Y-%m-%d"),
+        last_completed_date=max(processed_dates) if processed_dates else None,
+        progress_file=str(progress_path),
+    )
+
     while current <= dt_end:
         date_str = current.strftime("%Y-%m-%d")
 
         if date_str in processed_dates:
+            _write_backtest_progress(
+                filepath,
+                status="running",
+                start_date=start_date,
+                end_date=end_date,
+                total_days=total_days,
+                processed_days=days_processed,
+                processed_results=len(all_results),
+                resumed_results=len(processed_dates),
+                current_date=date_str,
+                last_completed_date=date_str,
+                progress_file=str(progress_path),
+            )
             current += timedelta(days=1)
             days_processed += 1
             continue
 
         print(f"\n  [{days_processed + 1}/{total_days}] Processing {date_str} ...", end=" ")
+        _write_backtest_progress(
+            filepath,
+            status="running",
+            start_date=start_date,
+            end_date=end_date,
+            total_days=total_days,
+            processed_days=days_processed,
+            processed_results=len(all_results),
+            resumed_results=len(processed_dates),
+            current_date=date_str,
+            last_completed_date=max(processed_dates) if processed_dates else None,
+            progress_file=str(progress_path),
+        )
 
         try:
             day_results = backtest_single_day(date_str, prop_types)
@@ -1477,6 +1571,19 @@ def run_backtest(
         if days_since_save >= save_interval:
             save_results(all_results, filepath=filepath)
             days_since_save = 0
+            _write_backtest_progress(
+                filepath,
+                status="running",
+                start_date=start_date,
+                end_date=end_date,
+                total_days=total_days,
+                processed_days=days_processed + 1,
+                processed_results=len(all_results),
+                resumed_results=len(processed_dates),
+                current_date=date_str,
+                last_completed_date=date_str,
+                progress_file=str(progress_path),
+            )
 
         current += timedelta(days=1)
         days_processed += 1
@@ -1496,6 +1603,21 @@ def run_backtest(
           f" ({overall.get('pushes', 0)} pushes)")
     print(f"    Accuracy: {overall.get('win_pct', 0):.1f}%")
     print("=" * 70)
+
+    _write_backtest_progress(
+        filepath,
+        status="completed",
+        start_date=start_date,
+        end_date=end_date,
+        total_days=total_days,
+        processed_days=total_days,
+        processed_results=len(all_results),
+        resumed_results=len(processed_dates),
+        current_date=end_date,
+        last_completed_date=end_date,
+        accuracy=overall.get("win_pct", 0),
+        progress_file=str(progress_path),
+    )
 
     return report
 
