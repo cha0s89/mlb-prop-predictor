@@ -11,6 +11,8 @@ from src.predictor import (
     project_hits_runs_rbis,
     project_batter_runs,
     project_batter_rbis,
+    project_batter_doubles,
+    project_batter_singles,
     project_batter_strikeouts,
     project_batter_stolen_bases,
     project_batter_total_bases,
@@ -19,6 +21,7 @@ from src.predictor import (
     project_pitcher_strikeouts,
     project_pitcher_walks,
 )
+from src.tail_signals import build_tail_reason_lists
 
 
 ELITE_BATTER = {
@@ -141,6 +144,50 @@ TERRIBLE_PITCHER = {
     "swstr_pct": 8.7,
 }
 
+STRONG_BATTER_LINEUP_CONTEXT = {
+    "has_data": True,
+    "ahead_obp": 0.368,
+    "ahead_woba": 0.352,
+    "ahead_bb_rate": 10.8,
+    "behind_woba": 0.364,
+    "behind_slg": 0.495,
+    "behind_k_rate": 18.5,
+    "team_avg_woba": 0.345,
+    "team_avg_obp": 0.338,
+    "team_avg_k_rate": 20.8,
+    "lineup_depth_woba": 0.337,
+}
+
+WEAK_BATTER_LINEUP_CONTEXT = {
+    "has_data": True,
+    "ahead_obp": 0.286,
+    "ahead_woba": 0.275,
+    "ahead_bb_rate": 6.0,
+    "behind_woba": 0.287,
+    "behind_slg": 0.351,
+    "behind_k_rate": 28.9,
+    "team_avg_woba": 0.291,
+    "team_avg_obp": 0.296,
+    "team_avg_k_rate": 26.7,
+    "lineup_depth_woba": 0.287,
+}
+
+HIGH_K_OPP_LINEUP_CONTEXT = {
+    "has_data": True,
+    "avg_k_rate": 26.4,
+    "top6_k_rate": 27.2,
+    "avg_woba": 0.309,
+    "top5_woba": 0.312,
+}
+
+LOW_K_OPP_LINEUP_CONTEXT = {
+    "has_data": True,
+    "avg_k_rate": 18.8,
+    "top6_k_rate": 18.1,
+    "avg_woba": 0.324,
+    "top5_woba": 0.329,
+}
+
 
 class SyntheticProjectionSanityTests(unittest.TestCase):
     def test_elite_batter_beats_terrible_batter_on_production_props(self):
@@ -150,6 +197,8 @@ class SyntheticProjectionSanityTests(unittest.TestCase):
         self.assertGreater(project_hits_runs_rbis(ELITE_BATTER)["projection"], project_hits_runs_rbis(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_home_runs(ELITE_BATTER)["projection"], project_batter_home_runs(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_total_bases(ELITE_BATTER)["projection"], project_batter_total_bases(TERRIBLE_BATTER)["projection"])
+        self.assertGreater(project_batter_singles(ELITE_BATTER)["projection"], project_batter_singles(TERRIBLE_BATTER)["projection"])
+        self.assertGreater(project_batter_doubles(ELITE_BATTER)["projection"], project_batter_doubles(TERRIBLE_BATTER)["projection"])
         self.assertGreater(project_batter_stolen_bases(ELITE_BATTER)["projection"], project_batter_stolen_bases(TERRIBLE_BATTER)["projection"])
 
     def test_hrrbi_gap_is_material_for_star_vs_scrub(self):
@@ -166,6 +215,31 @@ class SyntheticProjectionSanityTests(unittest.TestCase):
         self.assertGreater(leadoff_runs, cleanup_runs)
         self.assertGreater(cleanup_rbi, leadoff_rbi)
 
+    def test_confirmed_lineup_support_moves_runs_and_rbis(self):
+        strong_runs = project_batter_runs(
+            ELITE_BATTER,
+            lineup_pos=3,
+            lineup_context=STRONG_BATTER_LINEUP_CONTEXT,
+        )["projection"]
+        weak_runs = project_batter_runs(
+            ELITE_BATTER,
+            lineup_pos=3,
+            lineup_context=WEAK_BATTER_LINEUP_CONTEXT,
+        )["projection"]
+        strong_rbi = project_batter_rbis(
+            ELITE_BATTER,
+            lineup_pos=4,
+            lineup_context=STRONG_BATTER_LINEUP_CONTEXT,
+        )["projection"]
+        weak_rbi = project_batter_rbis(
+            ELITE_BATTER,
+            lineup_pos=4,
+            lineup_context=WEAK_BATTER_LINEUP_CONTEXT,
+        )["projection"]
+
+        self.assertGreater(strong_runs, weak_runs)
+        self.assertGreater(strong_rbi, weak_rbi)
+
     def test_elite_batter_strikes_out_less_than_terrible_batter(self):
         elite_k = project_batter_strikeouts(ELITE_BATTER)["projection"]
         terrible_k = project_batter_strikeouts(TERRIBLE_BATTER)["projection"]
@@ -176,6 +250,20 @@ class SyntheticProjectionSanityTests(unittest.TestCase):
         self.assertLess(project_pitcher_earned_runs(ELITE_PITCHER)["projection"], project_pitcher_earned_runs(TERRIBLE_PITCHER)["projection"])
         self.assertLess(project_pitcher_walks(ELITE_PITCHER)["projection"], project_pitcher_walks(TERRIBLE_PITCHER)["projection"])
         self.assertLess(project_pitcher_hits_allowed(ELITE_PITCHER)["projection"], project_pitcher_hits_allowed(TERRIBLE_PITCHER)["projection"])
+
+    def test_confirmed_opposing_lineup_changes_pitcher_k_projection(self):
+        high_k = project_pitcher_strikeouts(
+            ELITE_PITCHER,
+            opp_k_rate=22.7,
+            opp_lineup_context=HIGH_K_OPP_LINEUP_CONTEXT,
+        )["projection"]
+        low_k = project_pitcher_strikeouts(
+            ELITE_PITCHER,
+            opp_k_rate=22.7,
+            opp_lineup_context=LOW_K_OPP_LINEUP_CONTEXT,
+        )["projection"]
+
+        self.assertGreater(high_k, low_k)
 
     def test_generate_prediction_probability_contract_holds_for_synthetic_profiles(self):
         cases = [
@@ -278,6 +366,37 @@ class SyntheticProjectionSanityTests(unittest.TestCase):
 
         self.assertGreater(elite["breakout_prob"], terrible["breakout_prob"])
         self.assertLess(elite["dud_prob"], terrible["dud_prob"])
+
+    def test_tail_reasons_surface_lineup_support_and_confirmed_whiff_context(self):
+        hitter = generate_prediction(
+            player_name=ELITE_BATTER["name"],
+            stat_type="Runs",
+            stat_internal="runs",
+            line=0.5,
+            batter_profile=ELITE_BATTER,
+            lineup_pos=3,
+            batter_lineup_context=STRONG_BATTER_LINEUP_CONTEXT,
+        )
+        pitcher = generate_prediction(
+            player_name=ELITE_PITCHER["name"],
+            stat_type="Pitcher Strikeouts",
+            stat_internal="pitcher_strikeouts",
+            line=6.5,
+            pitcher_profile=ELITE_PITCHER,
+            opp_lineup_context=HIGH_K_OPP_LINEUP_CONTEXT,
+        )
+
+        hitter_reasons = build_tail_reason_lists(hitter)
+        pitcher_reasons = build_tail_reason_lists(pitcher)
+
+        self.assertTrue(
+            any("run-scoring chances" in reason or "lineup depth" in reason for reason in hitter_reasons["breakout"]),
+            hitter_reasons,
+        )
+        self.assertTrue(
+            any("whiffs more than average" in reason for reason in pitcher_reasons["breakout"]),
+            pitcher_reasons,
+        )
 
     def test_half_line_count_props_can_legitimately_project_above_line_and_still_be_less(self):
         result = generate_prediction(

@@ -69,7 +69,7 @@ DIST_DEFAULTS = {
     "singles": ("negbin", 1.3),
     "doubles": ("negbin", 1.6),
     "pitching_outs": ("normal", 1.3),
-    "hits_runs_rbis": ("normal", 1.5),
+    "hits_runs_rbis": ("gamma", 2.8),
     "home_runs": ("negbin", 2.0),
 }
 
@@ -606,6 +606,7 @@ def _estimate_team_runs_per_game(
     park: Optional[str] = None,
     wx: Optional[dict] = None,
     platoon: Optional[dict] = None,
+    team_lineup_context: Optional[dict] = None,
 ) -> float:
     """Estimate the batter's team run environment for PA-sensitive props."""
     team_rpg = 4.5
@@ -637,7 +638,24 @@ def _estimate_team_runs_per_game(
         weather_mult = get_stat_specific_weather_adjustment(wx, "runs")
         team_rpg *= 1 + (weather_mult - 1) * 0.75
 
+    if team_lineup_context and team_lineup_context.get("has_data"):
+        lineup_woba = team_lineup_context.get("avg_woba", LG["woba"])
+        top5_woba = team_lineup_context.get("top5_woba", lineup_woba)
+        depth_woba = team_lineup_context.get("lineup_depth_woba", lineup_woba)
+        team_rpg *= 1 + (lineup_woba / LG["woba"] - 1) * 0.16
+        team_rpg *= 1 + (top5_woba / LG["woba"] - 1) * 0.12
+        team_rpg *= 1 + (depth_woba / LG["woba"] - 1) * 0.08
+
     return max(2.8, min(team_rpg, 6.8))
+
+
+def _context_multiplier(value: float, baseline: float, weight: float,
+                        low: float = 0.8, high: float = 1.25) -> float:
+    """Translate a context metric into a bounded multiplicative adjustment."""
+    if not value or not baseline:
+        return 1.0
+    mult = 1 + (value / baseline - 1) * weight
+    return max(low, min(mult, high))
 
 
 def estimate_batters_faced(
@@ -787,7 +805,7 @@ def _early_season_ip_discount(game_date: date = None) -> float:
 
 def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
                                 opp_k_rate=None, park=None, wx=None,
-                                expected_ip=None):
+                                expected_ip=None, opp_lineup_context=None):
     """
     PITCHER STRIKEOUTS — strongest signal prop type.
 
@@ -827,6 +845,17 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         swstr_delta = (swstr - LG["swstr_pct"]) * 1.5
         reg_k = reg_k * 0.85 + (reg_k + swstr_delta) * 0.15
 
+    lineup_k_rate = None
+    lineup_woba = None
+    if opp_lineup_context and opp_lineup_context.get("has_data"):
+        lineup_k_rate = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate")
+        lineup_woba = opp_lineup_context.get("top5_woba") or opp_lineup_context.get("avg_woba")
+        if lineup_k_rate:
+            if opp_k_rate and opp_k_rate > 0:
+                opp_k_rate = opp_k_rate * 0.55 + float(lineup_k_rate) * 0.45
+            else:
+                opp_k_rate = float(lineup_k_rate)
+
     # v018: Log5 matchup adjustment for opposing lineup K% (replaces simple ratio)
     # Team K rates range 19%-27% — huge impact on pitcher K projections
     if opp_k_rate and opp_k_rate > 0:
@@ -859,7 +888,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
         pitcher_ip=expected_ip,
         pitcher_whip=p.get("whip"),
         early_season_discount=_early_season_ip_discount(),
-        opposing_lineup_woba=None,  # TODO: wire from game context
+        opposing_lineup_woba=lineup_woba,
     )
     exp_bf = bf_est_result["mean_bf"]
     expected_ip = bf_est_result["effective_ip"]
@@ -909,6 +938,8 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     result = {
         "projection": round(mu, 2), "mu": mu, "regressed_k_pct": round(reg_k, 1),
         "expected_ip": round(expected_ip, 1), "expected_bf": round(exp_bf, 1),
+        "opp_lineup_k_rate": round(opp_k_rate, 2) if opp_k_rate else None,
+        "opp_lineup_woba": round(lineup_woba, 3) if lineup_woba else None,
         # Beta-Binomial distribution info
         "bb_alpha": round(alpha, 3), "bb_beta": round(beta, 3),
         "bb_mean": round(bb_mean, 2), "bb_variance": round(bb_var, 2),
@@ -1188,6 +1219,139 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
             "expected_pa": round(exp_pa, 1), "expected_ab": round(exp_ab, 1)}
 
 
+def project_batter_singles(b, opp_p=None, bvp=None, platoon=None,
+                           park=None, wx=None, lineup_pos=None):
+    """BATTER SINGLES — contact/batted-ball prop, not just a hits proxy."""
+    avg = b.get("avg", LG["avg"])
+    xba = b.get("xba", 0)
+    xslg = b.get("xslg", 0)
+    pa = b.get("pa", 0)
+    bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
+    k_rate = _ensure_pct(b.get("k_rate"), lg_default=LG["k_rate"])
+    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
+    babip = b.get("babip", LG["babip"])
+    ab = b.get("ab", 0) or (pa * (1 - bb_rate_pct / 100) if pa > 0 else 0)
+    hits = b.get("h", 0) or (avg * ab if pa > 0 else 0)
+    hr = b.get("hr", 0)
+    doubles = b.get("2b", 0)
+    triples = b.get("3b", 0)
+
+    singles = max(hits - hr - doubles - triples, 0)
+    single_rate = singles / pa if pa > 0 else 0.135
+    reg_single = _regress(single_rate, pa, STAB["avg"], 0.135)
+
+    if xba > 0 and xslg > 0:
+        x_iso = max(xslg - xba, 0.0)
+        x_hr_per_pa = max(x_iso * 0.22, 0.0)
+        x_trp_per_pa = 0.004
+        x_dbl_per_pa = max((xslg - xba - 3 * x_hr_per_pa) / 2, 0.015)
+        x_single_per_pa = max(xba - x_hr_per_pa - x_dbl_per_pa - x_trp_per_pa, 0.05)
+        reg_single = reg_single * 0.65 + x_single_per_pa * 0.35
+
+    reg_k = _regress(k_rate, pa, STAB["k_rate"], LG["k_rate"])
+    reg_single *= 1 + (LG["k_rate"] - reg_k) / LG["k_rate"] * 0.18
+
+    if hard_hit > 0:
+        reg_single *= 1 + (hard_hit - LG["hard_hit_pct"]) / LG["hard_hit_pct"] * 0.08
+
+    if babip > 0 and xba > 0:
+        babip_delta = babip - (xba + 0.050)
+        if abs(babip_delta) > 0.030:
+            reg_single *= (1 - babip_delta * 0.12)
+
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+        bvp_avg = bvp.get("avg", LG["avg"])
+        bvp_weight = min(bvp["pa"] / 60, 0.20)
+        reg_single = reg_single * (1 - bvp_weight) + bvp_avg * bvp_weight
+
+    if opp_p:
+        opp_whip = opp_p.get("whip", LG["whip"])
+        opp_fip = opp_p.get("fip", LG["fip"])
+        opp_quality = (opp_whip / LG["whip"] * 0.65 + opp_fip / LG["fip"] * 0.35)
+        reg_single *= 1 + (opp_quality - 1) * 0.22
+
+    if platoon and platoon.get("adjustment"):
+        reg_single *= 1 + (platoon["adjustment"] - 1) * 0.45
+
+    if park:
+        reg_single *= 1 + (_park(park, PARK) - 1) * 0.20
+    if wx:
+        reg_single *= get_stat_specific_weather_adjustment(wx, "hits")
+
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
+    exp_ab = exp_pa * (1 - bb_rate_pct / 100)
+
+    mu = max(exp_ab * reg_single, 0.05)
+    return {
+        "projection": round(mu, 2),
+        "mu": mu,
+        "regressed_single_rate": round(reg_single, 3),
+        "expected_pa": round(exp_pa, 1),
+        "expected_ab": round(exp_ab, 1),
+    }
+
+
+def project_batter_doubles(b, opp_p=None, bvp=None, platoon=None,
+                           park=None, wx=None, lineup_pos=None):
+    """BATTER DOUBLES — extra-base contact, modeled directly from doubles rate."""
+    xba = b.get("xba", 0)
+    xslg = b.get("xslg", 0)
+    pa = b.get("pa", 0)
+    doubles = b.get("2b", 0)
+    bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
+    barrel = b.get("recent_barrel_rate", LG["barrel_rate"])
+    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
+    ev90 = b.get("recent_ev90", LG["ev90"])
+
+    double_rate = doubles / pa if pa > 0 else 0.045
+    reg_dbl = _regress(double_rate, pa, 220, 0.045)
+
+    if xba > 0 and xslg > 0:
+        x_iso = max(xslg - xba, 0.0)
+        x_hr_per_pa = max(x_iso * 0.22, 0.0)
+        x_dbl_per_pa = max((xslg - xba - 3 * x_hr_per_pa) / 2, 0.015)
+        reg_dbl = reg_dbl * 0.60 + x_dbl_per_pa * 0.40
+
+    if barrel > 0:
+        reg_dbl *= 1 + (barrel - LG["barrel_rate"]) / LG["barrel_rate"] * 0.12
+    if hard_hit > 0:
+        reg_dbl *= 1 + (hard_hit - LG["hard_hit_pct"]) / LG["hard_hit_pct"] * 0.10
+    if ev90 > 0:
+        reg_dbl *= 1 + (ev90 - LG["ev90"]) / LG["ev90"] * 0.06
+
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+        bvp_slg = bvp.get("slg", LG["slg"])
+        reg_dbl *= 1 + (bvp_slg / LG["slg"] - 1) * min(bvp["pa"] / 80, 0.14)
+
+    if opp_p:
+        opp_whip = opp_p.get("whip", LG["whip"])
+        opp_fip = opp_p.get("fip", LG["fip"])
+        opp_quality = (opp_whip / LG["whip"] * 0.55 + opp_fip / LG["fip"] * 0.45)
+        reg_dbl *= 1 + (opp_quality - 1) * 0.18
+
+    if platoon and platoon.get("adjustment"):
+        reg_dbl *= 1 + (platoon["adjustment"] - 1) * 0.35
+
+    if park:
+        reg_dbl *= 1 + (_park(park, PARK) - 1) * 0.15
+    if wx:
+        reg_dbl *= 1 + (get_stat_specific_weather_adjustment(wx, "total_bases") - 1) * 0.35
+
+    pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
+    exp_pa = pa_result["mean_pa"]
+    exp_ab = exp_pa * (1 - bb_rate_pct / 100)
+
+    mu = max(exp_ab * reg_dbl, 0.01)
+    return {
+        "projection": round(mu, 2),
+        "mu": mu,
+        "regressed_double_rate": round(reg_dbl, 3),
+        "expected_pa": round(exp_pa, 1),
+        "expected_ab": round(exp_ab, 1),
+    }
+
+
 def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
                                  park=None, wx=None, lineup_pos=None):
     """
@@ -1340,7 +1504,8 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
 
 
 def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
-                          park=None, wx=None, lineup_pos=None):
+                          park=None, wx=None, lineup_pos=None,
+                          lineup_context=None):
     """
     BATTER RBIs — heavily dependent on lineup context.
 
@@ -1364,7 +1529,14 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
     if xwoba and xwoba > 0:
         reg_woba = reg_woba * 0.70 + xwoba * 0.30
 
-    team_runs_pg = _estimate_team_runs_per_game(b, opp_p=opp_p, park=park, wx=wx, platoon=platoon)
+    team_runs_pg = _estimate_team_runs_per_game(
+        b,
+        opp_p=opp_p,
+        park=park,
+        wx=wx,
+        platoon=platoon,
+        team_lineup_context=lineup_context,
+    )
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos, team_runs_per_game=team_runs_pg)
     exp_pa = pa_result["mean_pa"]
 
@@ -1394,6 +1566,15 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
 
     proj *= 1 + (team_runs_pg / 4.5 - 1) * 0.75
 
+    lineup_support_mult = 1.0
+    if lineup_context and lineup_context.get("has_data"):
+        lineup_support_mult *= _context_multiplier(lineup_context.get("ahead_obp", LG["obp"]), LG["obp"], 0.36)
+        lineup_support_mult *= _context_multiplier(lineup_context.get("ahead_woba", LG["woba"]), LG["woba"], 0.18)
+        lineup_support_mult *= _context_multiplier(lineup_context.get("ahead_bb_rate", LG["bb_rate"]), LG["bb_rate"], 0.06)
+        lineup_support_mult *= _context_multiplier(lineup_context.get("team_avg_woba", LG["woba"]), LG["woba"], 0.12)
+        lineup_support_mult = max(0.82, min(lineup_support_mult, 1.30))
+        proj *= lineup_support_mult
+
     mu = max(proj, 0.1)
     return {
         "projection": round(mu, 2),
@@ -1402,11 +1583,16 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
         "regressed_slg": round(reg_slg, 3),
         "expected_pa": round(exp_pa, 2),
         "team_runs_per_game": round(team_runs_pg, 2),
+        "lineup_support_mult": round(lineup_support_mult, 3),
+        "ahead_obp": lineup_context.get("ahead_obp") if lineup_context else None,
+        "ahead_woba": lineup_context.get("ahead_woba") if lineup_context else None,
+        "team_avg_woba": lineup_context.get("team_avg_woba") if lineup_context else None,
     }
 
 
 def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
-                          park=None, wx=None, lineup_pos=None):
+                          park=None, wx=None, lineup_pos=None,
+                          lineup_context=None):
     """
     BATTER RUNS SCORED — OBP-driven + lineup position + sprint speed.
 
@@ -1427,7 +1613,14 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
     if xwoba and xwoba > 0:
         reg_woba = reg_woba * 0.72 + xwoba * 0.28
 
-    team_runs_pg = _estimate_team_runs_per_game(b, opp_p=opp_p, park=park, wx=wx, platoon=platoon)
+    team_runs_pg = _estimate_team_runs_per_game(
+        b,
+        opp_p=opp_p,
+        park=park,
+        wx=wx,
+        platoon=platoon,
+        team_lineup_context=lineup_context,
+    )
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos, team_runs_per_game=team_runs_pg)
     exp_pa = pa_result["mean_pa"]
 
@@ -1458,6 +1651,18 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
     if platoon and platoon.get("adjustment"):
         proj *= 1 + (platoon["adjustment"] - 1) * 0.45
 
+    lineup_support_mult = 1.0
+    if lineup_context and lineup_context.get("has_data"):
+        lineup_support_mult *= _context_multiplier(lineup_context.get("behind_woba", LG["woba"]), LG["woba"], 0.30)
+        lineup_support_mult *= _context_multiplier(lineup_context.get("behind_slg", LG["slg"]), LG["slg"], 0.22)
+        lineup_support_mult *= _context_multiplier(lineup_context.get("team_avg_woba", LG["woba"]), LG["woba"], 0.10)
+        behind_k_rate = lineup_context.get("behind_k_rate")
+        if behind_k_rate:
+            behind_k_mult = 1 + (LG["k_rate"] / max(float(behind_k_rate), 1.0) - 1) * 0.10
+            lineup_support_mult *= max(0.88, min(behind_k_mult, 1.12))
+        lineup_support_mult = max(0.82, min(lineup_support_mult, 1.28))
+        proj *= lineup_support_mult
+
     mu = max(proj, 0.1)
     return {
         "projection": round(mu, 2),
@@ -1466,6 +1671,11 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
         "regressed_woba": round(reg_woba, 3),
         "expected_pa": round(exp_pa, 2),
         "team_runs_per_game": round(team_runs_pg, 2),
+        "lineup_support_mult": round(lineup_support_mult, 3),
+        "behind_woba": lineup_context.get("behind_woba") if lineup_context else None,
+        "behind_slg": lineup_context.get("behind_slg") if lineup_context else None,
+        "behind_k_rate": lineup_context.get("behind_k_rate") if lineup_context else None,
+        "team_avg_woba": lineup_context.get("team_avg_woba") if lineup_context else None,
     }
 
 
@@ -1588,7 +1798,8 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
 
 
 def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
-                                  park=None, wx=None, lineup_pos=None):
+                                 park=None, wx=None, lineup_pos=None,
+                                 lineup_context=None):
     """
     HITTER FANTASY SCORE — DraftKings scoring system.
 
@@ -1730,6 +1941,14 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     # ── Calculate expected PA ──
     exp_pa = _lineup_pa(lineup_pos) if lineup_pos else 4.2
 
+    lineup_support_mult = 1.0
+    if lineup_context and lineup_context.get("has_data"):
+        lineup_support_mult *= _context_multiplier(lineup_context.get("ahead_obp", LG["obp"]), LG["obp"], 0.12)
+        lineup_support_mult *= _context_multiplier(lineup_context.get("behind_woba", LG["woba"]), LG["woba"], 0.12)
+        lineup_support_mult *= _context_multiplier(lineup_context.get("team_avg_woba", LG["woba"]), LG["woba"], 0.08)
+        lineup_support_mult = max(0.88, min(lineup_support_mult, 1.18))
+        total_mult *= lineup_support_mult
+
     # ── Fantasy points per PA ──
     # DK scoring: 1B=3, 2B=5, 3B=8, HR=10, RBI=2, R=2, BB/HBP=2, SB=5
     fantasy_per_pa = (
@@ -1755,15 +1974,20 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
         "fantasy_per_pa": round(fantasy_per_pa, 3),
         "expected_pa": round(exp_pa, 1),
         "context_mult": round(total_mult, 3),
+        "lineup_support_mult": round(lineup_support_mult, 3),
+        "ahead_obp": lineup_context.get("ahead_obp") if lineup_context else None,
+        "behind_woba": lineup_context.get("behind_woba") if lineup_context else None,
+        "team_avg_woba": lineup_context.get("team_avg_woba") if lineup_context else None,
     }
 
 
 def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
-                            park=None, wx=None, ump=None, lineup_pos=None):
+                            park=None, wx=None, ump=None, lineup_pos=None,
+                            lineup_context=None):
     """HITS + RUNS + RBIs combo — sum of individual projections."""
     hits = project_batter_hits(b, opp_p, bvp, platoon, park, wx, lineup_pos)
-    runs = project_batter_runs(b, opp_p, bvp, platoon, park, wx, lineup_pos)
-    rbis = project_batter_rbis(b, opp_p, bvp, platoon, park, wx, lineup_pos)
+    runs = project_batter_runs(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context)
+    rbis = project_batter_rbis(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context)
 
     mu = hits["mu"] + runs["mu"] + rbis["mu"]
     return {
@@ -1773,6 +1997,9 @@ def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
         "runs_proj": runs["projection"],
         "rbis_proj": rbis["projection"],
         "team_runs_per_game": max(runs.get("team_runs_per_game", 0.0), rbis.get("team_runs_per_game", 0.0)),
+        "ahead_obp": rbis.get("ahead_obp"),
+        "behind_woba": runs.get("behind_woba"),
+        "team_avg_woba": max(runs.get("team_avg_woba") or 0.0, rbis.get("team_avg_woba") or 0.0),
     }
 
 
@@ -2051,7 +2278,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          batter_profile=None, pitcher_profile=None,
                          opp_pitcher_profile=None, opp_team_k_rate=None,
                          bvp=None, platoon=None, ump=None,
-                         park_team=None, weather=None, lineup_pos=None):
+                         park_team=None, weather=None, lineup_pos=None,
+                         batter_lineup_context=None, opp_lineup_context=None):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2067,7 +2295,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     route = {
         "pitcher_strikeouts": lambda: project_pitcher_strikeouts(
             p, bvp=bvp, platoon=platoon, ump=ump,
-            opp_k_rate=opp_team_k_rate, park=park_team, wx=weather),
+            opp_k_rate=opp_team_k_rate, park=park_team, wx=weather,
+            opp_lineup_context=opp_lineup_context),
         "pitching_outs": lambda: project_pitcher_outs(p, park=park_team, wx=weather),
         "earned_runs": lambda: project_pitcher_earned_runs(
             p, park=park_team, wx=weather, opp_woba=opp.get("woba")),
@@ -2081,20 +2310,24 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         "home_runs": lambda: project_batter_home_runs(
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
         "rbis": lambda: project_batter_rbis(
-            b, opp, bvp, platoon, park_team, weather, lineup_pos),
+            b, opp, bvp, platoon, park_team, weather, lineup_pos,
+            batter_lineup_context),
         "runs": lambda: project_batter_runs(
-            b, opp, bvp, platoon, park_team, weather, lineup_pos),
+            b, opp, bvp, platoon, park_team, weather, lineup_pos,
+            batter_lineup_context),
         "stolen_bases": lambda: project_batter_stolen_bases(b, park_team),
         "batter_strikeouts": lambda: project_batter_strikeouts(
             b, opp, bvp, platoon, park_team, ump, lineup_pos),
         "walks": lambda: project_batter_walks(b, opp, ump, lineup_pos),
         "hitter_fantasy_score": lambda: project_hitter_fantasy_score(
-            b, opp, bvp, platoon, park_team, weather, lineup_pos),
+            b, opp, bvp, platoon, park_team, weather, lineup_pos,
+            batter_lineup_context),
         "hits_runs_rbis": lambda: project_hits_runs_rbis(
-            b, opp, bvp, platoon, park_team, weather, ump, lineup_pos),
-        "singles": lambda: project_batter_hits(  # Singles ≈ Hits - XBH
+            b, opp, bvp, platoon, park_team, weather, ump, lineup_pos,
+            batter_lineup_context),
+        "singles": lambda: project_batter_singles(
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
-        "doubles": lambda: project_batter_hits(  # Approximate
+        "doubles": lambda: project_batter_doubles(
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
     }
 
@@ -2176,6 +2409,20 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         "stat_internal": stat_internal, "line": line,
         **proj_result, **prob_result,
     }
+
+    if batter_lineup_context:
+        result["lineup_depth_woba"] = batter_lineup_context.get("lineup_depth_woba")
+        result["team_avg_woba"] = batter_lineup_context.get("team_avg_woba", result.get("team_avg_woba"))
+        result["team_avg_obp"] = batter_lineup_context.get("team_avg_obp")
+        result["ahead_obp"] = batter_lineup_context.get("ahead_obp", result.get("ahead_obp"))
+        result["ahead_woba"] = batter_lineup_context.get("ahead_woba", result.get("ahead_woba"))
+        result["behind_woba"] = batter_lineup_context.get("behind_woba", result.get("behind_woba"))
+        result["behind_slg"] = batter_lineup_context.get("behind_slg", result.get("behind_slg"))
+        result["behind_k_rate"] = batter_lineup_context.get("behind_k_rate")
+
+    if opp_lineup_context:
+        result["opp_lineup_k_rate"] = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate")
+        result["opp_lineup_woba"] = opp_lineup_context.get("top5_woba") or opp_lineup_context.get("avg_woba")
 
     result["has_player_data"] = _has_player_data
     result["has_opp_data"] = bool(opp)

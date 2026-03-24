@@ -82,6 +82,7 @@ from src.team_context import (
     pitcher_row_matches_team,
     register_team_value,
 )
+from src.lineup_context import build_player_lineup_context, build_team_lineup_context
 
 
 # ─────────────────────────────────────────────
@@ -1365,9 +1366,10 @@ with tab_edge:
 
             # Pre-build batter hand + batting order caches from confirmed lineups
             # Batch all game lineups upfront (cached per game_pk) to avoid N+1
-            batter_hand_cache = {}   # player_name_upper → bat_hand (R/L/S)
-            batting_order_cache = {} # player_name_upper → batting_order (1-9)
-            game_context_cache = {}  # team_abbr → {opponent, game_time, venue, ...}
+            batter_hand_cache = {}        # player_name_upper → bat_hand (R/L/S)
+            batting_order_cache = {}      # player_name_upper → batting_order (1-9)
+            game_context_cache = {}       # team_abbr → {opponent, game_time, venue, ...}
+            team_lineup_context_cache = {}  # team_abbr → confirmed lineup quality context
             try:
                 for game in todays_games:
                     game_pk = game.get("game_pk")
@@ -1381,7 +1383,8 @@ with tab_edge:
                         ("home", home_team, away_team),
                         ("away", away_team, home_team),
                     ]:
-                        for batter in lineups.get(side, []):
+                        side_lineup = lineups.get(side, [])
+                        for batter in side_lineup:
                             name = batter.get("player_name", "").upper().strip()
                             hand = batter.get("bat_hand", "")
                             order = batter.get("batting_order")
@@ -1389,6 +1392,12 @@ with tab_edge:
                                 batter_hand_cache[name] = hand
                             if name and order:
                                 batting_order_cache[name] = order
+                        if team_abbr:
+                            register_team_value(
+                                team_lineup_context_cache,
+                                team_abbr,
+                                build_team_lineup_context(side_lineup, batting_df, team_abbr),
+                            )
 
                     # Build game context for both teams (no extra API call)
                     for team_abbr, opp_abbr, is_home in [
@@ -1402,6 +1411,17 @@ with tab_edge:
                                 "game_pk": game_pk,
                                 "is_home": is_home,
                             })
+
+                    for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
+                        if not pitcher_team or not opp_batting_team:
+                            continue
+                        opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_batting_team) or opp_batting_team)
+                        if opp_lineup_context and opp_lineup_context.get("has_data"):
+                            register_team_value(
+                                opp_team_k_lookup,
+                                pitcher_team,
+                                opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate"),
+                            )
             except Exception:
                 pass
 
@@ -1442,10 +1462,17 @@ with tab_edge:
 
                 # Look up batting order position from pre-built cache (no API call)
                 batting_pos = None
+                batter_lineup_context = None
+                opp_lineup_context = None
                 if not is_pitcher_prop:
                     batting_pos = batting_order_cache.get(
                         row["player_name"].upper().strip()
                     )
+                    team_lineup_context = team_lineup_context_cache.get(r_team) if r_team else None
+                    if team_lineup_context:
+                        batter_lineup_context = build_player_lineup_context(row["player_name"], team_lineup_context)
+                        if batting_pos is None and batter_lineup_context.get("batting_order"):
+                            batting_pos = batter_lineup_context["batting_order"]
 
                 # Look up opposing pitcher profile (for batter props)
                 opp_pitcher_profile = None
@@ -1466,6 +1493,11 @@ with tab_edge:
                 opp_k_rate = None
                 if is_pitcher_prop and r_team:
                     opp_k_rate = opp_team_k_lookup.get(r_team)
+                    opp_team = (game_context_cache.get(r_team) or {}).get("opponent")
+                    if opp_team:
+                        opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_team) or opp_team)
+                        if opp_lineup_context and opp_lineup_context.get("has_data"):
+                            opp_k_rate = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate") or opp_k_rate
 
                 # ── LINE SANITY CHECK ────────────────────────────
                 # Skip props with unrealistically low lines (spring training / promo artifacts).
@@ -1488,6 +1520,8 @@ with tab_edge:
                     weather=wx,
                     ump=ump_adj,
                     lineup_pos=batting_pos,
+                    batter_lineup_context=batter_lineup_context,
+                    opp_lineup_context=opp_lineup_context,
                 )
                 p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
                 p["game_time_utc"] = row.get("start_time", "")

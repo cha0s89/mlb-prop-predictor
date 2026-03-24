@@ -9,6 +9,8 @@ from src.weather import resolve_team
 
 
 INVERSE_GOOD_PROPS = {"earned_runs", "walks_allowed", "hits_allowed", "batter_strikeouts"}
+RBI_CONTEXT_PROPS = {"rbis", "hits_runs_rbis", "hitter_fantasy_score"}
+RUN_CONTEXT_PROPS = {"runs", "hits_runs_rbis", "hitter_fantasy_score"}
 
 TAIL_LABELS = {
     "earned_runs": {"breakout": "Shutdown", "dud": "Blowup Risk"},
@@ -159,6 +161,77 @@ def build_tail_reason_lists(prediction: dict, max_items: int = 3) -> dict[str, l
         add_reason(breakout_reasons, 0.05, "Recent trend is pointing up.")
     elif trend_badge == "cold":
         add_reason(dud_reasons, 0.05, "Recent trend is pointing down.")
+
+    opp_lineup_k_rate = _safe_num(prediction.get("opp_lineup_k_rate"), 0.0)
+    if stat_internal == "pitcher_strikeouts" and opp_lineup_k_rate > 0:
+        k_gap = abs(opp_lineup_k_rate - 22.7)
+        if k_gap >= 1.2:
+            favorable = opp_lineup_k_rate > 22.7
+            add_reason(
+                breakout_reasons if favorable else dud_reasons,
+                k_gap / 10.0,
+                (
+                    f"Confirmed lineup whiffs more than average ({opp_lineup_k_rate:.1f}% K rate)."
+                    if favorable
+                    else f"Confirmed lineup makes more contact than average ({opp_lineup_k_rate:.1f}% K rate)."
+                ),
+            )
+
+    ahead_obp = _safe_num(prediction.get("ahead_obp"), 0.0)
+    ahead_woba = _safe_num(prediction.get("ahead_woba"), 0.0)
+    if stat_internal in RBI_CONTEXT_PROPS and (ahead_obp > 0 or ahead_woba > 0):
+        support_score = 0.0
+        if ahead_obp > 0:
+            support_score += abs(ahead_obp - 0.320) * 6.5
+        if ahead_woba > 0:
+            support_score += abs(ahead_woba - 0.315) * 5.0
+        if support_score >= 0.08:
+            favorable = (ahead_obp and ahead_obp >= 0.320) or (ahead_woba and ahead_woba >= 0.315)
+            add_reason(
+                breakout_reasons if favorable else dud_reasons,
+                support_score,
+                (
+                    "Hitters ahead of him are creating RBI chances."
+                    if favorable
+                    else "Top-of-order support is weak for RBI chances."
+                ),
+            )
+
+    behind_woba = _safe_num(prediction.get("behind_woba"), 0.0)
+    behind_slg = _safe_num(prediction.get("behind_slg"), 0.0)
+    if stat_internal in RUN_CONTEXT_PROPS and (behind_woba > 0 or behind_slg > 0):
+        run_support_score = 0.0
+        if behind_woba > 0:
+            run_support_score += abs(behind_woba - 0.315) * 4.5
+        if behind_slg > 0:
+            run_support_score += abs(behind_slg - 0.400) * 3.5
+        if run_support_score >= 0.08:
+            favorable = (behind_woba and behind_woba >= 0.315) or (behind_slg and behind_slg >= 0.400)
+            add_reason(
+                breakout_reasons if favorable else dud_reasons,
+                run_support_score,
+                (
+                    "Hitters behind him can cash in run-scoring chances."
+                    if favorable
+                    else "Lineup support behind him is thin."
+                ),
+            )
+
+    team_avg_woba = _safe_num(prediction.get("team_avg_woba"), 0.0)
+    lineup_depth_woba = _safe_num(prediction.get("lineup_depth_woba"), 0.0)
+    if stat_internal in RBI_CONTEXT_PROPS | RUN_CONTEXT_PROPS and (team_avg_woba > 0 or lineup_depth_woba > 0):
+        quality = max(team_avg_woba, lineup_depth_woba)
+        if abs(quality - 0.315) >= 0.010:
+            favorable = quality > 0.315
+            add_reason(
+                breakout_reasons if favorable else dud_reasons,
+                abs(quality - 0.315) * 3.5,
+                (
+                    "Confirmed lineup depth supports a higher run environment."
+                    if favorable
+                    else "Confirmed lineup depth drags on the run environment."
+                ),
+            )
 
     breakout_reasons.sort(key=lambda item: item[0], reverse=True)
     dud_reasons.sort(key=lambda item: item[0], reverse=True)

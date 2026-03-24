@@ -8,7 +8,7 @@ from scipy.stats import poisson
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.predictor import calculate_over_under_probability
+from src.predictor import calculate_over_under_probability, get_distribution_config
 from src.sharp_odds import _MARKET_TO_DIST_KEY, distribution_reprice, extract_sharp_lines, find_ev_edges
 
 
@@ -144,6 +144,18 @@ class ProbabilityContractTests(unittest.TestCase):
         self.assertEqual(_MARKET_TO_DIST_KEY["batter_singles"], "singles")
         self.assertEqual(_MARKET_TO_DIST_KEY["batter_doubles"], "doubles")
         self.assertEqual(_MARKET_TO_DIST_KEY["batter_walks"], "walks")
+
+    def test_hrrbi_uses_right_skewed_distribution_family(self):
+        config = get_distribution_config(
+            "hits_runs_rbis",
+            weights={
+                "distribution_params": {
+                    "hits_runs_rbis": {"type": "gamma", "vr": 2.8}
+                }
+            },
+        )
+        self.assertEqual(config["dist_type"], "gamma")
+        self.assertEqual(config["var_ratio"], 2.8)
 
     def test_extract_sharp_lines_aggregates_cross_line_books_in_latent_mu_space(self):
         event_data = {

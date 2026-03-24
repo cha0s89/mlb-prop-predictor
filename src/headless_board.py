@@ -87,6 +87,7 @@ from src.team_context import (
     pitcher_row_matches_team,
     register_team_value,
 )
+from src.lineup_context import build_player_lineup_context, build_team_lineup_context
 
 logger = logging.getLogger(__name__)
 
@@ -543,6 +544,7 @@ def build_board(
     batter_hand_cache: dict = {}
     batting_order_cache: dict = {}
     game_context_cache: dict = {}
+    team_lineup_context_cache: dict = {}
     try:
         for game in todays_games:
             game_pk = game.get("game_pk")
@@ -555,7 +557,8 @@ def build_board(
                 ("home", home_team, away_team),
                 ("away", away_team, home_team),
             ]:
-                for batter in lineups.get(side, []):
+                side_lineup = lineups.get(side, [])
+                for batter in side_lineup:
                     name = batter.get("player_name", "").upper().strip()
                     hand = batter.get("bat_hand", "")
                     order = batter.get("batting_order")
@@ -563,6 +566,12 @@ def build_board(
                         batter_hand_cache[name] = hand
                     if name and order:
                         batting_order_cache[name] = order
+                if team_abbr:
+                    register_team_value(
+                        team_lineup_context_cache,
+                        team_abbr,
+                        build_team_lineup_context(side_lineup, batting_df, team_abbr),
+                    )
             for team_abbr, opp_abbr, is_home in [
                 (home_team, away_team, True),
                 (away_team, home_team, False),
@@ -574,6 +583,16 @@ def build_board(
                         "game_pk": game_pk,
                         "is_home": is_home,
                     })
+            for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
+                if not pitcher_team or not opp_batting_team:
+                    continue
+                opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_batting_team) or opp_batting_team)
+                if opp_lineup_context and opp_lineup_context.get("has_data"):
+                    register_team_value(
+                        opp_team_k_lookup,
+                        pitcher_team,
+                        opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate"),
+                    )
     except Exception as exc:
         errors.append(f"Lineup cache build: {exc}")
 
@@ -659,10 +678,17 @@ def build_board(
 
             # Batting order
             batting_pos = None
+            batter_lineup_context = None
+            opp_lineup_context = None
             if not is_pitcher_prop:
                 batting_pos = batting_order_cache.get(
                     row["player_name"].upper().strip()
                 )
+                team_lineup_context = team_lineup_context_cache.get(r_team) if r_team else None
+                if team_lineup_context:
+                    batter_lineup_context = build_player_lineup_context(row["player_name"], team_lineup_context)
+                    if batting_pos is None and batter_lineup_context.get("batting_order"):
+                        batting_pos = batter_lineup_context["batting_order"]
 
             # Opposing pitcher profile
             opp_pitcher_profile = None
@@ -682,6 +708,11 @@ def build_board(
             opp_k_rate = None
             if is_pitcher_prop and r_team:
                 opp_k_rate = opp_team_k_lookup.get(r_team)
+                opp_team = (game_context_cache.get(r_team) or {}).get("opponent")
+                if opp_team:
+                    opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_team) or opp_team)
+                    if opp_lineup_context and opp_lineup_context.get("has_data"):
+                        opp_k_rate = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate") or opp_k_rate
 
             # Line sanity check
             _min_line = MIN_REALISTIC_LINE.get(stat_int, 0)
@@ -702,6 +733,8 @@ def build_board(
                 weather=wx,
                 ump=ump_adj,
                 lineup_pos=batting_pos,
+                batter_lineup_context=batter_lineup_context,
+                opp_lineup_context=opp_lineup_context,
             )
             p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
             p["game_time_utc"] = row.get("start_time", "")
