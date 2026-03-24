@@ -20,3 +20,4 @@ data/weights/runtime_override.json
 data/calibration/
 data/backtest/backtest_2025.json
 data/backtest/*.tmp
+data/backtest/*_progress.json
