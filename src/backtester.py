@@ -57,6 +57,7 @@ from src.lineup_context import (
     build_team_lineup_context_from_profiles,
 )
 from src.predictor import generate_prediction, _clear_weights_cache
+from src.umpires import get_umpire_k_adjustment
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -343,6 +344,15 @@ def extract_starting_pitcher(boxscore: dict, side: str) -> dict | None:
         stats["full_name"] = person.get("fullName", "")
         stats["team"] = team_data.get("team", {}).get("abbreviation", "")
     return stats
+
+
+def extract_home_plate_umpire(boxscore: dict) -> str | None:
+    """Return the home plate umpire name from a boxscore feed when available."""
+    officials = boxscore.get("officials", [])
+    for official in officials:
+        if official.get("officialType") == "Home Plate":
+            return official.get("official", {}).get("fullName")
+    return None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -994,6 +1004,8 @@ def backtest_single_day(game_date: str,
         # Get starting pitchers for context
         home_sp = extract_starting_pitcher(boxscore, "home")
         away_sp = extract_starting_pitcher(boxscore, "away")
+        home_plate_umpire = extract_home_plate_umpire(boxscore)
+        ump_adjustment = get_umpire_k_adjustment(home_plate_umpire) if home_plate_umpire else None
 
         home_sp_profile = (
             build_walkforward_profile(home_sp["full_name"], game_date, is_pitcher=True)
@@ -1127,6 +1139,7 @@ def backtest_single_day(game_date: str,
                             stat_internal=prop_type,
                             line=line,
                             pitcher_profile=pitcher_profile,
+                            ump=ump_adjustment,
                             park_team=home_team,
                             opp_lineup_context=opp_lineup_context,
                         )
@@ -1177,6 +1190,8 @@ def backtest_single_day(game_date: str,
                     "park_team": home_team,
                     "opp_lineup_k_rate": opp_lineup_context.get("avg_k_rate"),
                     "opp_lineup_woba": opp_lineup_context.get("avg_woba"),
+                    "umpire": home_plate_umpire,
+                    "ump_k_adjustment": (ump_adjustment or {}).get("k_adjustment", 0.0),
                     "season_current_weight": pitcher_profile.get("season_current_weight"),
                     "season_prior_equivalent": pitcher_profile.get("season_prior_equivalent_ip"),
                     "innings_pitched": sp.get("ip", 0.0),

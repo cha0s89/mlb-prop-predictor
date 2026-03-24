@@ -11,7 +11,13 @@ class BacktesterDatasetTests(unittest.TestCase):
             "teams": {
                 "home": {"team": {"abbreviation": "LAD"}},
                 "away": {"team": {"abbreviation": "AZ"}},
-            }
+            },
+            "officials": [
+                {
+                    "officialType": "Home Plate",
+                    "official": {"fullName": "Manny Gonzalez"},
+                }
+            ],
         }
         fake_batter = {
             "full_name": "Test Batter",
@@ -156,11 +162,14 @@ class BacktesterDatasetTests(unittest.TestCase):
         self.assertEqual(home_outs_row["park_team"], "LAD")
         self.assertEqual(home_outs_row["opponent"], "AZ")
         self.assertGreater(home_outs_row["opp_lineup_k_rate"], 20.0)
+        self.assertEqual(home_outs_row["umpire"], "Manny Gonzalez")
+        self.assertGreater(home_outs_row["ump_k_adjustment"], 0.0)
 
         hitter_kwargs = next(kwargs for kwargs in captured_kwargs if kwargs["player_name"] == "Test Batter" and kwargs["stat_internal"] == "hits")
         pitcher_kwargs = next(kwargs for kwargs in captured_kwargs if kwargs["player_name"] == "Home Starter" and kwargs["stat_internal"] == "pitcher_strikeouts")
         self.assertTrue(hitter_kwargs["batter_lineup_context"]["has_data"])
         self.assertTrue(pitcher_kwargs["opp_lineup_context"]["has_data"])
+        self.assertTrue(pitcher_kwargs["ump"]["known"])
 
 
 if __name__ == "__main__":
