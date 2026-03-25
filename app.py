@@ -763,8 +763,10 @@ def build_batter_profile(stats_row: pd.Series) -> dict:
     """Convert a FanGraphs DataFrame row into the batter profile dict the predictor expects."""
     def safe_pct(val):
         if isinstance(val, str):
-            return float(val.replace("%", "").strip())
-        return float(val) if val else 0.0
+            val = float(val.replace("%", "").strip())
+        else:
+            val = float(val) if val else 0.0
+        return val * 100.0 if 0 < val < 1 else val
 
     return {
         "pa": int(stats_row.get("PA", 0)),
@@ -842,8 +844,10 @@ def build_pitcher_profile(stats_row) -> dict:
     """Convert a FanGraphs pitching row into the pitcher profile dict the predictor expects."""
     def safe_pct(val):
         if isinstance(val, str):
-            return float(val.replace("%", "").strip())
-        return float(val) if val else 0.0
+            val = float(val.replace("%", "").strip())
+        else:
+            val = float(val) if val else 0.0
+        return val * 100.0 if 0 < val < 1 else val
     return {
         "ip": float(stats_row.get("IP", 0)),
         "era": float(stats_row.get("ERA", 0)),
@@ -1313,7 +1317,13 @@ with tab_edge:
                     _team_rates = _team_rates[_team_rates["_team_code"] != ""]
                     for _team_code, _subset in _team_rates.groupby("_team_code"):
                         k_vals = _subset["K%"].apply(
-                            lambda x: float(str(x).replace("%", "").strip()) if pd.notna(x) else 22.7
+                            lambda x: (
+                                (lambda v: v * 100.0 if 0 < v < 1 else v)(
+                                    float(str(x).replace("%", "").strip())
+                                )
+                                if pd.notna(x)
+                                else 22.7
+                            )
                         )
                         team_k_rate_map[_team_code] = round(k_vals.mean(), 1)
                 except Exception:

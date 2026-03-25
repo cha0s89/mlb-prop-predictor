@@ -473,6 +473,17 @@ def abs_adjustment_factor(prop_type: str, game_date: date = None) -> float:
     Returns:
         Multiplier to apply to projection (e.g. 0.98 for -2% K rate)
     """
+    if isinstance(game_date, str):
+        try:
+            game_date = datetime.fromisoformat(game_date.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                game_date = datetime.strptime(game_date[:10], "%Y-%m-%d").date()
+            except ValueError:
+                game_date = None
+    elif isinstance(game_date, datetime):
+        game_date = game_date.date()
+
     if game_date is None:
         game_date = date.today()
 
@@ -481,7 +492,7 @@ def abs_adjustment_factor(prop_type: str, game_date: date = None) -> float:
     if not weights.get("abs_adjustment_enabled", True):
         return 1.0
 
-    opening_day = date(2026, 3, 27)
+    opening_day = get_opening_day_for_year(game_date.year)
     days_since = (game_date - opening_day).days
     if days_since < 0:
         return 1.0  # Pre-season, no adjustment
@@ -718,6 +729,56 @@ def _ensure_pct(val, lg_default=None):
     return val
 
 
+def _pitcher_quality_early_season_discount(p: dict, game_date: date = None) -> float:
+    """
+    Apply the base early-season leash discount, then restore a small amount for
+    proven workhorses. The uniform opener discount was too aggressive for aces.
+    """
+    base_discount = _early_season_ip_discount(game_date)
+
+    if isinstance(game_date, str):
+        try:
+            game_date = datetime.fromisoformat(game_date.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                game_date = datetime.strptime(game_date[:10], "%Y-%m-%d").date()
+            except ValueError:
+                game_date = None
+    elif isinstance(game_date, datetime):
+        game_date = game_date.date()
+
+    if game_date is None:
+        game_date = date.today()
+
+    opening_day = get_opening_day_for_year(game_date.year)
+    days_since = (game_date - opening_day).days
+    if days_since < 0 or days_since > 35:
+        return base_discount
+
+    gs = max(int(p.get("gs", 0) or 0), 1)
+    avg_ip = float(p.get("ip_per_start") or 0.0)
+    if avg_ip <= 0:
+        total_ip = float(p.get("ip", 0.0) or 0.0)
+        avg_ip = total_ip / gs if total_ip > 0 else LG["avg_ip_starter"]
+    whip = float(p.get("whip", LG["whip"]) or LG["whip"])
+    k_pct = _ensure_pct(p.get("k_pct", p.get("k_rate")), lg_default=LG["k_pct_p"]) or LG["k_pct_p"]
+
+    durability_bonus = 0.0
+    if avg_ip >= 6.0:
+        durability_bonus += 0.03
+    elif avg_ip >= 5.7:
+        durability_bonus += 0.02
+    if gs >= 28:
+        durability_bonus += 0.01
+    if whip <= 1.10:
+        durability_bonus += 0.01
+    if k_pct >= 28.0:
+        durability_bonus += 0.01
+
+    durability_bonus *= max(0.0, 1.0 - min(days_since, 35) / 35.0)
+    return min(1.0, base_discount + min(0.06, durability_bonus))
+
+
 # ═══════════════════════════════════════════════════════
 # PITCHER PROJECTIONS
 # ═══════════════════════════════════════════════════════
@@ -856,9 +917,13 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     lineup_k_rate = None
     lineup_woba = None
     if opp_lineup_context and opp_lineup_context.get("has_data"):
-        lineup_k_rate = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate")
+        lineup_k_rate = _ensure_pct(
+            opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate"),
+            lg_default=None,
+        )
         lineup_woba = opp_lineup_context.get("top5_woba") or opp_lineup_context.get("avg_woba")
         if lineup_k_rate:
+            opp_k_rate = _ensure_pct(opp_k_rate, lg_default=None) if opp_k_rate else opp_k_rate
             if opp_k_rate and opp_k_rate > 0:
                 opp_k_rate = opp_k_rate * 0.55 + float(lineup_k_rate) * 0.45
             else:
@@ -867,6 +932,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     # v018: Log5 matchup adjustment for opposing lineup K% (replaces simple ratio)
     # Team K rates range 19%-27% — huge impact on pitcher K projections
     if opp_k_rate and opp_k_rate > 0:
+        opp_k_rate = _ensure_pct(opp_k_rate, lg_default=None)
         pitcher_k_dec = reg_k / 100.0
         opp_k_dec = opp_k_rate / 100.0 if opp_k_rate > 1 else opp_k_rate
         lg_k_dec = LG["k_rate"] / 100.0
@@ -895,7 +961,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     bf_est_result = estimate_batters_faced(
         pitcher_ip=expected_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(game_date),
+        early_season_discount=_pitcher_quality_early_season_discount(p, game_date),
         opposing_lineup_woba=lineup_woba,
     )
     exp_bf = bf_est_result["mean_bf"]
@@ -946,7 +1012,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     result = {
         "projection": round(mu, 2), "mu": mu, "regressed_k_pct": round(reg_k, 1),
         "expected_ip": round(expected_ip, 1), "expected_bf": round(exp_bf, 1),
-        "opp_lineup_k_rate": round(opp_k_rate, 2) if opp_k_rate else None,
+        "opp_lineup_k_rate": round(_ensure_pct(opp_k_rate, lg_default=None), 1) if opp_k_rate else None,
         "opp_lineup_woba": round(lineup_woba, 3) if lineup_woba else None,
         # Beta-Binomial distribution info
         "bb_alpha": round(alpha, 3), "bb_beta": round(beta, 3),
@@ -983,7 +1049,7 @@ def project_pitcher_outs(p, park=None, wx=None, game_date: date | None = None):
     bf_result = estimate_batters_faced(
         pitcher_ip=proj_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(game_date),
+        early_season_discount=_pitcher_quality_early_season_discount(p, game_date),
     )
     proj_outs = bf_result["effective_ip"] * 3
 
@@ -1024,7 +1090,7 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None, game_date:
     bf_result = estimate_batters_faced(
         pitcher_ip=avg_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(game_date),
+        early_season_discount=_pitcher_quality_early_season_discount(p, game_date),
         opposing_lineup_woba=opp_woba,
     )
     effective_ip = bf_result["effective_ip"]
@@ -1077,7 +1143,7 @@ def project_pitcher_walks(p, park=None, ump=None, game_date: date | None = None)
     bf_result = estimate_batters_faced(
         pitcher_ip=avg_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(game_date),
+        early_season_discount=_pitcher_quality_early_season_discount(p, game_date),
     )
     exp_bf = bf_result["mean_bf"]
 
@@ -1113,7 +1179,7 @@ def project_pitcher_hits_allowed(p, park=None, wx=None, opp_avg=None, game_date:
     bf_result = estimate_batters_faced(
         pitcher_ip=avg_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(game_date),
+        early_season_discount=_pitcher_quality_early_season_discount(p, game_date),
     )
     proj = (h9 / 9.0) * bf_result["effective_ip"]
 
@@ -2364,6 +2430,24 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     prop_offsets = weights.get("prop_type_offsets", {})
     offset = prop_offsets.get(stat_internal, 0.0)
     projection += offset
+    if stat_internal == "pitcher_strikeouts" and offset and game_date is not None:
+        if isinstance(game_date, str):
+            try:
+                game_date = datetime.fromisoformat(game_date.replace("Z", "+00:00")).date()
+            except ValueError:
+                try:
+                    game_date = datetime.strptime(game_date[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    game_date = None
+        elif isinstance(game_date, datetime):
+            game_date = game_date.date()
+        if game_date is not None:
+            opening_day = get_opening_day_for_year(game_date.year)
+            days_since = (game_date - opening_day).days
+            if 0 <= days_since <= 28:
+                # Full-season K offsets are too punitive in opener workloads. Ramp them in.
+                applied_fraction = 0.25 + 0.75 * (days_since / 28.0)
+                projection += offset * (applied_fraction - 1.0)
 
     # Direction bias correction: nudge projection up (more_multiplier) or
     # down (less_multiplier) to counteract systematic MORE/LESS skew.
@@ -2435,8 +2519,19 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         result["behind_k_rate"] = batter_lineup_context.get("behind_k_rate")
 
     if opp_lineup_context:
-        result["opp_lineup_k_rate"] = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate")
         result["opp_lineup_woba"] = opp_lineup_context.get("top5_woba") or opp_lineup_context.get("avg_woba")
+
+    if stat_internal == "pitcher_strikeouts":
+        opp_k_context_rate = proj_result.get("opp_lineup_k_rate")
+        if opp_k_context_rate is None and opp_team_k_rate:
+            opp_k_context_rate = _ensure_pct(opp_team_k_rate, lg_default=None)
+        if opp_k_context_rate is not None:
+            result["opp_lineup_k_rate"] = round(float(opp_k_context_rate), 1)
+            result["opp_k_rate_source"] = (
+                "confirmed_lineup"
+                if opp_lineup_context and opp_lineup_context.get("has_data")
+                else "team_baseline"
+            )
 
     result["has_player_data"] = _has_player_data
     result["has_opp_data"] = bool(opp)

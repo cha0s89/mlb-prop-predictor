@@ -29,7 +29,24 @@ class TailSignalTests(unittest.TestCase):
             "team": "SF",
         })
         self.assertTrue(reasons["breakout"])
-        self.assertIn("Projection sits", " ".join(reasons["breakout"]))
+        self.assertIn("Model projects about", " ".join(reasons["breakout"]))
+
+    def test_pitcher_strikeout_labels_and_reason_text_are_betting_friendly(self):
+        labels = tail_signal_labels("pitcher_strikeouts")
+        self.assertEqual(labels["breakout"], "K Ceiling")
+        self.assertEqual(labels["dud"], "Low-K Risk")
+
+        reasons = build_tail_reason_lists({
+            "stat_internal": "pitcher_strikeouts",
+            "stat_type": "Pitcher Strikeouts",
+            "projection": 4.4,
+            "line": 6.0,
+            "opp_lineup_k_rate": 20.8,
+            "opp_k_rate_source": "team_baseline",
+        })
+        joined = " ".join(reasons["dud"])
+        self.assertIn("Model projects about", joined)
+        self.assertIn("Opponent baseline", joined)
 
 
 if __name__ == "__main__":

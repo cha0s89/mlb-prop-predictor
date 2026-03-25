@@ -13,6 +13,8 @@ RBI_CONTEXT_PROPS = {"rbis", "hits_runs_rbis", "hitter_fantasy_score"}
 RUN_CONTEXT_PROPS = {"runs", "hits_runs_rbis", "hitter_fantasy_score"}
 
 TAIL_LABELS = {
+    "pitcher_strikeouts": {"breakout": "K Ceiling", "dud": "Low-K Risk"},
+    "pitching_outs": {"breakout": "Deep Outing", "dud": "Short Outing Risk"},
     "earned_runs": {"breakout": "Shutdown", "dud": "Blowup Risk"},
     "hits_allowed": {"breakout": "Shutdown", "dud": "Traffic Risk"},
     "walks_allowed": {"breakout": "Command", "dud": "Wildness Risk"},
@@ -86,13 +88,13 @@ def build_tail_reason_lists(prediction: dict, max_items: int = 3) -> dict[str, l
             add_reason(
                 breakout_reasons,
                 gap_score * 2.0,
-                f"Projection sits {abs(diff):.2f} {'above' if diff > 0 else 'below'} the line.",
+                f"Model projects about {abs(diff):.2f} {'over' if diff > 0 else 'under'} the line.",
             )
         else:
             add_reason(
                 dud_reasons,
                 gap_score * 2.0,
-                f"Projection drifts {abs(diff):.2f} to the wrong side of the line.",
+                f"Model projects about {abs(diff):.2f} {'over' if diff > 0 else 'under'} the line.",
             )
 
     weather_mult = _safe_num(prediction.get("weather_mult"), 1.0)
@@ -167,13 +169,15 @@ def build_tail_reason_lists(prediction: dict, max_items: int = 3) -> dict[str, l
         k_gap = abs(opp_lineup_k_rate - 22.7)
         if k_gap >= 1.2:
             favorable = opp_lineup_k_rate > 22.7
+            source = prediction.get("opp_k_rate_source") or "confirmed_lineup"
+            source_text = "Confirmed lineup" if source == "confirmed_lineup" else "Opponent baseline"
             add_reason(
                 breakout_reasons if favorable else dud_reasons,
                 k_gap / 10.0,
                 (
-                    f"Confirmed lineup whiffs more than average ({opp_lineup_k_rate:.1f}% K rate)."
+                    f"{source_text} whiffs more than average ({opp_lineup_k_rate:.1f}% K rate)."
                     if favorable
-                    else f"Confirmed lineup makes more contact than average ({opp_lineup_k_rate:.1f}% K rate)."
+                    else f"{source_text} makes more contact than average ({opp_lineup_k_rate:.1f}% K rate)."
                 ),
             )
 

@@ -276,8 +276,10 @@ def match_pitcher_stats(player_name: str, pitching_df: pd.DataFrame):
 def build_batter_profile(stats_row: pd.Series) -> dict:
     def safe_pct(val):
         if isinstance(val, str):
-            return float(val.replace("%", "").strip())
-        return float(val) if val else 0.0
+            val = float(val.replace("%", "").strip())
+        else:
+            val = float(val) if val else 0.0
+        return val * 100.0 if 0 < val < 1 else val
     return {
         "pa": int(stats_row.get("PA", 0)),
         "avg": float(stats_row.get("AVG", 0)),
@@ -307,8 +309,10 @@ def build_batter_profile(stats_row: pd.Series) -> dict:
 def build_pitcher_profile(stats_row) -> dict:
     def safe_pct(val):
         if isinstance(val, str):
-            return float(val.replace("%", "").strip())
-        return float(val) if val else 0.0
+            val = float(val.replace("%", "").strip())
+        else:
+            val = float(val) if val else 0.0
+        return val * 100.0 if 0 < val < 1 else val
     return {
         "ip": float(stats_row.get("IP", 0)),
         "era": float(stats_row.get("ERA", 0)),
@@ -476,7 +480,13 @@ def build_board(
             team_rates = team_rates[team_rates["_team_code"] != ""]
             for team_code, subset in team_rates.groupby("_team_code"):
                 k_vals = subset["K%"].apply(
-                    lambda x: float(str(x).replace("%", "").strip()) if pd.notna(x) else 22.7
+                    lambda x: (
+                        (lambda v: v * 100.0 if 0 < v < 1 else v)(
+                            float(str(x).replace("%", "").strip())
+                        )
+                        if pd.notna(x)
+                        else 22.7
+                    )
                 )
                 team_k_rate_map[team_code] = round(k_vals.mean(), 1)
         except Exception:

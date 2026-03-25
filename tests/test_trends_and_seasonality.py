@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from src import trends
-from src.predictor import generate_prediction
+from src.predictor import _pitcher_quality_early_season_discount, abs_adjustment_factor, generate_prediction
 
 
 class TrendAndSeasonalityTests(unittest.TestCase):
@@ -58,6 +58,23 @@ class TrendAndSeasonalityTests(unittest.TestCase):
         )
 
         self.assertLess(opening_day["projection"], midseason["projection"])
+
+    def test_durable_opening_day_starter_gets_less_harsh_discount(self):
+        ace = {"ip": 195.0, "gs": 31, "whip": 0.95, "k_pct": 30.0}
+        generic = {"ip": 162.0, "gs": 31, "whip": 1.28, "k_pct": 22.7}
+
+        ace_discount = _pitcher_quality_early_season_discount(ace, date(2026, 3, 27))
+        generic_discount = _pitcher_quality_early_season_discount(generic, date(2026, 3, 27))
+
+        self.assertGreater(ace_discount, generic_discount)
+        self.assertLessEqual(ace_discount, 1.0)
+
+    def test_abs_adjustment_uses_dynamic_opening_day(self):
+        preseason = abs_adjustment_factor("pitcher_strikeouts", date(2027, 3, 20))
+        opening_week = abs_adjustment_factor("pitcher_strikeouts", date(2027, 4, 2))
+
+        self.assertEqual(preseason, 1.0)
+        self.assertLess(opening_week, 1.0)
 
 
 if __name__ == "__main__":

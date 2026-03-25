@@ -42,6 +42,16 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     return number
 
 
+def _safe_pct(value: Any, default: float) -> float:
+    """Normalize rates to percentage points (22.7, not 0.227)."""
+    number = _safe_float(value, default)
+    if number <= 0:
+        return default
+    if number < 1:
+        return number * 100.0
+    return number
+
+
 def _match_batter_row(player_name: str, batting_df: pd.DataFrame):
     if batting_df.empty or "Name" not in batting_df.columns:
         return None
@@ -84,8 +94,8 @@ def _extract_metrics(row) -> dict[str, float]:
         "woba": _safe_float(row.get("wOBA"), LEAGUE_DEFAULTS["woba"]),
         "slg": _safe_float(row.get("SLG"), LEAGUE_DEFAULTS["slg"]),
         "iso": _safe_float(row.get("ISO"), LEAGUE_DEFAULTS["iso"]),
-        "k_rate": _safe_float(row.get("K%"), LEAGUE_DEFAULTS["k_rate"]),
-        "bb_rate": _safe_float(row.get("BB%"), LEAGUE_DEFAULTS["bb_rate"]),
+        "k_rate": _safe_pct(row.get("K%"), LEAGUE_DEFAULTS["k_rate"]),
+        "bb_rate": _safe_pct(row.get("BB%"), LEAGUE_DEFAULTS["bb_rate"]),
         "sprint_speed": _safe_float(row.get("Spd"), LEAGUE_DEFAULTS["sprint_speed"]),
     }
 
@@ -97,8 +107,8 @@ def _extract_profile_metrics(profile: dict[str, Any] | None) -> dict[str, float]
         "woba": _safe_float(profile.get("woba"), LEAGUE_DEFAULTS["woba"]),
         "slg": _safe_float(profile.get("slg"), LEAGUE_DEFAULTS["slg"]),
         "iso": _safe_float(profile.get("iso"), LEAGUE_DEFAULTS["iso"]),
-        "k_rate": _safe_float(profile.get("k_rate"), LEAGUE_DEFAULTS["k_rate"]),
-        "bb_rate": _safe_float(profile.get("bb_rate"), LEAGUE_DEFAULTS["bb_rate"]),
+        "k_rate": _safe_pct(profile.get("k_rate"), LEAGUE_DEFAULTS["k_rate"]),
+        "bb_rate": _safe_pct(profile.get("bb_rate"), LEAGUE_DEFAULTS["bb_rate"]),
         "sprint_speed": _safe_float(profile.get("sprint_speed"), LEAGUE_DEFAULTS["sprint_speed"]),
     }
 

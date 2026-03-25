@@ -68,6 +68,23 @@ class LineupContextTests(unittest.TestCase):
         self.assertGreater(context["avg_obp"], 0.36)
         self.assertGreater(context["top5_woba"], 0.35)
 
+    def test_decimal_k_rates_are_normalized_to_percentage_points(self):
+        batting_df = pd.DataFrame(
+            [
+                {"Name": "A", "Team": "NYY", "OBP": 0.300, "wOBA": 0.300, "SLG": 0.400, "ISO": 0.150, "K%": 0.20, "BB%": 0.08, "Spd": 27.0},
+                {"Name": "B", "Team": "NYY", "OBP": 0.310, "wOBA": 0.310, "SLG": 0.410, "ISO": 0.160, "K%": 0.25, "BB%": 0.09, "Spd": 27.0},
+            ]
+        )
+        lineup = [
+            {"player_name": "A", "batting_order": 1},
+            {"player_name": "B", "batting_order": 2},
+        ]
+
+        context = build_team_lineup_context(lineup, batting_df, "NYY")
+
+        self.assertAlmostEqual(context["avg_k_rate"], 22.5, places=1)
+        self.assertAlmostEqual(context["players"][0]["bb_rate"], 8.0, places=1)
+
 
 if __name__ == "__main__":
     unittest.main()
