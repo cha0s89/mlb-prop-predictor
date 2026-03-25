@@ -148,20 +148,21 @@ def prob_under_negbinom(line: float, n: float, p: float) -> float:
 # Source: research compilation from multiple baseball analytics studies
 STABILIZATION = {
     # Batter stats (in PA unless noted)
-    "batter_k_rate": 60,
-    "batter_bb_rate": 120,
-    "batter_hr_rate": 170,
-    "batter_avg": 910,      # AB
-    "batter_babip": 820,    # BIP
-    "batter_iso": 160,
-    "batter_woba": 200,
+    # Updated to modern research (FanGraphs 2024 reliability update)
+    "batter_k_rate": 150,     # was 60; K% stabilizes slower than previously thought
+    "batter_bb_rate": 200,    # was 120; walk rate needs more PA
+    "batter_hr_rate": 300,    # was 170; power needs ~300 PA (launch angle era)
+    "batter_avg": 910,        # AB — unchanged, AVG is notoriously noisy
+    "batter_babip": 820,      # BIP — unchanged
+    "batter_iso": 550,        # was 160; ISO is noisier than believed
+    "batter_woba": 250,       # was 200; composite stat needs more sample
     # Pitcher stats (in BF unless noted)
-    "pitcher_k_rate": 70,
-    "pitcher_bb_rate": 170,
-    "pitcher_hr_rate": 1320,
-    "pitcher_babip": 2000,   # BIP
-    "pitcher_era": 500,      # ~80 IP worth
-    "pitcher_fip": 200,
+    "pitcher_k_rate": 70,     # unchanged — K% is the fastest-stabilizing pitcher stat
+    "pitcher_bb_rate": 170,   # unchanged
+    "pitcher_hr_rate": 1320,  # unchanged — HR/FB is extremely noisy for pitchers
+    "pitcher_babip": 2000,    # BIP — unchanged
+    "pitcher_era": 500,       # ~80 IP worth — unchanged
+    "pitcher_fip": 200,       # unchanged
 }
 
 

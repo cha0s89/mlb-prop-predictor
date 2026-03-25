@@ -1,6 +1,6 @@
 {
-  "version": "v030",
-  "description": "piecewise calibration, updated stabilization, fixed variance ratios, reduced overfitting",
+  "version": "v029",
+  "description": "disable value-destructive props, direction bias correction, ABS umpire reduction",
   "created_at": "2026-03-25T19:55:56.258866+00:00",
   "confidence_thresholds": {
     "A": 0.7,
@@ -75,7 +75,7 @@
   },
   "variance_ratios": {
     "pitcher_strikeouts": 2.2,
-    "batter_strikeouts": 1.35,
+    "batter_strikeouts": 1.0115,
     "hits": 2.5875,
     "total_bases": 1.0413,
     "home_runs": 1.19,
@@ -84,11 +84,11 @@
     "stolen_bases": 2.5,
     "hitter_fantasy_score": 2.0,
     "hits_runs_rbis": 1.5,
-    "pitching_outs": 2.0,
+    "pitching_outs": 3.3638,
     "earned_runs": 1.617,
     "walks_allowed": 1.12,
     "walks": 1.5,
-    "hits_allowed": 2.0,
+    "hits_allowed": 5.0625,
     "singles": 2.925,
     "doubles": 1.84
   },
@@ -97,9 +97,9 @@
     "total_bases": 0.2,
     "pitcher_strikeouts": 0.8,
     "hitter_fantasy_score": 0.6,
-    "batter_strikeouts": 0.5,
+    "batter_strikeouts": 1.0,
     "doubles": 0.9,
-    "earned_runs": 0.5,
+    "earned_runs": 1.0,
     "hits_allowed": 0.6,
     "hits_runs_rbis": 0.0,
     "home_runs": 0.5,
@@ -108,7 +108,7 @@
     "runs": 0.0,
     "singles": 0.5,
     "walks": 0.0,
-    "walks_allowed": 0.5
+    "walks_allowed": 1.0
   },
   "confidence_shrinkage": {
     "default": 0.7,

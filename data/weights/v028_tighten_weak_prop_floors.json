@@ -1,6 +1,6 @@
 {
-  "version": "v030",
-  "description": "piecewise calibration, updated stabilization, fixed variance ratios, reduced overfitting",
+  "version": "v028",
+  "description": "tighten weak-prop floors and add runs/HRR offsets",
   "created_at": "2026-03-25T19:55:56.258866+00:00",
   "confidence_thresholds": {
     "A": 0.7,
@@ -9,8 +9,8 @@
     "D": 0.0
   },
   "direction_bias": {
-    "more_multiplier": 0.92,
-    "less_multiplier": 1.04
+    "more_multiplier": 1.0,
+    "less_multiplier": 1.0
   },
   "prop_type_offsets": {
     "pitcher_strikeouts": -0.5,
@@ -44,8 +44,8 @@
     "pitching_outs_less": 0.6,
     "earned_runs_more": 0.6,
     "earned_runs_less": 0.6,
-    "walks_allowed_more": 0.95,
-    "walks_allowed_less": 0.95,
+    "walks_allowed_more": 0.72,
+    "walks_allowed_less": 0.72,
     "hits_allowed_more": 0.6,
     "hits_allowed_less": 0.6,
     "batter_strikeouts_more": 0.66,
@@ -56,12 +56,12 @@
     "rbis_less": 0.6,
     "runs_more": 0.68,
     "runs_less": 0.68,
-    "singles_more": 0.95,
-    "singles_less": 0.95,
+    "singles_more": 0.8,
+    "singles_less": 0.8,
     "doubles_more": 0.6,
     "doubles_less": 0.6,
-    "hits_runs_rbis_more": 0.95,
-    "hits_runs_rbis_less": 0.95
+    "hits_runs_rbis_more": 0.74,
+    "hits_runs_rbis_less": 0.74
   },
   "factor_weights": {
     "statcast_blend": 1.0,
@@ -69,13 +69,13 @@
     "platoon_split": 1.0,
     "park_factor": 1.0,
     "weather": 1.0,
-    "umpire": 0.5,
+    "umpire": 1.0,
     "opposing_quality": 1.0,
     "barrel_rate": 1.0
   },
   "variance_ratios": {
     "pitcher_strikeouts": 2.2,
-    "batter_strikeouts": 1.35,
+    "batter_strikeouts": 1.0115,
     "hits": 2.5875,
     "total_bases": 1.0413,
     "home_runs": 1.19,
@@ -84,11 +84,11 @@
     "stolen_bases": 2.5,
     "hitter_fantasy_score": 2.0,
     "hits_runs_rbis": 1.5,
-    "pitching_outs": 2.0,
+    "pitching_outs": 3.3638,
     "earned_runs": 1.617,
     "walks_allowed": 1.12,
     "walks": 1.5,
-    "hits_allowed": 2.0,
+    "hits_allowed": 5.0625,
     "singles": 2.925,
     "doubles": 1.84
   },
@@ -97,9 +97,9 @@
     "total_bases": 0.2,
     "pitcher_strikeouts": 0.8,
     "hitter_fantasy_score": 0.6,
-    "batter_strikeouts": 0.5,
+    "batter_strikeouts": 1.0,
     "doubles": 0.9,
-    "earned_runs": 0.5,
+    "earned_runs": 1.0,
     "hits_allowed": 0.6,
     "hits_runs_rbis": 0.0,
     "home_runs": 0.5,
@@ -108,7 +108,7 @@
     "runs": 0.0,
     "singles": 0.5,
     "walks": 0.0,
-    "walks_allowed": 0.5
+    "walks_allowed": 1.0
   },
   "confidence_shrinkage": {
     "default": 0.7,

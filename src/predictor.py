@@ -173,8 +173,36 @@ def _get_calibration_blend_weights(weights: Optional[dict] = None) -> dict:
     return merged
 
 
+# Calibration anchors: (predicted_avg, actual_accuracy)
+# From backtest_2025_report.json calibration table (464K predictions).
+_CALIBRATION_ANCHORS = [
+    (0.500, 0.500),   # By definition: 50% predicted = 50% actual
+    (0.520, 0.5461),
+    (0.555, 0.5929),
+    (0.595, 0.6251),
+    (0.660, 0.6917),
+    (0.855, 0.8359),
+    (1.000, 1.000),   # Anchor: certainty maps to certainty
+]
+
+
+def _piecewise_calibrate(raw_prob: float) -> float:
+    """Map raw model probability to calibrated confidence via piecewise
+    linear interpolation over backtest-derived anchors."""
+    if raw_prob <= 0.50:
+        return 0.50
+    anchors = _CALIBRATION_ANCHORS
+    for i in range(len(anchors) - 1):
+        x0, y0 = anchors[i]
+        x1, y1 = anchors[i + 1]
+        if x0 <= raw_prob <= x1:
+            t = (raw_prob - x0) / (x1 - x0) if x1 != x0 else 0.0
+            return y0 + t * (y1 - y0)
+    return anchors[-1][1]
+
+
 def _get_confidence_shrinkage(prop_type: str, weights: Optional[dict] = None) -> float:
-    """Return the configured confidence shrinkage for this prop."""
+    """Return the configured confidence shrinkage for this prop (legacy, kept for compat)."""
     weights = weights or _load_weights()
     raw = weights.get("confidence_shrinkage", DEFAULT_CONFIDENCE_SHRINKAGE)
     if isinstance(raw, dict):
@@ -359,13 +387,13 @@ LG = {
 # From FanGraphs / Russell Carleton research
 # ═══════════════════════════════════════════════════════
 STAB = {
-    # Batter (PA)
-    "k_rate": 60, "bb_rate": 120, "hbp_rate": 240,
-    "babip": 820, "avg": 500, "obp": 300, "slg": 320, "iso": 160,
-    "woba": 300, "hr_fb": 300, "gb_rate": 80, "fb_rate": 80,
+    # Batter (PA) — updated to FanGraphs 2024 reliability research
+    "k_rate": 150, "bb_rate": 200, "hbp_rate": 240,
+    "babip": 820, "avg": 910, "obp": 500, "slg": 500, "iso": 550,
+    "woba": 250, "hr_fb": 300, "gb_rate": 200, "fb_rate": 250,
     "ld_rate": 600, "barrel_rate": 100, "contact_rate": 100,
     "sprint_speed": 50,  # essentially stable (physical trait)
-    # Pitcher (BF)
+    # Pitcher (BF) — K% and BB% unchanged (fast-stabilizing)
     "k_pct_p": 70, "bb_pct_p": 170, "hr_fb_p": 300,
     "babip_p": 2000, "csw_pct": 200, "swstr_pct": 150,
     "era": 600, "fip": 200, "gb_rate_p": 100,
@@ -619,8 +647,14 @@ def _estimate_team_runs_per_game(
     wx: Optional[dict] = None,
     platoon: Optional[dict] = None,
     team_lineup_context: Optional[dict] = None,
+    vegas_game_total: Optional[float] = None,
 ) -> float:
-    """Estimate the batter's team run environment for PA-sensitive props."""
+    """Estimate the batter's team run environment for PA-sensitive props.
+
+    When *vegas_game_total* is available (e.g. 9.5), it is blended at 20%
+    weight with our model-derived estimate.  This keeps our projection as
+    the primary signal while using the market total as a sanity nudge.
+    """
     team_rpg = 4.5
 
     woba = b.get("woba", LG["woba"])
@@ -657,6 +691,14 @@ def _estimate_team_runs_per_game(
         team_rpg *= 1 + (lineup_woba / LG["woba"] - 1) * 0.16
         team_rpg *= 1 + (top5_woba / LG["woba"] - 1) * 0.12
         team_rpg *= 1 + (depth_woba / LG["woba"] - 1) * 0.08
+
+    # Blend with Vegas game total (20% market, 80% model).
+    # Game total is for both teams combined, so each team's implied share
+    # is approximately half.  We don't assume a 50/50 split — we let our
+    # model estimate tilt it, but anchor the overall magnitude to the market.
+    if vegas_game_total and vegas_game_total > 0:
+        vegas_team_rpg = vegas_game_total / 2.0
+        team_rpg = team_rpg * 0.80 + vegas_team_rpg * 0.20
 
     return max(2.8, min(team_rpg, 6.8))
 
@@ -977,9 +1019,9 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     # Park K factor
     if park: proj *= _park(park, PARK_K)
 
-    # Umpire adjustment (+/- 0.5-1.0 K)
+    # Umpire adjustment — reduced 50% for 2026 ABS challenge system
     if ump and ump.get("known"):
-        proj += ump.get("k_adjustment", 0)
+        proj += ump.get("k_adjustment", 0) * 0.50
 
     # Weather
     if wx:
@@ -1001,7 +1043,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     # Beta-Binomial distribution parameters for strikeout projections
     # Use stabilized K-rate and precision based on pitcher reliability
     raw_k_rate = reg_k / 100.0  # Convert percentage to decimal
-    sample_bf = p.get("gs", 10) * 25  # Approximation: ~25 BF/start
+    sample_bf = p.get("bf", p.get("tbf", 0)) or p.get("gs", 10) * 25
     stabilized_k_rate = distributions.bayesian_stabilize(
         raw_k_rate, LG["k_pct_p"] / 100.0, sample_bf, "pitcher_k_rate"
     )
@@ -1150,10 +1192,10 @@ def project_pitcher_walks(p, park=None, ump=None, game_date: date | None = None)
 
     proj = exp_bf * (reg_bb / 100)
 
-    # Umpire with tight zone = more walks
+    # Umpire with tight zone = more walks — reduced 50% for 2026 ABS
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
-        proj -= k_adj * 0.3  # Inverse: high-K ump = fewer walks
+        proj -= k_adj * 0.15  # Inverse: high-K ump = fewer walks
 
     # v018: ABS Challenge System adjustment
     proj *= abs_adjustment_factor("walks_allowed")
@@ -1587,7 +1629,7 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
 
 def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
                           park=None, wx=None, lineup_pos=None,
-                          lineup_context=None):
+                          lineup_context=None, vegas_game_total=None):
     """
     BATTER RBIs — heavily dependent on lineup context.
 
@@ -1618,6 +1660,7 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
         wx=wx,
         platoon=platoon,
         team_lineup_context=lineup_context,
+        vegas_game_total=vegas_game_total,
     )
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos, team_runs_per_game=team_runs_pg)
     exp_pa = pa_result["mean_pa"]
@@ -1674,7 +1717,7 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
 
 def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
                           park=None, wx=None, lineup_pos=None,
-                          lineup_context=None):
+                          lineup_context=None, vegas_game_total=None):
     """
     BATTER RUNS SCORED — OBP-driven + lineup position + sprint speed.
 
@@ -1702,12 +1745,13 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
         wx=wx,
         platoon=platoon,
         team_lineup_context=lineup_context,
+        vegas_game_total=vegas_game_total,
     )
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos, team_runs_per_game=team_runs_pg)
     exp_pa = pa_result["mean_pa"]
 
     observed_runs_per_game = runs / games if (runs and games > 0) else LG["runs_per_game"]
-    reg_runs_per_game = _regress(observed_runs_per_game, pa, 280, LG["runs_per_game"])
+    reg_runs_per_game = _regress(observed_runs_per_game, pa, 400, LG["runs_per_game"])
     proj = reg_runs_per_game * (exp_pa / 4.2)
 
     proj *= RUNS_LINEUP_MULTIPLIERS.get(lineup_pos, 1.0)
@@ -1719,7 +1763,7 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
 
     # Sprint speed: fast players score from 1st on doubles, score on sac flies
     if sprint > 0:
-        speed_adj = (sprint - LG["sprint_speed"]) / LG["sprint_speed"] * 0.12
+        speed_adj = (sprint - LG["sprint_speed"]) / LG["sprint_speed"] * 0.18
         proj *= (1 + speed_adj)
 
     # Better run environments matter more for runs than for other batter props.
@@ -1831,9 +1875,9 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
         k_plat = platoon.get("k_adjustment", 1.0)
         reg_k *= k_plat
 
-    # Umpire (big zone = more Ks for batters too)
+    # Umpire (big zone = more Ks for batters too) — reduced for 2026 ABS
     if ump and ump.get("known"):
-        k_ump_adj = ump.get("k_adjustment", 0) * 0.15  # Scaled for individual batter
+        k_ump_adj = ump.get("k_adjustment", 0) * 0.075  # Halved for ABS challenge system
         reg_k *= (1 + k_ump_adj / 5)
 
     # v018 Task 3A: Opportunity-first PA estimation
@@ -1862,10 +1906,10 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
         opp_bb = _ensure_pct(opp_p.get("bb_pct"), lg_default=LG["bb_pct_p"])
         reg_bb *= (opp_bb / LG["bb_pct_p"])
 
-    # Tight-zone ump = more walks
+    # Tight-zone ump = more walks — reduced for 2026 ABS
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
-        reg_bb *= (1 - k_adj * 0.05)  # High-K ump = fewer walks
+        reg_bb *= (1 - k_adj * 0.025)  # Halved for ABS challenge system
 
     # v018 Task 3A: Opportunity-first PA estimation
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
@@ -2065,11 +2109,13 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
 
 def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
                             park=None, wx=None, ump=None, lineup_pos=None,
-                            lineup_context=None):
+                            lineup_context=None, vegas_game_total=None):
     """HITS + RUNS + RBIs combo — sum of individual projections."""
     hits = project_batter_hits(b, opp_p, bvp, platoon, park, wx, lineup_pos)
-    runs = project_batter_runs(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context)
-    rbis = project_batter_rbis(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context)
+    runs = project_batter_runs(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context,
+                               vegas_game_total=vegas_game_total)
+    rbis = project_batter_rbis(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context,
+                               vegas_game_total=vegas_game_total)
 
     mu = hits["mu"] + runs["mu"] + rbis["mu"]
     return {
@@ -2314,18 +2360,19 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # Confidence is the resolved (non-push) probability that the chosen side wins.
     raw_prob = max(resolved_over, resolved_under)
 
-    # ── MODEL UNCERTAINTY DISCOUNT ─────────────────────────────
-    # Raw CDF probability assumes the projection is perfect truth.
-    # In reality, projections have ~0.3-0.5 standard error.
-    # Backtest shows A-grade picks hit 55% vs 70%+ raw probability —
-    # a ~15pp overconfidence gap. Apply a calibration curve that
-    # compresses extreme probabilities toward 50%.
-    #
-    # Formula: calibrated = 0.50 + (raw - 0.50) × shrinkage
-    # shrinkage < 1.0 pulls everything toward the coinflip baseline.
-    # 0.70 shrinkage: raw 80% → calibrated 71%, raw 75% → 67.5%, raw 60% → 57%
+    # ── TWO-STAGE CALIBRATION ─────────────────────────────
+    # Stage 1: Per-prop shrinkage compresses raw CDF probability toward
+    # 50% to account for projection uncertainty.  This captures the
+    # prop-specific overconfidence (e.g., TB raw 80% actually hits ~65%).
     model_uncertainty_shrinkage = _get_confidence_shrinkage(prop_type, weights)
-    confidence = 0.50 + (raw_prob - 0.50) * model_uncertainty_shrinkage
+    shrunk_prob = 0.50 + (raw_prob - 0.50) * model_uncertainty_shrinkage
+    shrunk_prob = max(0.50, min(shrunk_prob, 1.0))
+
+    # Stage 2: Piecewise calibration maps the shrunk probability to the
+    # actual observed accuracy from the backtest calibration table.
+    # This corrects the systematic under-confidence at low/mid ranges
+    # and over-confidence at the top.
+    confidence = _piecewise_calibrate(shrunk_prob)
     confidence = max(0.50, min(confidence, 1.0))
 
     edge = round(abs(confidence - 0.50), 4)
@@ -2362,7 +2409,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          bvp=None, platoon=None, ump=None,
                          park_team=None, weather=None, lineup_pos=None,
                          batter_lineup_context=None, opp_lineup_context=None,
-                         game_date: date | None = None):
+                         game_date: date | None = None,
+                         vegas_game_total: float | None = None):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2394,10 +2442,10 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
         "rbis": lambda: project_batter_rbis(
             b, opp, bvp, platoon, park_team, weather, lineup_pos,
-            batter_lineup_context),
+            batter_lineup_context, vegas_game_total=vegas_game_total),
         "runs": lambda: project_batter_runs(
             b, opp, bvp, platoon, park_team, weather, lineup_pos,
-            batter_lineup_context),
+            batter_lineup_context, vegas_game_total=vegas_game_total),
         "stolen_bases": lambda: project_batter_stolen_bases(b, park_team),
         "batter_strikeouts": lambda: project_batter_strikeouts(
             b, opp, bvp, platoon, park_team, ump, lineup_pos),
@@ -2407,7 +2455,7 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
             batter_lineup_context),
         "hits_runs_rbis": lambda: project_hits_runs_rbis(
             b, opp, bvp, platoon, park_team, weather, ump, lineup_pos,
-            batter_lineup_context),
+            batter_lineup_context, vegas_game_total=vegas_game_total),
         "singles": lambda: project_batter_singles(
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
         "doubles": lambda: project_batter_doubles(
