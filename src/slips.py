@@ -2,12 +2,12 @@
 PrizePicks Slip Tracker
 Track multi-pick entries (slips), calculate payouts, and manage P&L.
 
-Official PrizePicks payout structure (March 2026):
+Official PrizePicks minimum-guarantee payout structure (March 2026):
   Power Play (must be perfect):
-    2-Pick = 3x, 3-Pick = 6x, 4-Pick = 10x, 5-Pick = 20x, 6-Pick = 25x
+    2-Pick = 3x, 3-Pick = 5x, 4-Pick = 10x, 5-Pick = 20x, 6-Pick = 25x
   Flex Play (partial payouts):
-    3-Pick: 3/3=3x, 2/3=1x
-    4-Pick: 4/4=6x, 3/4=1.5x
+    3-Pick: 3/3=2.25x, 2/3=1.25x
+    4-Pick: 4/4=5x, 3/4=1.5x
     5-Pick: 5/5=10x, 4/5=2x, 3/5=0.4x
     6-Pick: 6/6=12.5x, 5/6=2x, 4/6=0.4x
 
@@ -17,8 +17,9 @@ Official PrizePicks payout structure (March 2026):
   2-Pick Power DNP → refund
   If DNP removals leave all remaining picks on same team → refund (ineligible)
 
-  Note: Some payouts may differ for discounted projections, same-game combos,
-  specific leagues, and Demon/Goblin projections. In-app detail is authoritative.
+  Note: PrizePicks also lists higher "highest score" contest payouts.
+  For EV, break-even, and bankroll sizing we use the deterministic
+  minimum-guarantee table from the official help page. In-app detail is authoritative.
 """
 
 import sqlite3
@@ -31,18 +32,18 @@ from typing import Optional
 from src.database import get_connection, grade_prediction
 
 
-# ── Official PrizePicks Payout Tables (March 2026) ──
-# Source: PrizePicks Help Center, verified March 2026
+# Official PrizePicks minimum-guarantee payout tables (March 2026)
+# Source: PrizePicks Help Center "Potential Outcomes", verified March 24, 2026
 PAYOUTS = {
     # Power Play (must be perfect)
     "2_power": {2: 3.0, 1: 0, 0: 0},
-    "3_power": {3: 6.0, 2: 0, 1: 0, 0: 0},
+    "3_power": {3: 5.0, 2: 0, 1: 0, 0: 0},
     "4_power": {4: 10.0, 3: 0, 2: 0, 1: 0, 0: 0},
     "5_power": {5: 20.0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
     "6_power": {6: 25.0, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0},
     # Flex Play (partial payouts)
-    "3_flex": {3: 3.0, 2: 1.0, 1: 0, 0: 0},
-    "4_flex": {4: 6.0, 3: 1.5, 2: 0, 1: 0, 0: 0},
+    "3_flex": {3: 2.25, 2: 1.25, 1: 0, 0: 0},
+    "4_flex": {4: 5.0, 3: 1.5, 2: 0, 1: 0, 0: 0},
     "5_flex": {5: 10.0, 4: 2.0, 3: 0.4, 2: 0, 1: 0, 0: 0},
     "6_flex": {6: 12.5, 5: 2.0, 4: 0.4, 3: 0, 2: 0, 1: 0, 0: 0},
 }
@@ -101,12 +102,12 @@ def get_payout_table(entry_type: str, line_type: str = "standard") -> dict:
 # Per-leg iid break-even probabilities (exact, from research report)
 BREAKEVEN = {
     "2_power": 0.57735,
-    "3_power": 0.55032,
+    "3_power": 0.58480,
     "4_power": 0.56234,
     "5_power": 0.54928,
     "6_power": 0.58480,
-    "3_flex":  0.57735,
-    "4_flex":  0.55032,
+    "3_flex":  0.59094,
+    "4_flex":  0.56890,
     "5_flex":  0.54253,
     "6_flex":  0.58984,
 }
