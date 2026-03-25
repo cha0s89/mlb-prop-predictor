@@ -1314,6 +1314,7 @@ with tab_edge:
             if selected_player_label != PLAYER_SEARCH_ALL:
                 selected_player_name, selected_player_team = player_lookup[selected_player_label]
         all_edges = []
+        _game_totals_by_team: dict[str, float] = {}  # team_name_lower -> game total O/U
         if has_sharp and sharp_events_available:
             total_sharp_lines = 0
             events_with_props = 0
@@ -1341,6 +1342,16 @@ with tab_edge:
                             events_with_props += 1
                             total_sharp_lines += len(sharp)
                         all_edges.extend(find_ev_edges(pp_lines, sharp, min_ev_pct=0.25))
+                        # Extract game total for run-environment nudge
+                        from src.sharp_odds import extract_game_total
+                        gt = extract_game_total(result["data"])
+                        if gt:
+                            _ev_home = event.get("home_team", "").lower()
+                            _ev_away = event.get("away_team", "").lower()
+                            if _ev_home:
+                                _game_totals_by_team[_ev_home] = gt
+                            if _ev_away:
+                                _game_totals_by_team[_ev_away] = gt
             _skip_msg = f" · {_skipped_events} skipped (no PP lines)" if _skipped_events else ""
             st.caption(f"Scanned {len(events or [])} events · {events_with_props} had props · {total_sharp_lines} sharp lines · {len(all_edges)} edges{_skip_msg}")
 
@@ -1786,6 +1797,18 @@ with tab_edge:
                 if _min_line and float(row.get("line", 0)) < _min_line:
                     continue
 
+                # Resolve Vegas game total for this player's game
+                _vgt = None
+                if _game_totals_by_team and team:
+                    _team_lower = team.lower()
+                    _vgt = _game_totals_by_team.get(_team_lower)
+                    if _vgt is None:
+                        # Fuzzy match: PP team name may be abbreviation or partial
+                        for _gt_team, _gt_val in _game_totals_by_team.items():
+                            if _team_lower in _gt_team or _gt_team in _team_lower:
+                                _vgt = _gt_val
+                                break
+
                 p = generate_prediction(
                     player_name=row["player_name"],
                     stat_type=row["stat_type"],
@@ -1803,9 +1826,12 @@ with tab_edge:
                     batter_lineup_context=batter_lineup_context,
                     opp_lineup_context=opp_lineup_context,
                     game_date=_game_date_from_iso(row.get("start_time", "")),
+                    vegas_game_total=_vgt,
                 )
                 p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
                 p["game_time_utc"] = row.get("start_time", "")
+                if _vgt:
+                    p["vegas_game_total"] = _vgt
 
                 # Props that are count-based (safe to apply multipliers to)
                 # home_runs now returns expected count — include in COUNT_PROPS for spring/trend multipliers

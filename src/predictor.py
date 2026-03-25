@@ -619,8 +619,14 @@ def _estimate_team_runs_per_game(
     wx: Optional[dict] = None,
     platoon: Optional[dict] = None,
     team_lineup_context: Optional[dict] = None,
+    vegas_game_total: Optional[float] = None,
 ) -> float:
-    """Estimate the batter's team run environment for PA-sensitive props."""
+    """Estimate the batter's team run environment for PA-sensitive props.
+
+    When *vegas_game_total* is available (e.g. 9.5), it is blended at 20%
+    weight with our model-derived estimate.  This keeps our projection as
+    the primary signal while using the market total as a sanity nudge.
+    """
     team_rpg = 4.5
 
     woba = b.get("woba", LG["woba"])
@@ -657,6 +663,14 @@ def _estimate_team_runs_per_game(
         team_rpg *= 1 + (lineup_woba / LG["woba"] - 1) * 0.16
         team_rpg *= 1 + (top5_woba / LG["woba"] - 1) * 0.12
         team_rpg *= 1 + (depth_woba / LG["woba"] - 1) * 0.08
+
+    # Blend with Vegas game total (20% market, 80% model).
+    # Game total is for both teams combined, so each team's implied share
+    # is approximately half.  We don't assume a 50/50 split — we let our
+    # model estimate tilt it, but anchor the overall magnitude to the market.
+    if vegas_game_total and vegas_game_total > 0:
+        vegas_team_rpg = vegas_game_total / 2.0
+        team_rpg = team_rpg * 0.80 + vegas_team_rpg * 0.20
 
     return max(2.8, min(team_rpg, 6.8))
 
@@ -1587,7 +1601,7 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
 
 def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
                           park=None, wx=None, lineup_pos=None,
-                          lineup_context=None):
+                          lineup_context=None, vegas_game_total=None):
     """
     BATTER RBIs — heavily dependent on lineup context.
 
@@ -1618,6 +1632,7 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
         wx=wx,
         platoon=platoon,
         team_lineup_context=lineup_context,
+        vegas_game_total=vegas_game_total,
     )
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos, team_runs_per_game=team_runs_pg)
     exp_pa = pa_result["mean_pa"]
@@ -1674,7 +1689,7 @@ def project_batter_rbis(b, opp_p=None, bvp=None, platoon=None,
 
 def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
                           park=None, wx=None, lineup_pos=None,
-                          lineup_context=None):
+                          lineup_context=None, vegas_game_total=None):
     """
     BATTER RUNS SCORED — OBP-driven + lineup position + sprint speed.
 
@@ -1702,6 +1717,7 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
         wx=wx,
         platoon=platoon,
         team_lineup_context=lineup_context,
+        vegas_game_total=vegas_game_total,
     )
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos, team_runs_per_game=team_runs_pg)
     exp_pa = pa_result["mean_pa"]
@@ -2065,11 +2081,13 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
 
 def project_hits_runs_rbis(b, opp_p=None, bvp=None, platoon=None,
                             park=None, wx=None, ump=None, lineup_pos=None,
-                            lineup_context=None):
+                            lineup_context=None, vegas_game_total=None):
     """HITS + RUNS + RBIs combo — sum of individual projections."""
     hits = project_batter_hits(b, opp_p, bvp, platoon, park, wx, lineup_pos)
-    runs = project_batter_runs(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context)
-    rbis = project_batter_rbis(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context)
+    runs = project_batter_runs(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context,
+                               vegas_game_total=vegas_game_total)
+    rbis = project_batter_rbis(b, opp_p, bvp, platoon, park, wx, lineup_pos, lineup_context,
+                               vegas_game_total=vegas_game_total)
 
     mu = hits["mu"] + runs["mu"] + rbis["mu"]
     return {
@@ -2362,7 +2380,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          bvp=None, platoon=None, ump=None,
                          park_team=None, weather=None, lineup_pos=None,
                          batter_lineup_context=None, opp_lineup_context=None,
-                         game_date: date | None = None):
+                         game_date: date | None = None,
+                         vegas_game_total: float | None = None):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2394,10 +2413,10 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
         "rbis": lambda: project_batter_rbis(
             b, opp, bvp, platoon, park_team, weather, lineup_pos,
-            batter_lineup_context),
+            batter_lineup_context, vegas_game_total=vegas_game_total),
         "runs": lambda: project_batter_runs(
             b, opp, bvp, platoon, park_team, weather, lineup_pos,
-            batter_lineup_context),
+            batter_lineup_context, vegas_game_total=vegas_game_total),
         "stolen_bases": lambda: project_batter_stolen_bases(b, park_team),
         "batter_strikeouts": lambda: project_batter_strikeouts(
             b, opp, bvp, platoon, park_team, ump, lineup_pos),
@@ -2407,7 +2426,7 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
             batter_lineup_context),
         "hits_runs_rbis": lambda: project_hits_runs_rbis(
             b, opp, bvp, platoon, park_team, weather, ump, lineup_pos,
-            batter_lineup_context),
+            batter_lineup_context, vegas_game_total=vegas_game_total),
         "singles": lambda: project_batter_singles(
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
         "doubles": lambda: project_batter_doubles(

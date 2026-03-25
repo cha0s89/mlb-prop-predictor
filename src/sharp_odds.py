@@ -448,7 +448,7 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
         return {}
 
     if markets is None:
-        markets = list(PROP_MARKETS.values())
+        markets = list(PROP_MARKETS.values()) + ["totals"]
 
     url = f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events/{event_id}/odds"
     _log.info("[sharp_odds] GET %s (%d markets)", url, len(markets))
@@ -694,6 +694,42 @@ def extract_sharp_lines(event_data: dict) -> list:
         })
 
     return results
+
+
+def extract_game_total(event_data: dict) -> float | None:
+    """Extract the consensus game over/under total from sharp books.
+
+    Parses the 'totals' market from The Odds API response and returns the
+    weighted-average game total line across available books.  Returns None
+    if no totals data is present.
+    """
+    if not event_data:
+        return None
+
+    bookmakers = event_data.get("bookmakers", [])
+    if not bookmakers:
+        return None
+
+    weighted_total = 0.0
+    total_weight = 0.0
+
+    for book in bookmakers:
+        book_key = book.get("key", "").lower()
+        weight = BOOK_WEIGHTS.get(book_key, 0.3)
+
+        for market in book.get("markets", []):
+            if market.get("key") != "totals":
+                continue
+            for outcome in market.get("outcomes", []):
+                point = outcome.get("point")
+                if point and outcome.get("name") == "Over":
+                    weighted_total += float(point) * weight
+                    total_weight += weight
+                    break  # one total per book
+
+    if total_weight == 0:
+        return None
+    return round(weighted_total / total_weight, 2)
 
 
 def _normalize_name(name: str) -> str:
