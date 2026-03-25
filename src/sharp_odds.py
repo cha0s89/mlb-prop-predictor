@@ -124,8 +124,8 @@ def _load_dist_params() -> dict:
         with open(weights_path) as f:
             w = json.load(f)
         _DIST_PARAMS_CACHE.update(w.get("distribution_params", {}))
-    except Exception:
-        pass
+    except Exception as e:
+        _log.debug("[sharp_odds] Could not load distribution params from weights: %s", e)
     return _DIST_PARAMS_CACHE
 
 
@@ -237,7 +237,8 @@ def _solve_mu_from_fair_over(fair_over: float, line: float,
             return max(0.1, line)
         mu_solved = brentq(objective, lo, hi, xtol=0.001, maxiter=50)
         return max(0.1, mu_solved)
-    except Exception:
+    except Exception as e:
+        _log.debug("[sharp_odds] implied_mu solver failed for line=%.2f: %s", line, e)
         return max(0.1, line)
 
 
@@ -294,14 +295,14 @@ def get_api_key() -> str:
                         if line.startswith("ODDS_API_KEY") and "=" in line:
                             key = line.split("=", 1)[1].strip().strip('"').strip("'")
                             break
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("[sharp_odds] Could not read .env file: %s", e)
     if not key:
         try:
             import streamlit as st
             key = st.secrets.get("ODDS_API_KEY", "")
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("[sharp_odds] Could not read Streamlit secrets: %s", e)
     return key
 
 
@@ -377,8 +378,8 @@ def clear_odds_cache() -> int:
             if fname.endswith(".json"):
                 os.remove(os.path.join(_ODDS_CACHE_DIR, fname))
                 count += 1
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("[sharp_odds] Error clearing cache: %s", e)
     _log.info("[sharp_odds] Cleared %d cache files", count)
     return count
 
@@ -475,8 +476,8 @@ def fetch_event_props(event_id: str, markets: list = None, api_key: str = None) 
         try:
             from src.freshness import record_data_pull
             record_data_pull("sharp_odds", f"event {event_id}, {remaining} credits left")
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("[sharp_odds] Failed to record freshness: %s", e)
 
         result = {"data": data, "remaining_credits": remaining}
         _write_cache(cache_key, result)
