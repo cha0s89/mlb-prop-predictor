@@ -345,8 +345,11 @@ def _vectorized_theoretical_probs(mu: np.ndarray, line: float, prop_type: str, w
         var = np.clip(safe_mu * var_ratio, 0.01, None)
         shape = (safe_mu ** 2) / var
         scale = var / np.clip(safe_mu, 0.001, None)
-        p_over = 1.0 - sp_gamma.cdf(line + 0.5, shape, scale=scale)
-        p_under = sp_gamma.cdf(line - 0.5, shape, scale=scale)
+        # Gamma-backed props are modeled as continuous outcomes; do not apply
+        # discrete continuity correction here or the tuner will bias combo props
+        # back toward LESS even after the live probability contract was fixed.
+        p_over = 1.0 - sp_gamma.cdf(line, shape, scale=scale)
+        p_under = sp_gamma.cdf(line, shape, scale=scale)
         return np.asarray(p_over, dtype=float), np.asarray(p_under, dtype=float)
 
     if dist_type == "normal":

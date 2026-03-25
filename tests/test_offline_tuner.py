@@ -3,12 +3,14 @@ import sys
 import unittest
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.autolearn import get_baseline_weights
 from src.offline_tuner import (
+    _vectorized_theoretical_probs,
     analyze_backtest_tail_signals,
     evaluate_floors,
     evaluate_model_weights,
@@ -118,6 +120,15 @@ class OfflineTunerTests(unittest.TestCase):
         self.assertIn("log_loss", metrics)
         self.assertIn("mae", metrics)
         self.assertIn("total_bases", metrics["by_prop"])
+
+    def test_gamma_props_use_continuous_thresholds_in_offline_tuner(self):
+        weights = get_baseline_weights()
+        mu = np.array([1.43], dtype=float)
+        p_over, p_under = _vectorized_theoretical_probs(mu, 1.5, "hits_runs_rbis", weights)
+
+        self.assertAlmostEqual(float(p_over[0] + p_under[0]), 1.0, places=6)
+        self.assertGreater(float(p_over[0]), 0.0)
+        self.assertGreater(float(p_under[0]), 0.0)
 
     def test_model_tuner_supports_expanded_prop_families(self):
         rows = []
