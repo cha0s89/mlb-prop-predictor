@@ -1033,21 +1033,27 @@ tab_edge, tab_news, tab_slips, tab_grade, tab_qa = st.tabs(
 with tab_edge:
     api_key = get_api_key()
     has_sharp = bool(api_key)
-    # Check if we're in preseason
-    _days_to_opening = (date(2026, 3, 27) - date.today()).days
-    _is_preseason = _days_to_opening > 0
+    sharp_events = []
+    sharp_events_available = False
+    if has_sharp:
+        try:
+            sharp_events = _cached_sharp_events(api_key) or []
+            sharp_events_available = bool(sharp_events)
+        except Exception:
+            sharp_events = []
+            sharp_events_available = False
 
     if not api_key:
         st.markdown(
             '<div class="alert-strip"><strong>No Odds API key found.</strong> '
             'Sharp book comparison is disabled. Create a <code>.env</code> file in the project folder with: '
             '<code>ODDS_API_KEY=your_key_here</code><br>'
-            'Free key at <a href="https://the-odds-api.com" target="_blank">the-odds-api.com</a> — 500 req/month, no credit card.</div>',
+            'Free key at <a href="https://the-odds-api.com" target="_blank">the-odds-api.com</a> - 500 req/month, no credit card.</div>',
             unsafe_allow_html=True
         )
-    if _is_preseason:
+    elif not sharp_events_available:
         st.markdown(
-            '<div class="warn-strip"><strong>Pre-Opening Day</strong> — Projection-only mode. Sharp books unavailable until regular season.</div>',
+            '<div class="warn-strip"><strong>No sharp-book events posted yet.</strong> Projection-only mode for now; sharp comparison will appear automatically once sportsbooks publish MLB player-prop events.</div>',
             unsafe_allow_html=True
         )
     else:
@@ -1055,7 +1061,7 @@ with tab_edge:
         _creds_str = str(_creds_display) if _creds_display >= 0 else "?"
         _age_display = get_cache_age_minutes()
         _age_msg = f"Cached {_age_display}m ago" if _age_display >= 0 else "First fetch on load"
-        st.markdown(f'<div class="info-strip">Odds API active &nbsp;·&nbsp; <span class="hl">{_creds_str}</span> credits remaining &nbsp;·&nbsp; {_age_msg} &nbsp;·&nbsp; Sharp books: FanDuel · Pinnacle · DraftKings</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="info-strip">Odds API active | <span class="hl">{_creds_str}</span> credits remaining | {_age_msg} | {len(sharp_events)} MLB events | Sharp books: FanDuel, Pinnacle, DraftKings</div>', unsafe_allow_html=True)
 
     with st.spinner("Pulling PrizePicks MLB lines..."):
         try:
@@ -1107,12 +1113,12 @@ with tab_edge:
             if selected_player_label != PLAYER_SEARCH_ALL:
                 selected_player_name, selected_player_team = player_lookup[selected_player_label]
         all_edges = []
-        if has_sharp and not _is_preseason:
+        if has_sharp and sharp_events_available:
             total_sharp_lines = 0
             events_with_props = 0
             _skipped_events = 0
             with st.spinner("Fetching sharp lines & devigging..."):
-                events = _cached_sharp_events(api_key)
+                events = sharp_events
                 # Smart filter: only fetch props for games with PP lines
                 _pp_teams = set()
                 if not pp_lines.empty and "team" in pp_lines.columns:
@@ -1219,7 +1225,7 @@ with tab_edge:
                     log_batch_predictions(rows_to_save)
                     st.success(f"Saved {len(filt)} predictions!")
             else: st.info("No edges match filters.")
-        elif has_sharp and not _is_preseason:
+        elif has_sharp and sharp_events_available:
             st.info("No sharp book player prop edges found right now — odds may not be posted yet. Showing projection-based analysis below.")
 
         if not all_edges:

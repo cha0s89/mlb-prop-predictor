@@ -424,10 +424,6 @@ def build_board(
         errors.append(f"Schedule fetch: {exc}")
     logger.info("  %d games for dates %s", len(todays_games), sorted(pp_game_dates))
 
-    # Detect preseason
-    _days_to_opening = (OPENING_DAY - date.today()).days
-    _is_preseason = _days_to_opening > 0
-
     # ── STEP 4: Weather cache ────────────────────────────────────────────────
     logger.info("Step 4/13: Fetching weather")
     teams_in_slate: set = set()
@@ -643,13 +639,15 @@ def build_board(
 
     # ── STEP 9 (optional): Sharp edges ───────────────────────────────────────
     all_edges: list = []
-    if not skip_sharp and not _is_preseason:
+    if not skip_sharp:
         logger.info("Step 9/13: Fetching sharp lines & devigging")
         if api_key is None:
             api_key = get_api_key()
         if api_key:
             try:
                 events = fetch_mlb_events(api_key)
+                if not events:
+                    logger.info("  No sharp-book MLB events posted yet")
                 pp_teams = set()
                 if not pp_lines.empty and "team" in pp_lines.columns:
                     pp_teams = set(pp_lines["team"].dropna().str.lower().unique())
@@ -678,7 +676,7 @@ def build_board(
             except Exception as exc:
                 errors.append(f"Sharp odds: {exc}")
     else:
-        logger.info("Step 9/13: Skipping sharp lines (preseason or skip_sharp)")
+        logger.info("Step 9/13: Skipping sharp lines (skip_sharp)")
 
     result["edges"] = all_edges
 
