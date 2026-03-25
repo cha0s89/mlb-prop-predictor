@@ -1595,6 +1595,7 @@ with tab_edge:
                     lineup_pos=batting_pos,
                     batter_lineup_context=batter_lineup_context,
                     opp_lineup_context=opp_lineup_context,
+                    game_date=_game_date_from_iso(row.get("start_time", "")),
                 )
                 p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
                 p["game_time_utc"] = row.get("start_time", "")
@@ -1648,7 +1649,7 @@ with tab_edge:
                 p["spring_mult"] = spring_mult
                 p["spring_badge"] = spring["badge"]
 
-                trend = get_batter_trend(0)
+                trend = get_batter_trend(row["player_name"]) if not is_pitcher_prop else {"trend_multiplier": 1.0}
                 trend_mult = trend.get("trend_multiplier", 1.0)
                 trend_mult = max(0.92, min(1.08, trend_mult))
                 # Only apply trend multiplier to count-based props

@@ -1051,6 +1051,7 @@ def backtest_single_day(game_date: str,
                         opp_pitcher_profile=opp_pitcher_profile,
                         park_team=park,
                         batter_lineup_context=batter_lineup_context,
+                        game_date=game_date,
                     )
                 except Exception:
                     continue
@@ -1142,6 +1143,7 @@ def backtest_single_day(game_date: str,
                             ump=ump_adjustment,
                             park_team=home_team,
                             opp_lineup_context=opp_lineup_context,
+                            game_date=game_date,
                         )
                     except Exception:
                         continue

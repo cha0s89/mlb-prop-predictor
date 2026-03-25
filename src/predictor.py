@@ -35,6 +35,7 @@ from scipy import stats as sp_stats  # kept for potential future use
 from typing import Optional
 
 from src import distributions
+from src.spring import get_opening_day_for_year
 from src.weather import get_stat_specific_weather_adjustment
 
 
@@ -771,14 +772,20 @@ def _early_season_ip_discount(game_date: date = None) -> float:
 
     Returns a multiplier (0.85 to 1.0) to apply to projected IP/outs.
     """
+    if isinstance(game_date, str):
+        try:
+            game_date = datetime.fromisoformat(game_date.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                game_date = datetime.strptime(game_date[:10], "%Y-%m-%d").date()
+            except ValueError:
+                game_date = None
+    elif isinstance(game_date, datetime):
+        game_date = game_date.date()
+
     if game_date is None:
         game_date = date.today()
-
-    # MLB Opening Day is typically late March / early April.
-    # Use April 1 as a rough anchor — actual opening day varies by year.
-    year = game_date.year
-    # Opening Day 2026: March 27. Adjust for other years as needed.
-    season_start = date(year, 3, 27)
+    season_start = get_opening_day_for_year(game_date.year)
 
     if game_date < season_start:
         # Pre-Opening Day: moderate discount (less aggressive, spring games still happen)
@@ -805,7 +812,8 @@ def _early_season_ip_discount(game_date: date = None) -> float:
 
 def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
                                 opp_k_rate=None, park=None, wx=None,
-                                expected_ip=None, opp_lineup_context=None):
+                                expected_ip=None, opp_lineup_context=None,
+                                game_date: date | None = None):
     """
     PITCHER STRIKEOUTS — strongest signal prop type.
 
@@ -887,7 +895,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     bf_est_result = estimate_batters_faced(
         pitcher_ip=expected_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(),
+        early_season_discount=_early_season_ip_discount(game_date),
         opposing_lineup_woba=lineup_woba,
     )
     exp_bf = bf_est_result["mean_bf"]
@@ -947,7 +955,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     return result
 
 
-def project_pitcher_outs(p, park=None, wx=None):
+def project_pitcher_outs(p, park=None, wx=None, game_date: date | None = None):
     """
     PITCHER OUTS RECORDED — sensitive to pitch count and bullpen usage.
     Outs = IP × 3. A starter going 6 IP = 18 outs.
@@ -975,7 +983,7 @@ def project_pitcher_outs(p, park=None, wx=None):
     bf_result = estimate_batters_faced(
         pitcher_ip=proj_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(),
+        early_season_discount=_early_season_ip_discount(game_date),
     )
     proj_outs = bf_result["effective_ip"] * 3
 
@@ -991,7 +999,7 @@ def project_pitcher_outs(p, park=None, wx=None):
             "regressed_bb_pct": round(reg_bb, 1)}
 
 
-def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
+def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None, game_date: date | None = None):
     """
     PITCHER EARNED RUNS — use FIP/xFIP over ERA (more predictive).
 
@@ -1016,7 +1024,7 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
     bf_result = estimate_batters_faced(
         pitcher_ip=avg_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(),
+        early_season_discount=_early_season_ip_discount(game_date),
         opposing_lineup_woba=opp_woba,
     )
     effective_ip = bf_result["effective_ip"]
@@ -1047,7 +1055,7 @@ def project_pitcher_earned_runs(p, park=None, wx=None, opp_woba=None):
             "nb_n": round(nb_n, 4), "nb_p": round(nb_p, 4)}
 
 
-def project_pitcher_walks(p, park=None, ump=None):
+def project_pitcher_walks(p, park=None, ump=None, game_date: date | None = None):
     """PITCHER WALKS ALLOWED — BB% is the key driver."""
     bb_pct = _ensure_pct(p.get("bb_pct"), lg_default=LG["bb_pct_p"])
     bb9 = p.get("bb9", LG["bb9"])
@@ -1069,7 +1077,7 @@ def project_pitcher_walks(p, park=None, ump=None):
     bf_result = estimate_batters_faced(
         pitcher_ip=avg_ip,
         pitcher_whip=p.get("whip"),
-        early_season_discount=_early_season_ip_discount(),
+        early_season_discount=_early_season_ip_discount(game_date),
     )
     exp_bf = bf_result["mean_bf"]
 
@@ -1087,7 +1095,7 @@ def project_pitcher_walks(p, park=None, ump=None):
     return {"projection": round(mu, 2), "mu": mu, "regressed_bb_pct": round(reg_bb, 1)}
 
 
-def project_pitcher_hits_allowed(p, park=None, wx=None, opp_avg=None):
+def project_pitcher_hits_allowed(p, park=None, wx=None, opp_avg=None, game_date: date | None = None):
     """PITCHER HITS ALLOWED — WHIP, BABIP, K rate drive this."""
     whip = p.get("whip", LG["whip"])
     ip = p.get("ip", 0)
@@ -1102,7 +1110,12 @@ def project_pitcher_hits_allowed(p, park=None, wx=None, opp_avg=None):
     avg_ip = ip / gs if gs > 0 else LG["avg_ip_starter"]
     avg_ip = max(4.0, min(6.5, avg_ip))  # BUGFIX: 7.5 was too high for hits_allowed projections
 
-    proj = (h9 / 9.0) * avg_ip
+    bf_result = estimate_batters_faced(
+        pitcher_ip=avg_ip,
+        pitcher_whip=p.get("whip"),
+        early_season_discount=_early_season_ip_discount(game_date),
+    )
+    proj = (h9 / 9.0) * bf_result["effective_ip"]
 
     if opp_avg and opp_avg > 0:
         proj *= (opp_avg / LG["avg"])
@@ -1112,7 +1125,7 @@ def project_pitcher_hits_allowed(p, park=None, wx=None, opp_avg=None):
         proj *= get_stat_specific_weather_adjustment(wx, "hits_allowed")
 
     mu = max(proj, 2.0)
-    return {"projection": round(mu, 2), "mu": mu}
+    return {"projection": round(mu, 2), "mu": mu, "avg_ip": round(avg_ip, 1)}
 
 
 # ═══════════════════════════════════════════════════════
@@ -2279,7 +2292,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          opp_pitcher_profile=None, opp_team_k_rate=None,
                          bvp=None, platoon=None, ump=None,
                          park_team=None, weather=None, lineup_pos=None,
-                         batter_lineup_context=None, opp_lineup_context=None):
+                         batter_lineup_context=None, opp_lineup_context=None,
+                         game_date: date | None = None):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2296,13 +2310,13 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         "pitcher_strikeouts": lambda: project_pitcher_strikeouts(
             p, bvp=bvp, platoon=platoon, ump=ump,
             opp_k_rate=opp_team_k_rate, park=park_team, wx=weather,
-            opp_lineup_context=opp_lineup_context),
-        "pitching_outs": lambda: project_pitcher_outs(p, park=park_team, wx=weather),
+            opp_lineup_context=opp_lineup_context, game_date=game_date),
+        "pitching_outs": lambda: project_pitcher_outs(p, park=park_team, wx=weather, game_date=game_date),
         "earned_runs": lambda: project_pitcher_earned_runs(
-            p, park=park_team, wx=weather, opp_woba=opp.get("woba")),
-        "walks_allowed": lambda: project_pitcher_walks(p, park=park_team, ump=ump),
+            p, park=park_team, wx=weather, opp_woba=opp.get("woba"), game_date=game_date),
+        "walks_allowed": lambda: project_pitcher_walks(p, park=park_team, ump=ump, game_date=game_date),
         "hits_allowed": lambda: project_pitcher_hits_allowed(
-            p, park=park_team, wx=weather),
+            p, park=park_team, wx=weather, game_date=game_date),
         "hits": lambda: project_batter_hits(
             b, opp, bvp, platoon, park_team, weather, lineup_pos),
         "total_bases": lambda: project_batter_total_bases(
@@ -2337,7 +2351,7 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     elif b:
         proj_result = project_batter_hits(b, opp, bvp, platoon, park_team, weather, lineup_pos)
     elif p:
-        proj_result = project_pitcher_strikeouts(p, bvp=bvp, park=park_team, wx=weather)
+        proj_result = project_pitcher_strikeouts(p, bvp=bvp, park=park_team, wx=weather, game_date=game_date)
     else:
         proj_result = {"projection": line, "mu": line}
 

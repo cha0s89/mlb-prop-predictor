@@ -12,19 +12,43 @@ equally good on fundamentals, recent form can nudge the decision.
 Weight in final model: ~5-8% max. Never the primary driver.
 """
 
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
+from functools import lru_cache
+
+import numpy as np
+import pandas as pd
 
 try:
-    from pybaseball import statcast_batter, statcast_pitcher, cache
+    from pybaseball import cache, playerid_lookup, statcast_batter, statcast_pitcher
     cache.enable()
     PYBASEBALL_OK = True
 except ImportError:
     PYBASEBALL_OK = False
 
 
-def get_batter_trend(player_id: int, short_days: int = 7,
+@lru_cache(maxsize=2048)
+def _lookup_batter_mlbam_id(player_name: str) -> int | None:
+    """Resolve an MLBAM player id from a display name for trend lookups."""
+    if not PYBASEBALL_OK or not player_name:
+        return None
+
+    try:
+        parts = str(player_name).strip().split()
+        if len(parts) < 2:
+            return None
+        result = playerid_lookup(parts[-1], parts[0])
+        if result.empty:
+            return None
+        row = result.sort_values("key_mlbam", ascending=False).iloc[0]
+        mlbam_id = row.get("key_mlbam")
+        if pd.isna(mlbam_id):
+            return None
+        return int(mlbam_id)
+    except Exception:
+        return None
+
+
+def get_batter_trend(player_id: int | str | None, short_days: int = 7,
                       long_days: int = 21) -> dict:
     """
     Compare batter's recent short window vs longer baseline.
@@ -35,6 +59,9 @@ def get_batter_trend(player_id: int, short_days: int = 7,
 
     Uses Statcast pitch-level data for accuracy.
     """
+    if isinstance(player_id, str):
+        player_id = _lookup_batter_mlbam_id(player_id)
+
     if not PYBASEBALL_OK or not player_id:
         return _neutral_trend()
 
