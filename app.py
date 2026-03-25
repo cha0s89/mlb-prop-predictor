@@ -80,6 +80,8 @@ from src.team_context import (
     extract_schedule_dates,
     normalize_team_code,
     pitcher_row_matches_team,
+    get_team_game_value,
+    register_team_game_value,
     register_team_value,
 )
 from src.lineup_context import build_player_lineup_context, build_team_lineup_context
@@ -372,6 +374,7 @@ st.markdown("""
     .pick-card-stat { font-size: 0.75rem; color: rgba(232,236,241,0.45); }
     .pick-card-line { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.8rem; color: #E8ECF1; }
     .pick-card-proj { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.8rem; }
+    .pick-card-delta { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.8rem; }
     .pick-card-edge { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.8rem; }
 
     .pick-card-conf { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
@@ -538,6 +541,11 @@ def _sync_pick_metrics(pred: dict) -> None:
     pred["edge"] = round(abs(conf - 0.50), 4)
     pred["win_prob"] = round(conf * max(0.0, 1.0 - push_p), 4)
     pred["rating"] = _confidence_rating(conf)
+
+
+def _display_pitcher_name(name: str) -> str:
+    cleaned = _safe(name, "").strip()
+    return cleaned if cleaned else "TBD"
 
 
 def _meets_confidence_floor(pred: dict) -> bool:
@@ -1306,6 +1314,8 @@ with tab_edge:
                     team_k_rate_map = {}
             try:
                 for game in todays_games:
+                    game_pk = game.get("game_pk")
+                    game_time = game.get("game_time", "")
                     home_team = game.get("home_team", "")
                     away_team = game.get("away_team", "")
                     home_pitcher_name = game.get("home_pitcher_name", "")
@@ -1316,51 +1326,79 @@ with tab_edge:
                         home_matched = match_pitcher_stats(home_pitcher_name, pitching_df)
                     if away_team and away_pitcher_name and away_pitcher_name != "TBD" and not pitching_df.empty:
                         away_matched = match_pitcher_stats(away_pitcher_name, pitching_df)
-                    home_pitcher_valid = bool(home_pitcher_name and home_pitcher_name != "TBD")
-                    away_pitcher_valid = bool(away_pitcher_name and away_pitcher_name != "TBD")
-                    if home_pitcher_valid and not pitcher_row_matches_team(home_matched, home_team):
-                        home_pitcher_valid = False
-                    if away_pitcher_valid and not pitcher_row_matches_team(away_matched, away_team):
-                        away_pitcher_valid = False
+                    home_pitcher_display = _display_pitcher_name(home_pitcher_name)
+                    away_pitcher_display = _display_pitcher_name(away_pitcher_name)
+                    home_pitcher_valid = (
+                        home_pitcher_display != "TBD"
+                        and home_matched is not None
+                        and pitcher_row_matches_team(home_matched, home_team)
+                    )
+                    away_pitcher_valid = (
+                        away_pitcher_display != "TBD"
+                        and away_matched is not None
+                        and pitcher_row_matches_team(away_matched, away_team)
+                    )
                     if home_team:
-                        register_team_value(
+                        register_team_game_value(
                             team_pitcher_lookup,
                             home_team,
-                            home_pitcher_name if home_pitcher_valid else "",
+                            home_pitcher_display,
+                            game_pk=game_pk,
+                            game_time=game_time,
                         )
                     if away_team:
-                        register_team_value(
+                        register_team_game_value(
                             team_pitcher_lookup,
                             away_team,
-                            away_pitcher_name if away_pitcher_valid else "",
+                            away_pitcher_display,
+                            game_pk=game_pk,
+                            game_time=game_time,
                         )
                     # Home batters face the AWAY pitcher
                     if away_team:
                         opp_info = {
-                            "name": away_pitcher_name if away_pitcher_valid else "",
+                            "name": away_pitcher_display,
                             "hand": game.get("away_pitcher_hand", ""),
                             "id": game.get("away_pitcher_id"),
                         }
                         if away_pitcher_valid and away_matched is not None:
                             opp_info["profile"] = build_pitcher_profile(away_matched)
-                        register_team_value(opp_pitcher_lookup, home_team, opp_info)
+                        register_team_game_value(
+                            opp_pitcher_lookup,
+                            home_team,
+                            opp_info,
+                            game_pk=game_pk,
+                            game_time=game_time,
+                        )
                     # Away batters face the HOME pitcher
                     if home_team:
                         opp_info = {
-                            "name": home_pitcher_name if home_pitcher_valid else "",
+                            "name": home_pitcher_display,
                             "hand": game.get("home_pitcher_hand", ""),
                             "id": game.get("home_pitcher_id"),
                         }
                         if home_pitcher_valid and home_matched is not None:
                             opp_info["profile"] = build_pitcher_profile(home_matched)
-                        register_team_value(opp_pitcher_lookup, away_team, opp_info)
+                        register_team_game_value(
+                            opp_pitcher_lookup,
+                            away_team,
+                            opp_info,
+                            game_pk=game_pk,
+                            game_time=game_time,
+                        )
 
                     # Build opposing team K rate for pitcher K projections
                     # Pitcher on home team faces away lineup, and vice versa
                     for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
                         norm_opp_team = normalize_team_code(opp_batting_team)
                         if pitcher_team and norm_opp_team in team_k_rate_map:
-                            register_team_value(opp_team_k_lookup, pitcher_team, team_k_rate_map[norm_opp_team])
+                            register_team_game_value(
+                                opp_team_k_lookup,
+                                pitcher_team,
+                                team_k_rate_map[norm_opp_team],
+                                game_pk=game_pk,
+                                game_time=game_time,
+                            )
             except Exception:
                 pass
 
@@ -1368,7 +1406,7 @@ with tab_edge:
             # Batch all game lineups upfront (cached per game_pk) to avoid N+1
             batter_hand_cache = {}        # player_name_upper → bat_hand (R/L/S)
             batting_order_cache = {}      # player_name_upper → batting_order (1-9)
-            game_context_cache = {}       # team_abbr → {opponent, game_time, venue, ...}
+            game_context_cache = {}       # team/game → {opponent, game_time, venue, ...}
             team_lineup_context_cache = {}  # team_abbr → confirmed lineup quality context
             try:
                 for game in todays_games:
@@ -1405,22 +1443,30 @@ with tab_edge:
                         (away_team, home_team, False),
                     ]:
                         if team_abbr:
-                            register_team_value(game_context_cache, team_abbr, {
-                                "opponent": opp_abbr,
-                                "game_time": game.get("game_time", ""),
-                                "game_pk": game_pk,
-                                "is_home": is_home,
-                            })
+                            register_team_game_value(
+                                game_context_cache,
+                                team_abbr,
+                                {
+                                    "opponent": opp_abbr,
+                                    "game_time": game.get("game_time", ""),
+                                    "game_pk": game_pk,
+                                    "is_home": is_home,
+                                },
+                                game_pk=game_pk,
+                                game_time=game.get("game_time", ""),
+                            )
 
                     for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
                         if not pitcher_team or not opp_batting_team:
                             continue
                         opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_batting_team) or opp_batting_team)
                         if opp_lineup_context and opp_lineup_context.get("has_data"):
-                            register_team_value(
+                            register_team_game_value(
                                 opp_team_k_lookup,
                                 pitcher_team,
                                 opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate"),
+                                game_pk=game_pk,
+                                game_time=game.get("game_time", ""),
                             )
             except Exception:
                 pass
@@ -1477,8 +1523,18 @@ with tab_edge:
                 # Look up opposing pitcher profile (for batter props)
                 opp_pitcher_profile = None
                 platoon_adj = None
-                if not is_pitcher_prop and r_team and r_team in opp_pitcher_lookup:
-                    opp_info = opp_pitcher_lookup[r_team]
+                lookup_game_pk = row.get("game_pk")
+                lookup_game_time = row.get("start_time") or row.get("game_time_utc")
+                if not is_pitcher_prop and r_team:
+                    opp_info = get_team_game_value(
+                        opp_pitcher_lookup,
+                        r_team,
+                        game_pk=lookup_game_pk,
+                        game_time=lookup_game_time,
+                    )
+                else:
+                    opp_info = None
+                if opp_info:
                     opp_pitcher_profile = opp_info.get("profile")
                     # Platoon splits: need batter hand + pitcher hand
                     opp_hand = opp_info.get("hand", "")
@@ -1492,8 +1548,19 @@ with tab_edge:
                 # Opposing team K rate (for pitcher K projections)
                 opp_k_rate = None
                 if is_pitcher_prop and r_team:
-                    opp_k_rate = opp_team_k_lookup.get(r_team)
-                    opp_team = (game_context_cache.get(r_team) or {}).get("opponent")
+                    opp_k_rate = get_team_game_value(
+                        opp_team_k_lookup,
+                        r_team,
+                        game_pk=lookup_game_pk,
+                        game_time=lookup_game_time,
+                    )
+                    gctx = get_team_game_value(
+                        game_context_cache,
+                        r_team,
+                        game_pk=lookup_game_pk,
+                        game_time=lookup_game_time,
+                    ) or {}
+                    opp_team = gctx.get("opponent")
                     if opp_team:
                         opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_team) or opp_team)
                         if opp_lineup_context and opp_lineup_context.get("has_data"):
@@ -1640,7 +1707,13 @@ with tab_edge:
                     if r_team is None:
                         continue
                 else:
-                    _no_opp = not p.get("has_opp_data") and not (r_team and r_team in opp_pitcher_lookup)
+                    _opp_lookup = get_team_game_value(
+                        opp_pitcher_lookup,
+                        r_team,
+                        game_pk=lookup_game_pk,
+                        game_time=lookup_game_time,
+                    ) if r_team else None
+                    _no_opp = not p.get("has_opp_data") and not _opp_lookup
                     _no_lineup = batting_pos is None
                     _no_park = r_team is None
                     if _no_opp and _no_lineup and _no_park:
@@ -1655,8 +1728,13 @@ with tab_edge:
                     p["pa_multiplier"] = round(get_pa_multiplier(batting_pos), 3)
 
                 # v018: Game context from pre-built cache (no API call)
-                if r_team and r_team in game_context_cache:
-                    gctx = game_context_cache[r_team]
+                gctx = get_team_game_value(
+                    game_context_cache,
+                    r_team,
+                    game_pk=lookup_game_pk,
+                    game_time=lookup_game_time,
+                ) if r_team else None
+                if gctx:
                     raw_game_time = gctx.get("game_time", "")
                     p["opponent"] = gctx.get("opponent", "")
                     p["game_time"] = _utc_to_pst(raw_game_time)
@@ -1664,10 +1742,22 @@ with tab_edge:
                     p["game_date"] = _game_date_from_iso(raw_game_time)
                     p["game_pk"] = gctx.get("game_pk")
                     p["is_home"] = gctx.get("is_home", False)
-                    p["team_pitcher"] = team_pitcher_lookup.get(r_team, "")
-                    # Opposing pitcher name from the pre-built lookup
-                    if r_team in opp_pitcher_lookup:
-                        p["opp_pitcher"] = opp_pitcher_lookup[r_team].get("name", "")
+                    p["team_pitcher"] = _display_pitcher_name(
+                        get_team_game_value(
+                            team_pitcher_lookup,
+                            r_team,
+                            game_pk=gctx.get("game_pk"),
+                            game_time=raw_game_time,
+                        )
+                    )
+                    opp_info = get_team_game_value(
+                        opp_pitcher_lookup,
+                        r_team,
+                        game_pk=gctx.get("game_pk"),
+                        game_time=raw_game_time,
+                    )
+                    if opp_info:
+                        p["opp_pitcher"] = _display_pitcher_name(opp_info.get("name", ""))
 
                 # Add platoon and matchup context to result for display
                 if platoon_adj and platoon_adj.get("favorable") is not None:
@@ -1842,30 +1932,32 @@ with tab_edge:
                         _proj = _safe_num(p.get("projection"), 0)
                         if not _team:
                             continue
-                        if _team not in _game_scores:
+                        _team_game_key = p.get("game_pk") or f"{_team}|{_safe(p.get('game_time'), '')}|{_safe(p.get('opponent'), '')}"
+                        if _team_game_key not in _game_scores:
                             _r_team = resolve_team(_team) if _team else None
                             _pf = PARK_FACTORS.get(_r_team, 100) if _r_team else 100
-                            _game_scores[_team] = {
+                            _game_scores[_team_game_key] = {
+                                "team": _team,
                                 "runs": [],
                                 "hits": [],
                                 "hr_proj": [],
                                 "players": set(),
                                 "opponent": _safe(p.get("opponent"), ""),
-                                "opp_pitcher": _safe(p.get("opp_pitcher"), ""),
-                                "team_pitcher": _safe(p.get("team_pitcher"), ""),
+                                "opp_pitcher": _display_pitcher_name(p.get("opp_pitcher", "")),
+                                "team_pitcher": _display_pitcher_name(p.get("team_pitcher", "")),
                                 "game_time": _safe(p.get("game_time"), ""),
                                 "park_factor": _pf,
                                 "game_pk": p.get("game_pk"),
                                 "is_home": bool(p.get("is_home", False)),
                             }
-                        _bucket = _game_scores[_team]
+                        _bucket = _game_scores[_team_game_key]
                         _bucket["players"].add(p.get("player_name", ""))
                         if not _bucket.get("opponent"):
                             _bucket["opponent"] = _safe(p.get("opponent"), "")
                         if not _bucket.get("opp_pitcher"):
-                            _bucket["opp_pitcher"] = _safe(p.get("opp_pitcher"), "")
+                            _bucket["opp_pitcher"] = _display_pitcher_name(p.get("opp_pitcher", ""))
                         if not _bucket.get("team_pitcher"):
-                            _bucket["team_pitcher"] = _safe(p.get("team_pitcher"), "")
+                            _bucket["team_pitcher"] = _display_pitcher_name(p.get("team_pitcher", ""))
                         if not _bucket.get("game_time"):
                             _bucket["game_time"] = _safe(p.get("game_time"), "")
                         if not _bucket.get("game_pk") and p.get("game_pk"):
@@ -1890,7 +1982,8 @@ with tab_edge:
                     if _game_scores:
                         _team_rows = []
                         _matchup_buckets = {}
-                        for _tm, _gs in sorted(_game_scores.items()):
+                        for _gs in sorted(_game_scores.values(), key=lambda item: (item.get("game_time", ""), item.get("team", ""))):
+                            _tm = _gs.get("team", "")
                             _est_team_runs = _estimate_team_runs(_gs)
                             _est_team_hits = _estimate_team_hits(_gs)
                             _avg_hr = sum(_gs["hr_proj"]) / len(_gs["hr_proj"]) if _gs["hr_proj"] else None
@@ -1900,8 +1993,8 @@ with tab_edge:
                             _team_rows.append({
                                 "Team": _tm,
                                 "Facing": _gs.get("opponent", ""),
-                                "Opp SP Faced": _gs.get("opp_pitcher", "") or "-",
-                                "Own SP": _gs.get("team_pitcher", "") or "-",
+                                "Opp SP Faced": _display_pitcher_name(_gs.get("opp_pitcher", "")),
+                                "Own SP": _display_pitcher_name(_gs.get("team_pitcher", "")),
                                 "Game": _gs.get("game_time", "") or "-",
                                 "Park": _pf_str,
                                 "Est Runs": _est_team_runs,
@@ -1915,7 +2008,7 @@ with tab_edge:
                             _matchup_buckets.setdefault(_game_key, []).append({
                                 "team": _tm,
                                 "opponent": _opp,
-                                "team_pitcher": _gs.get("team_pitcher", "") or "-",
+                                "team_pitcher": _display_pitcher_name(_gs.get("team_pitcher", "")),
                                 "game_time": _gs.get("game_time", "") or "-",
                                 "is_home": bool(_gs.get("is_home", False)),
                                 "est_runs": _est_team_runs,
@@ -1956,8 +2049,8 @@ with tab_edge:
                             _matchup_rows.append({
                                 "Game": f"{_away['team']} at {_home['team']}",
                                 "Start": _home.get("game_time") or _away.get("game_time") or "-",
-                                "Away SP": _away.get("team_pitcher", "-") or "-",
-                                "Home SP": _home.get("team_pitcher", "-") or "-",
+                                "Away SP": _display_pitcher_name(_away.get("team_pitcher", "")),
+                                "Home SP": _display_pitcher_name(_home.get("team_pitcher", "")),
                                 "Projected Score": _score_text,
                                 "Projected Winner": _winner,
                                 "Margin": _margin,
@@ -2063,9 +2156,13 @@ with tab_edge:
                     with info_col:
                         conf_val = _safe_num(pick_row.get('confidence'), 0.5)
                         conf_pct = int(conf_val * 100)
-                        edge_val = _safe_num(pick_row.get('edge'), 0) * 100
-                        edge_pct = f"{edge_val:.1f}%"
+                        win_prob_edge_val = _safe_num(pick_row.get('edge'), 0) * 100
+                        win_prob_edge_pct = f"{win_prob_edge_val:.1f}%"
                         proj = _safe_num(pick_row.get('projection'), 0)
+                        line_val = _safe_num(pick_row.get('line'), 0)
+                        proj_delta = proj - line_val
+                        proj_delta_str = f"{proj_delta:+.2f}"
+                        proj_delta_color = "#00C853" if (proj_delta > 0 and pick_row["pick"] == "MORE") or (proj_delta < 0 and pick_row["pick"] == "LESS") else "#FFB300"
                         breakout_watch = _safe(pick_row.get("breakout_watch"), "Low")
                         dud_risk = _safe(pick_row.get("dud_risk"), "Low")
                         _tail_labels = tail_signal_labels(_safe(pick_row.get("stat_internal"), ""))
@@ -2089,25 +2186,29 @@ with tab_edge:
                             if tail_badges else ""
                         )
 
-                        pick_card_html = f'''<div class="pick-card {pick_cls}">
-                            <div class="pick-card-header">
-                                <span class="badge badge-{_safe(pick_row.get('rating'), 'D').lower()}">{_safe(pick_row.get('rating'), 'D')}</span>
-                                <span class="pick-card-player">{_safe(pick_row.get('player_name'), 'Unknown')}{promo_tag}</span>
-                                <span class="pick-card-team">{_safe(pick_row.get('team'), '')}</span>
-                                <span class="dir-chip {"more" if pick_row["pick"]=="MORE" else "less"}">{pick_row["pick"]}</span>
-                            </div>
-                            <div class="pick-card-row">
-                                <span class="pick-card-stat">{_safe(pick_row.get('stat_type'), 'Unknown')}</span>
-                                <span class="pick-card-line">Line {_safe_num(pick_row.get('line'), 0)}</span>
-                                <span class="pick-card-proj">Proj {proj:.2f}</span>
-                                <span class="pick-card-edge" style="color:#00C853;">+{edge_pct}</span>
-                            </div>
-                            <div class="pick-card-conf">
-                                <div class="conf-track" style="flex:1"><div class="conf-fill {"high" if conf_val>0.6 else ("med" if conf_val>0.52 else "low")}" style="width:{min(conf_pct,100)}%"></div></div>
-                                <span class="pick-card-conf-label">{conf_pct}%</span>
-                            </div>
-                            {tail_badges_html}
-                        </div>'''
+                        _conf_fill_cls = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
+                        pick_card_html = (
+                            f'<div class="pick-card {pick_cls}">'
+                            f'<div class="pick-card-header">'
+                            f'<span class="badge badge-{_safe(pick_row.get("rating"), "D").lower()}">{_safe(pick_row.get("rating"), "D")}</span>'
+                            f'<span class="pick-card-player">{_safe(pick_row.get("player_name"), "Unknown")}{promo_tag}</span>'
+                            f'<span class="pick-card-team">{_safe(pick_row.get("team"), "")}</span>'
+                            f'<span class="dir-chip {"more" if pick_row["pick"] == "MORE" else "less"}">{pick_row["pick"]}</span>'
+                            f'</div>'
+                            f'<div class="pick-card-row">'
+                            f'<span class="pick-card-stat">{_safe(pick_row.get("stat_type"), "Unknown")}</span>'
+                            f'<span class="pick-card-line">Line {line_val}</span>'
+                            f'<span class="pick-card-proj">Proj {proj:.2f}</span>'
+                            f'<span class="pick-card-delta" style="color:{proj_delta_color};">Δ {proj_delta_str}</span>'
+                            f'<span class="pick-card-edge" style="color:#29B6F6;">WP +{win_prob_edge_pct}</span>'
+                            f'</div>'
+                            f'<div class="pick-card-conf">'
+                            f'<div class="conf-track" style="flex:1"><div class="conf-fill {_conf_fill_cls}" style="width:{min(conf_pct,100)}%"></div></div>'
+                            f'<span class="pick-card-conf-label">{conf_pct}%</span>'
+                            f'</div>'
+                            f'{tail_badges_html}'
+                            f'</div>'
+                        )
                         st.markdown(pick_card_html, unsafe_allow_html=True)
 
                         # Expandable detail: projected statline + game context
@@ -2156,7 +2257,7 @@ with tab_edge:
                                 diff = proj_val - line_val
                                 diff_color = "#00C853" if (diff > 0 and pick_row["pick"] == "MORE") or (diff < 0 and pick_row["pick"] == "LESS") else "#FF4444"
                                 st.markdown(f'**{pick_row["stat_type"]}:** <span style="font-family:JetBrains Mono;font-weight:700;color:{diff_color}">{proj_val:.2f}</span> vs line {line_val}  ({"+" if diff>=0 else ""}{diff:.2f})', unsafe_allow_html=True)
-                                st.markdown(f"**Confidence:** {conf_pct}% · **Edge:** +{edge_pct}")
+                                st.markdown(f"**Confidence:** {conf_pct}% | **Win Prob Edge:** +{win_prob_edge_pct} | **Projection Delta:** {proj_delta_str}")
                                 p10_val = _safe_num(pick_row.get("p10"), proj_val)
                                 p50_val = _safe_num(pick_row.get("p50"), proj_val)
                                 p90_val = _safe_num(pick_row.get("p90"), proj_val)

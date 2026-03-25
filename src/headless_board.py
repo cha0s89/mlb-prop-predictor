@@ -83,8 +83,10 @@ from src.autolearn import load_current_weights
 from src.combined import score_picks
 from src.team_context import (
     extract_schedule_dates,
+    get_team_game_value,
     normalize_team_code,
     pitcher_row_matches_team,
+    register_team_game_value,
     register_team_value,
 )
 from src.lineup_context import build_player_lineup_context, build_team_lineup_context
@@ -157,6 +159,11 @@ def _sync_pick_metrics(pred: dict) -> None:
     pred["edge"] = round(abs(conf - 0.50), 4)
     pred["win_prob"] = round(conf * max(0.0, 1.0 - push_p), 4)
     pred["rating"] = _confidence_rating(conf)
+
+
+def _display_pitcher_name(name: str) -> str:
+    value = str(name or "").strip()
+    return value if value else "TBD"
 
 
 def _game_date_from_iso(iso_str: str) -> str:
@@ -480,6 +487,8 @@ def build_board(
             team_k_rate_map = {}
     try:
         for game in todays_games:
+            game_pk = game.get("game_pk")
+            game_time = game.get("game_time", "")
             home_team = game.get("home_team", "")
             away_team = game.get("away_team", "")
             home_pitcher_name = game.get("home_pitcher_name", "")
@@ -490,44 +499,66 @@ def build_board(
                 home_matched = match_pitcher_stats(home_pitcher_name, pitching_df)
             if away_team and away_pitcher_name and away_pitcher_name != "TBD" and not pitching_df.empty:
                 away_matched = match_pitcher_stats(away_pitcher_name, pitching_df)
-            home_pitcher_valid = bool(home_pitcher_name and home_pitcher_name != "TBD")
-            away_pitcher_valid = bool(away_pitcher_name and away_pitcher_name != "TBD")
-            if home_pitcher_valid and not pitcher_row_matches_team(home_matched, home_team):
-                home_pitcher_valid = False
-            if away_pitcher_valid and not pitcher_row_matches_team(away_matched, away_team):
-                away_pitcher_valid = False
+            home_pitcher_display = _display_pitcher_name(home_pitcher_name)
+            away_pitcher_display = _display_pitcher_name(away_pitcher_name)
+            home_pitcher_valid = (
+                home_pitcher_display != "TBD"
+                and home_matched is not None
+                and pitcher_row_matches_team(home_matched, home_team)
+            )
+            away_pitcher_valid = (
+                away_pitcher_display != "TBD"
+                and away_matched is not None
+                and pitcher_row_matches_team(away_matched, away_team)
+            )
             if home_team:
-                register_team_value(
+                register_team_game_value(
                     team_pitcher_lookup,
                     home_team,
-                    home_pitcher_name if home_pitcher_valid else "",
+                    home_pitcher_display,
+                    game_pk=game_pk,
+                    game_time=game_time,
                 )
             if away_team:
-                register_team_value(
+                register_team_game_value(
                     team_pitcher_lookup,
                     away_team,
-                    away_pitcher_name if away_pitcher_valid else "",
+                    away_pitcher_display,
+                    game_pk=game_pk,
+                    game_time=game_time,
                 )
             # Home batters face AWAY pitcher
             if away_team:
                 opp_info = {
-                    "name": away_pitcher_name if away_pitcher_valid else "",
+                    "name": away_pitcher_display,
                     "hand": game.get("away_pitcher_hand", ""),
                     "id": game.get("away_pitcher_id"),
                 }
                 if away_pitcher_valid and away_matched is not None:
                     opp_info["profile"] = build_pitcher_profile(away_matched)
-                register_team_value(opp_pitcher_lookup, home_team, opp_info)
+                register_team_game_value(
+                    opp_pitcher_lookup,
+                    home_team,
+                    opp_info,
+                    game_pk=game_pk,
+                    game_time=game_time,
+                )
             # Away batters face HOME pitcher
             if home_team:
                 opp_info = {
-                    "name": home_pitcher_name if home_pitcher_valid else "",
+                    "name": home_pitcher_display,
                     "hand": game.get("home_pitcher_hand", ""),
                     "id": game.get("home_pitcher_id"),
                 }
                 if home_pitcher_valid and home_matched is not None:
                     opp_info["profile"] = build_pitcher_profile(home_matched)
-                register_team_value(opp_pitcher_lookup, away_team, opp_info)
+                register_team_game_value(
+                    opp_pitcher_lookup,
+                    away_team,
+                    opp_info,
+                    game_pk=game_pk,
+                    game_time=game_time,
+                )
             # Opposing team K rate for pitcher K projections
             for pitcher_team, opp_batting_team in [
                 (home_team, away_team),
@@ -535,7 +566,13 @@ def build_board(
             ]:
                 norm_opp_team = normalize_team_code(opp_batting_team)
                 if pitcher_team and norm_opp_team in team_k_rate_map:
-                    register_team_value(opp_team_k_lookup, pitcher_team, team_k_rate_map[norm_opp_team])
+                    register_team_game_value(
+                        opp_team_k_lookup,
+                        pitcher_team,
+                        team_k_rate_map[norm_opp_team],
+                        game_pk=game_pk,
+                        game_time=game_time,
+                    )
     except Exception as exc:
         errors.append(f"Pitcher lookup build: {exc}")
 
@@ -577,21 +614,29 @@ def build_board(
                 (away_team, home_team, False),
             ]:
                 if team_abbr:
-                    register_team_value(game_context_cache, team_abbr, {
-                        "opponent": opp_abbr,
-                        "game_time": game.get("game_time", ""),
-                        "game_pk": game_pk,
-                        "is_home": is_home,
-                    })
+                    register_team_game_value(
+                        game_context_cache,
+                        team_abbr,
+                        {
+                            "opponent": opp_abbr,
+                            "game_time": game.get("game_time", ""),
+                            "game_pk": game_pk,
+                            "is_home": is_home,
+                        },
+                        game_pk=game_pk,
+                        game_time=game.get("game_time", ""),
+                    )
             for pitcher_team, opp_batting_team in [(home_team, away_team), (away_team, home_team)]:
                 if not pitcher_team or not opp_batting_team:
                     continue
                 opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_batting_team) or opp_batting_team)
                 if opp_lineup_context and opp_lineup_context.get("has_data"):
-                    register_team_value(
+                    register_team_game_value(
                         opp_team_k_lookup,
                         pitcher_team,
                         opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate"),
+                        game_pk=game_pk,
+                        game_time=game.get("game_time", ""),
                     )
     except Exception as exc:
         errors.append(f"Lineup cache build: {exc}")
@@ -693,8 +738,18 @@ def build_board(
             # Opposing pitcher profile
             opp_pitcher_profile = None
             platoon_adj = None
-            if not is_pitcher_prop and r_team and r_team in opp_pitcher_lookup:
-                opp_info = opp_pitcher_lookup[r_team]
+            lookup_game_pk = row.get("game_pk")
+            lookup_game_time = row.get("start_time") or row.get("game_time_utc")
+            if not is_pitcher_prop and r_team:
+                opp_info = get_team_game_value(
+                    opp_pitcher_lookup,
+                    r_team,
+                    game_pk=lookup_game_pk,
+                    game_time=lookup_game_time,
+                )
+            else:
+                opp_info = None
+            if opp_info:
                 opp_pitcher_profile = opp_info.get("profile")
                 opp_hand = opp_info.get("hand", "")
                 if opp_hand:
@@ -707,8 +762,19 @@ def build_board(
             # Opposing team K rate
             opp_k_rate = None
             if is_pitcher_prop and r_team:
-                opp_k_rate = opp_team_k_lookup.get(r_team)
-                opp_team = (game_context_cache.get(r_team) or {}).get("opponent")
+                opp_k_rate = get_team_game_value(
+                    opp_team_k_lookup,
+                    r_team,
+                    game_pk=lookup_game_pk,
+                    game_time=lookup_game_time,
+                )
+                gctx = get_team_game_value(
+                    game_context_cache,
+                    r_team,
+                    game_pk=lookup_game_pk,
+                    game_time=lookup_game_time,
+                ) or {}
+                opp_team = gctx.get("opponent")
                 if opp_team:
                     opp_lineup_context = team_lineup_context_cache.get(resolve_team(opp_team) or opp_team)
                     if opp_lineup_context and opp_lineup_context.get("has_data"):
@@ -837,9 +903,13 @@ def build_board(
                 if r_team is None:
                     continue
             else:
-                _no_opp = not p.get("has_opp_data") and not (
-                    r_team and r_team in opp_pitcher_lookup
-                )
+                _opp_lookup = get_team_game_value(
+                    opp_pitcher_lookup,
+                    r_team,
+                    game_pk=lookup_game_pk,
+                    game_time=lookup_game_time,
+                ) if r_team else None
+                _no_opp = not p.get("has_opp_data") and not _opp_lookup
                 _no_lineup = batting_pos is None
                 _no_park = r_team is None
                 if _no_opp and _no_lineup and _no_park:
@@ -851,17 +921,35 @@ def build_board(
                 p["pa_multiplier"] = round(get_pa_multiplier(batting_pos), 3)
 
             # Game context
-            if r_team and r_team in game_context_cache:
-                gctx = game_context_cache[r_team]
+            gctx = get_team_game_value(
+                game_context_cache,
+                r_team,
+                game_pk=lookup_game_pk,
+                game_time=lookup_game_time,
+            ) if r_team else None
+            if gctx:
                 raw_game_time = gctx.get("game_time", "")
                 p["opponent"] = gctx.get("opponent", "")
                 p["game_time_utc"] = raw_game_time
                 p["game_date"] = _game_date_from_iso(raw_game_time)
                 p["game_pk"] = gctx.get("game_pk")
                 p["is_home"] = gctx.get("is_home", False)
-                p["team_pitcher"] = team_pitcher_lookup.get(r_team, "")
-                if r_team in opp_pitcher_lookup:
-                    p["opp_pitcher"] = opp_pitcher_lookup[r_team].get("name", "")
+                p["team_pitcher"] = _display_pitcher_name(
+                    get_team_game_value(
+                        team_pitcher_lookup,
+                        r_team,
+                        game_pk=gctx.get("game_pk"),
+                        game_time=raw_game_time,
+                    )
+                )
+                opp_info = get_team_game_value(
+                    opp_pitcher_lookup,
+                    r_team,
+                    game_pk=gctx.get("game_pk"),
+                    game_time=raw_game_time,
+                )
+                if opp_info:
+                    p["opp_pitcher"] = _display_pitcher_name(opp_info.get("name", ""))
 
             if platoon_adj and platoon_adj.get("favorable") is not None:
                 p["platoon"] = platoon_adj["description"]

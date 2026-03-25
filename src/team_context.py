@@ -47,6 +47,53 @@ def register_team_value(mapping: dict, team_abbr: str, value) -> None:
         mapping[key] = value
 
 
+def _canonical_game_key(game_pk=None, game_time=None) -> str:
+    """Return a stable lookup suffix for a specific game."""
+    if game_pk not in (None, "", 0):
+        return f"pk:{game_pk}"
+    if game_time in (None, ""):
+        return ""
+    try:
+        ts = pd.Timestamp(game_time)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        return f"time:{ts.tz_convert('UTC').strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    except Exception:
+        return f"time:{str(game_time).strip()}"
+
+
+def team_game_lookup_keys(team_abbr: str, game_pk=None, game_time=None) -> tuple[str, ...]:
+    """Return lookup keys from most specific (game) to least specific (team)."""
+    keys: list[str] = []
+    game_key = _canonical_game_key(game_pk=game_pk, game_time=game_time)
+    for team_key in team_lookup_keys(team_abbr):
+        if game_key:
+            keys.append(f"{team_key}|{game_key}")
+        keys.append(team_key)
+    return tuple(keys)
+
+
+def register_team_game_value(mapping: dict, team_abbr: str, value, game_pk=None, game_time=None) -> None:
+    """Store a value under a game-specific key and a team-only fallback."""
+    keys = team_game_lookup_keys(team_abbr, game_pk=game_pk, game_time=game_time)
+    if not keys:
+        return
+    for key in keys:
+        if "|" in key:
+            mapping[key] = value
+    for key in keys:
+        if "|" not in key:
+            mapping.setdefault(key, value)
+
+
+def get_team_game_value(mapping: dict, team_abbr: str, game_pk=None, game_time=None):
+    """Fetch the best available game-specific value for a team."""
+    for key in team_game_lookup_keys(team_abbr, game_pk=game_pk, game_time=game_time):
+        if key in mapping:
+            return mapping[key]
+    return None
+
+
 def normalize_team_code(value) -> str:
     """Normalize a team code from external sources."""
     raw = str(value or "").strip()
