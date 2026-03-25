@@ -324,27 +324,27 @@ def _empirical_probability(projection: float, prop_type: str, line: float = 0.0)
 
 
 # ═══════════════════════════════════════════════════════
-# LEAGUE AVERAGES (2024 season — update annually)
+# LEAGUE AVERAGES (2025 season — update annually)
 # ═══════════════════════════════════════════════════════
 LG = {
     # Batting
-    "avg": 0.248, "obp": 0.312, "slg": 0.399, "iso": 0.151,
-    "babip": 0.296, "woba": 0.310, "wrc_plus": 100,
-    "k_rate": 22.7, "bb_rate": 8.3,
-    "hr_per_pa": 0.033, "sb_per_game": 0.18,
-    "rbi_per_game": 0.49, "runs_per_game": 0.49,
-    "hits_per_game": 0.93, "tb_per_game": 1.50,
+    "avg": 0.245, "obp": 0.314, "slg": 0.397, "iso": 0.152,
+    "babip": 0.291, "woba": 0.312, "wrc_plus": 100,
+    "k_rate": 22.2, "bb_rate": 8.4,
+    "hr_per_pa": 0.033, "sb_per_game": 0.20,
+    "rbi_per_game": 0.47, "runs_per_game": 0.47,
+    "hits_per_game": 0.93, "tb_per_game": 1.48,
     # Statcast batting
-    "exit_velo": 88.5, "hard_hit_pct": 37.0, "barrel_rate": 7.5,
-    "sweet_spot_pct": 32.0, "ev90": 105.0,
-    "xba": 0.248, "xslg": 0.399, "xwoba": 0.310,
+    "exit_velo": 88.6, "hard_hit_pct": 37.5, "barrel_rate": 8.6,
+    "sweet_spot_pct": 32.0, "ev90": 105.1,
+    "xba": 0.245, "xslg": 0.397, "xwoba": 0.312,
     "sprint_speed": 27.0,  # ft/s
     # Pitching
-    "era": 4.17, "fip": 4.12, "xfip": 4.10, "siera": 4.05,
-    "whip": 1.28, "k9": 8.58, "bb9": 3.22, "hr9": 1.15,
-    "k_pct_p": 22.7, "bb_pct_p": 8.3, "hr_fb_rate": 12.0,
+    "era": 4.07, "fip": 4.02, "xfip": 4.00, "siera": 3.95,
+    "whip": 1.27, "k9": 8.39, "bb9": 3.26, "hr9": 1.14,
+    "k_pct_p": 22.2, "bb_pct_p": 8.4, "hr_fb_rate": 11.8,
     # Statcast pitching
-    "csw_pct": 28.5, "swstr_pct": 11.3,
+    "csw_pct": 28.3, "swstr_pct": 11.1,
     "zone_pct": 45.0, "f_strike_pct": 60.0,
     "chase_rate": 28.0,
     # Game context
@@ -761,7 +761,8 @@ def _pitcher_quality_early_season_discount(p: dict, game_date: date = None) -> f
         total_ip = float(p.get("ip", 0.0) or 0.0)
         avg_ip = total_ip / gs if total_ip > 0 else LG["avg_ip_starter"]
     whip = float(p.get("whip", LG["whip"]) or LG["whip"])
-    k_pct = _ensure_pct(p.get("k_pct", p.get("k_rate")), lg_default=LG["k_pct_p"]) or LG["k_pct_p"]
+    _k_raw = _ensure_pct(p.get("k_pct", p.get("k_rate")), lg_default=LG["k_pct_p"])
+    k_pct = _k_raw if _k_raw is not None else LG["k_pct_p"]
 
     durability_bonus = 0.0
     if avg_ip >= 6.0:
@@ -1309,8 +1310,10 @@ def project_batter_singles(b, opp_p=None, bvp=None, platoon=None,
     k_rate = _ensure_pct(b.get("k_rate"), lg_default=LG["k_rate"])
     hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
     babip = b.get("babip", LG["babip"])
-    ab = b.get("ab", 0) or (pa * (1 - bb_rate_pct / 100) if pa > 0 else 0)
-    hits = b.get("h", 0) or (avg * ab if pa > 0 else 0)
+    _ab_raw = b.get("ab")
+    ab = _ab_raw if _ab_raw is not None else (pa * (1 - bb_rate_pct / 100) if pa > 0 else 0)
+    _h_raw = b.get("h")
+    hits = _h_raw if _h_raw is not None else (avg * ab if pa > 0 else 0)
     hr = b.get("hr", 0)
     doubles = b.get("2b", 0)
     triples = b.get("3b", 0)

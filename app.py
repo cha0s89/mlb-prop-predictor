@@ -5,9 +5,12 @@ When sharp books disagree with PrizePicks → that's the edge.
 Statcast data provides the "why" confirmation layer.
 """
 
+import logging
 import math
 import streamlit as st
 import pandas as pd
+
+_log = logging.getLogger(__name__)
 import numpy as np
 import json
 import plotly.graph_objects as go
@@ -812,33 +815,60 @@ def _normalize_name(name: str) -> str:
     return name.strip()
 
 
+def _build_name_index(df: pd.DataFrame) -> dict:
+    """Build normalized-name lookup dicts for O(1) player matching."""
+    exact = {}          # norm_name -> row
+    initial_last = {}   # (first_initial, last_name) -> row
+    last_only = {}      # last_name -> [rows]
+    for idx, row in df.iterrows():
+        raw = str(row.get("Name", ""))
+        norm = _normalize_name(raw)
+        if norm not in exact:
+            exact[norm] = row
+        parts = norm.split()
+        if len(parts) >= 2:
+            key = (parts[0][0], parts[-1])
+            if key not in initial_last:
+                initial_last[key] = row
+            last_only.setdefault(parts[-1], []).append(row)
+    return {"exact": exact, "initial_last": initial_last, "last_only": last_only}
+
+
+_batting_index_cache: dict | None = None
+_pitching_index_cache: dict | None = None
+
+
+def _get_batting_index(batting_df: pd.DataFrame) -> dict:
+    global _batting_index_cache
+    if _batting_index_cache is None:
+        _batting_index_cache = _build_name_index(batting_df)
+    return _batting_index_cache
+
+
+def _get_pitching_index(pitching_df: pd.DataFrame) -> dict:
+    global _pitching_index_cache
+    if _pitching_index_cache is None:
+        _pitching_index_cache = _build_name_index(pitching_df)
+    return _pitching_index_cache
+
+
 def match_player_stats(player_name: str, batting_df: pd.DataFrame) -> pd.Series:
     """Match PrizePicks player name to FanGraphs batting row."""
     if batting_df.empty or "Name" not in batting_df.columns:
         return None
+    idx = _get_batting_index(batting_df)
     norm_target = _normalize_name(player_name)
-    for idx, row in batting_df.iterrows():
-        if _normalize_name(str(row.get("Name", ""))) == norm_target:
-            return row
+    if norm_target in idx["exact"]:
+        return idx["exact"][norm_target]
     parts = norm_target.split()
     if len(parts) >= 2:
-        last = parts[-1]
-        first_init = parts[0][0] if parts[0] else ""
-        for idx, row in batting_df.iterrows():
-            rn = _normalize_name(str(row.get("Name", "")))
-            rparts = rn.split()
-            if len(rparts) >= 2:
-                if rparts[-1] == last and rparts[0] and rparts[0][0] == first_init:
-                    return row
+        key = (parts[0][0], parts[-1])
+        if key in idx["initial_last"]:
+            return idx["initial_last"][key]
     if parts:
-        last = parts[-1]
-        matches = []
-        for idx, row in batting_df.iterrows():
-            rn = _normalize_name(str(row.get("Name", "")))
-            if rn.split()[-1] == last if rn.split() else False:
-                matches.append(row)
-        if len(matches) == 1:
-            return matches[0]
+        candidates = idx["last_only"].get(parts[-1], [])
+        if len(candidates) == 1:
+            return candidates[0]
     return None
 
 
@@ -898,7 +928,8 @@ def load_pitching_stats():
         try:
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             df.to_csv(cache_path, index=False)
-        except Exception:
+        except Exception as e:
+            _log.warning("Failed to cache pitching stats: %s", e)
             pass
     return df
 
@@ -907,19 +938,15 @@ def match_pitcher_stats(player_name: str, pitching_df: pd.DataFrame):
     """Match PrizePicks player name to FanGraphs pitching row."""
     if pitching_df.empty or "Name" not in pitching_df.columns:
         return None
+    idx = _get_pitching_index(pitching_df)
     norm_target = _normalize_name(player_name)
-    for _, row in pitching_df.iterrows():
-        if _normalize_name(str(row.get("Name", ""))) == norm_target:
-            return row
+    if norm_target in idx["exact"]:
+        return idx["exact"][norm_target]
     parts = norm_target.split()
     if len(parts) >= 2:
-        last = parts[-1]
-        first_init = parts[0][0] if parts[0] else ""
-        for _, row in pitching_df.iterrows():
-            rn = _normalize_name(str(row.get("Name", "")))
-            rparts = rn.split()
-            if len(rparts) >= 2 and rparts[-1] == last and rparts[0] and rparts[0][0] == first_init:
-                return row
+        key = (parts[0][0], parts[-1])
+        if key in idx["initial_last"]:
+            return idx["initial_last"][key]
     return None
 
 
@@ -1093,8 +1120,9 @@ with st.sidebar:
         with _cred_col2:
             if st.button("🔄 Refresh Odds", key="sb_refresh_odds"):
                 clear_odds_cache()
-                st.cache_data.clear()
-                st.success("Cache cleared — refreshing...")
+                _cached_sharp_events.clear()
+                _cached_event_props.clear()
+                st.success("Odds cache cleared — refreshing...")
                 st.rerun()
     else:
         st.warning("No Odds API key — add `ODDS_API_KEY` to Streamlit Secrets or `.env`")
@@ -1987,8 +2015,8 @@ with tab_edge:
             if preds:
                 try:
                     preds = enforce_consistency(preds)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Consistency check failed: %s", e)
 
             if preds:
                 # v018: Save projected stats for tracking accuracy over time
@@ -2005,14 +2033,14 @@ with tab_edge:
                         "rating": p.get("rating", ""),
                     } for p in preds]
                     save_projected_stats(stats_to_save)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Failed to save projected stats: %s", e)
 
                 # v018: Log full board snapshot (all props, not just selected)
                 try:
                     log_board_snapshot(preds, edges=all_edges)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Failed to log board snapshot: %s", e)
                 shadow_sample_results = []
                 try:
                     for _game_date in sorted({

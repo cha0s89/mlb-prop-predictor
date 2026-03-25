@@ -3,9 +3,12 @@ PrizePicks API Client
 Fetches current MLB player prop projections from PrizePicks' public API.
 """
 
+import logging
 import requests
 import pandas as pd
 from datetime import datetime
+
+_log = logging.getLogger(__name__)
 
 
 PP_PROJECTIONS_URL = "https://partner-api.prizepicks.com/projections"
@@ -80,8 +83,8 @@ def fetch_prizepicks_mlb_lines(include_all: bool = False) -> pd.DataFrame:
     try:
         from src.freshness import record_data_pull
         record_data_pull("prizepicks_lines", f"{len(data.get('data', []))} projections")
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("Failed to record freshness for prizepicks: %s", e)
 
     projections = data.get("data", [])
     included = data.get("included", [])

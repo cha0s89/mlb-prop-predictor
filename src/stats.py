@@ -95,13 +95,14 @@ def fetch_batting_leaders(season: int = None, min_pa: int = 50) -> pd.DataFrame:
         try:
             from src.freshness import record_data_pull
             record_data_pull("fangraphs_batting", f"season={season}, {len(df)} players")
-        except Exception:
-            pass
+        except Exception as e:
+            logging.getLogger(__name__).warning("Failed to record batting freshness: %s", e)
         return df
-    except Exception:
+    except Exception as e:
         fallback_season = season - 1
         logging.getLogger(__name__).warning(
-            f"Using {fallback_season} season stats as fallback for batting (current season {season} data unavailable)"
+            "Using %d season stats as fallback for batting (current season %d failed: %s)",
+            fallback_season, season, e,
         )
         return pd.DataFrame()
 
@@ -133,13 +134,14 @@ def fetch_pitching_leaders(season: int = None, min_ip: int = 10) -> pd.DataFrame
         try:
             from src.freshness import record_data_pull
             record_data_pull("fangraphs_pitching", f"season={season}, {len(df)} players")
-        except Exception:
-            pass
+        except Exception as e:
+            logging.getLogger(__name__).warning("Failed to record pitching freshness: %s", e)
         return df
-    except Exception:
+    except Exception as e:
         fallback_season = season - 1
         logging.getLogger(__name__).warning(
-            f"Using {fallback_season} season stats as fallback for pitching (current season {season} data unavailable)"
+            "Using %d season stats as fallback for pitching (current season %d failed: %s)",
+            fallback_season, season, e,
         )
         return pd.DataFrame()
 
@@ -162,7 +164,8 @@ def get_batter_recent_statcast(player_id: int, days: int = 30) -> pd.DataFrame:
             player_id,
         )
         return df
-    except Exception:
+    except Exception as e:
+        logging.getLogger(__name__).debug("Statcast batter fetch failed for %d: %s", player_id, e)
         return pd.DataFrame()
 
 
@@ -183,7 +186,8 @@ def get_pitcher_recent_statcast(player_id: int, days: int = 30) -> pd.DataFrame:
             player_id,
         )
         return df
-    except Exception:
+    except Exception as e:
+        logging.getLogger(__name__).debug("Statcast pitcher fetch failed for %d: %s", player_id, e)
         return pd.DataFrame()
 
 

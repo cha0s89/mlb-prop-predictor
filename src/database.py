@@ -220,39 +220,40 @@ def init_clv_table():
 def log_prediction(pred: dict, game_date: str = None):
     """Save a prediction to the database."""
     conn = get_connection()
-    resolved_game_date = resolve_game_date(pred, game_date)
+    try:
+        resolved_game_date = resolve_game_date(pred, game_date)
 
-    cur = conn.execute("""
-        INSERT INTO predictions
-        (game_date, player_name, stat_type, stat_internal, line, projection,
-         pick, confidence, rating, p_over, p_under, p_push, win_prob, edge,
-         park_team, weather_temp, weather_wind, model_version, game_time_utc)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        resolved_game_date,
-        pred.get("player_name", ""),
-        pred.get("stat_type", ""),
-        pred.get("stat_internal", ""),
-        pred.get("line", 0),
-        pred.get("projection", 0),
-        pred.get("pick", ""),
-        pred.get("confidence", 0),
-        pred.get("rating", ""),
-        pred.get("p_over", 0),
-        pred.get("p_under", 0),
-        pred.get("p_push", 0),
-        pred.get("win_prob", 0),
-        pred.get("edge", 0),
-        pred.get("park_team", ""),
-        pred.get("weather_temp", None),
-        pred.get("weather_wind", None),
-        pred.get("model_version", "v1.0"),
-        pred.get("game_time_utc", pred.get("start_time")),
-    ))
-    conn.commit()
-    row_id = cur.lastrowid
-    conn.close()
-    return row_id
+        cur = conn.execute("""
+            INSERT INTO predictions
+            (game_date, player_name, stat_type, stat_internal, line, projection,
+             pick, confidence, rating, p_over, p_under, p_push, win_prob, edge,
+             park_team, weather_temp, weather_wind, model_version, game_time_utc)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            resolved_game_date,
+            pred.get("player_name", ""),
+            pred.get("stat_type", ""),
+            pred.get("stat_internal", ""),
+            pred.get("line", 0),
+            pred.get("projection", 0),
+            pred.get("pick", ""),
+            pred.get("confidence", 0),
+            pred.get("rating", ""),
+            pred.get("p_over", 0),
+            pred.get("p_under", 0),
+            pred.get("p_push", 0),
+            pred.get("win_prob", 0),
+            pred.get("edge", 0),
+            pred.get("park_team", ""),
+            pred.get("weather_temp", None),
+            pred.get("weather_wind", None),
+            pred.get("model_version", "v1.0"),
+            pred.get("game_time_utc", pred.get("start_time")),
+        ))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
 
 
 def log_batch_predictions(predictions: list, game_date: str = None):
@@ -266,65 +267,72 @@ def log_batch_predictions(predictions: list, game_date: str = None):
 def grade_prediction(pred_id: int, actual_result: float):
     """Grade a single prediction given the actual outcome."""
     conn = get_connection()
-    cur = conn.execute(
-        "SELECT line, pick FROM predictions WHERE id = ?", (pred_id,)
-    )
-    row = cur.fetchone()
-    if not row:
+    try:
+        cur = conn.execute(
+            "SELECT line, pick FROM predictions WHERE id = ?", (pred_id,)
+        )
+        row = cur.fetchone()
+        if not row:
+            return
+
+        line, pick = row
+
+        if actual_result > line:
+            result = "W" if pick == "MORE" else "L"
+        elif actual_result < line:
+            result = "W" if pick == "LESS" else "L"
+        else:
+            result = "push"
+
+        conn.execute("""
+            UPDATE predictions
+            SET actual_result = ?, result = ?, graded_at = datetime('now')
+            WHERE id = ?
+        """, (actual_result, result, pred_id))
+        conn.commit()
+        return result
+    finally:
         conn.close()
-        return
-
-    line, pick = row
-
-    if actual_result > line:
-        result = "W" if pick == "MORE" else "L"
-    elif actual_result < line:
-        result = "W" if pick == "LESS" else "L"
-    else:
-        result = "push"
-
-    conn.execute("""
-        UPDATE predictions
-        SET actual_result = ?, result = ?, graded_at = datetime('now')
-        WHERE id = ?
-    """, (actual_result, result, pred_id))
-    conn.commit()
-    conn.close()
-    return result
 
 
 def get_ungraded_predictions(game_date: str = None) -> pd.DataFrame:
     """Get all predictions that haven't been graded yet."""
     conn = get_connection()
-    query = "SELECT * FROM predictions WHERE result IS NULL"
-    params = ()
-    if game_date:
-        query += " AND game_date = ?"
-        params = (game_date,)
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
+    try:
+        query = "SELECT * FROM predictions WHERE result IS NULL"
+        params = ()
+        if game_date:
+            query += " AND game_date = ?"
+            params = (game_date,)
+        df = pd.read_sql_query(query, conn, params=params)
+    finally:
+        conn.close()
     return df
 
 
 def get_all_predictions(limit: int = 500) -> pd.DataFrame:
     """Get all predictions, most recent first."""
     conn = get_connection()
-    df = pd.read_sql_query(
-        "SELECT * FROM predictions ORDER BY created_at DESC LIMIT ?",
-        conn, params=(limit,)
-    )
-    conn.close()
+    try:
+        df = pd.read_sql_query(
+            "SELECT * FROM predictions ORDER BY created_at DESC LIMIT ?",
+            conn, params=(limit,)
+        )
+    finally:
+        conn.close()
     return df
 
 
 def get_graded_predictions(limit: int = 500) -> pd.DataFrame:
     """Get only graded predictions."""
     conn = get_connection()
-    df = pd.read_sql_query(
-        "SELECT * FROM predictions WHERE result IS NOT NULL ORDER BY game_date DESC LIMIT ?",
-        conn, params=(limit,)
-    )
-    conn.close()
+    try:
+        df = pd.read_sql_query(
+            "SELECT * FROM predictions WHERE result IS NOT NULL ORDER BY game_date DESC LIMIT ?",
+            conn, params=(limit,)
+        )
+    finally:
+        conn.close()
     return df
 
 
