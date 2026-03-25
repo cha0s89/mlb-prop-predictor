@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import pandas as pd
-from scipy.stats import poisson
+from scipy.stats import gamma, poisson
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -156,6 +156,33 @@ class ProbabilityContractTests(unittest.TestCase):
         )
         self.assertEqual(config["dist_type"], "gamma")
         self.assertEqual(config["var_ratio"], 2.8)
+
+    def test_gamma_props_do_not_apply_discrete_continuity_correction(self):
+        weights = {
+            "distribution_params": {
+                "hits_runs_rbis": {"type": "gamma", "vr": 2.8},
+            },
+            "calibration_blend_weights": {"hits_runs_rbis": 0.0},
+            "confidence_shrinkage": {"hits_runs_rbis": 1.0},
+        }
+        mu = 1.54
+        line = 1.5
+        result = calculate_over_under_probability(
+            mu,
+            line,
+            "hits_runs_rbis",
+            weights_override=weights,
+        )
+        shape = mu / 2.8
+        scale = 2.8
+        expected_over = gamma.sf(line, shape, scale=scale)
+        expected_under = gamma.cdf(line, shape, scale=scale)
+
+        self.assertAlmostEqual(result["p_push"], 0.0, places=6)
+        self.assertAlmostEqual(result["p_over"], expected_over, places=4)
+        self.assertAlmostEqual(result["p_under"], expected_under, places=4)
+        self.assertAlmostEqual(result["p_over"] + result["p_under"], 1.0, places=4)
+        self.assertGreater(result["p_over"], 0.30)
 
     def test_extract_sharp_lines_aggregates_cross_line_books_in_latent_mu_space(self):
         event_data = {

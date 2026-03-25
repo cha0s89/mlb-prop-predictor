@@ -277,19 +277,19 @@ def prob_push_negbin_mu(line: float, mu: float, var_ratio: float) -> float:
 # === GAMMA (Fantasy Score — continuous, overdispersed) ===
 
 def prob_over_gamma(line: float, mu: float, var_ratio: float) -> float:
-    """P(X >= line) using Gamma CDF with continuity correction."""
+    """P(X > line) for continuous positive props modeled with Gamma."""
     if mu <= 0:
         return 0.0
     shape, scale = gamma_shape_scale(mu, var_ratio)
-    return float(1 - gamma.cdf(line + 0.5, shape, scale=scale))
+    return float(gamma.sf(line, shape, scale=scale))
 
 
 def prob_under_gamma(line: float, mu: float, var_ratio: float) -> float:
-    """P(X <= line) using Gamma CDF with continuity correction."""
+    """P(X < line) for continuous positive props modeled with Gamma."""
     if mu <= 0:
         return 1.0
     shape, scale = gamma_shape_scale(mu, var_ratio)
-    return float(gamma.cdf(line - 0.5, shape, scale=scale))
+    return float(gamma.cdf(line, shape, scale=scale))
 
 
 # === NORMAL (Pitching Outs, H+R+RBI — approximately normal) ===
