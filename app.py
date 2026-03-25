@@ -200,6 +200,18 @@ def _header_refresh_label() -> str:
     return _format_clock_pacific(_current_pacific_time())
 
 
+def _ensure_ui_session_state() -> None:
+    """Initialize Streamlit session flags used by the manual data mode."""
+    defaults = {
+        "manual_pp_fetch": False,
+        "manual_sharp_fetch": False,
+        "manual_news_fetch": False,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
 # ─────────────────────────────────────────────
 # CACHED WRAPPERS — eliminate redundant API calls across Streamlit reruns
 # ─────────────────────────────────────────────
@@ -255,6 +267,7 @@ def _cached_lineups(game_pk: int):
     return fetch_confirmed_lineups(game_pk)
 
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
+_ensure_ui_session_state()
 
 st.markdown("""
 <style>
@@ -350,6 +363,75 @@ st.markdown("""
     .warn-strip strong { color: #FFB300; }
     .alert-strip { background: rgba(255,68,68,0.05); border: 1px solid rgba(255,68,68,0.12); border-left: 3px solid #FF4444; border-radius: 8px; padding: 0.65rem 1rem; font-size: 0.8rem; color: rgba(232,236,241,0.6); margin-bottom: 0.9rem; }
     .alert-strip strong { color: #FF4444; }
+
+    /* === CONTROL / STATUS PANELS === */
+    .control-shell {
+        background: linear-gradient(145deg, rgba(13,21,38,0.9), rgba(8,14,26,0.96));
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 14px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1rem;
+    }
+    .control-shell .title {
+        font-size: 0.72rem;
+        color: rgba(232,236,241,0.4);
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: 0.35rem;
+    }
+    .control-shell .body {
+        font-size: 0.82rem;
+        color: rgba(232,236,241,0.62);
+        line-height: 1.45;
+    }
+    .status-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    .status-card {
+        background: linear-gradient(145deg, rgba(15,24,41,0.95), rgba(10,16,32,0.95));
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+    }
+    .status-card .eyebrow {
+        font-size: 0.63rem;
+        color: rgba(232,236,241,0.34);
+        text-transform: uppercase;
+        letter-spacing: 1.8px;
+        margin-bottom: 0.35rem;
+    }
+    .status-card .value {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 700;
+        font-size: 0.92rem;
+        color: #E8ECF1;
+    }
+    .status-card .value.good { color: #00C853; }
+    .status-card .value.warn { color: #FFB300; }
+    .status-card .value.bad { color: #FF4444; }
+    .status-card .sub {
+        font-size: 0.74rem;
+        color: rgba(232,236,241,0.36);
+        margin-top: 0.25rem;
+        line-height: 1.35;
+    }
+    .panel-shell {
+        background: linear-gradient(145deg, rgba(13,21,38,0.82), rgba(9,16,31,0.92));
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 14px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1rem;
+    }
+    .panel-shell .panel-title {
+        font-size: 0.72rem;
+        color: rgba(232,236,241,0.38);
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: 0.55rem;
+    }
 
     /* === PICK CARDS === */
     .pick-card {
@@ -510,6 +592,7 @@ st.markdown("""
             min-width: 0;
         }
         .bp-name { white-space: normal; }
+        .status-grid { grid-template-columns: 1fr; }
         .stApp input, .stApp textarea, .stApp [data-baseweb="select"] { font-size: 16px !important; }
     }
 </style>
@@ -967,6 +1050,7 @@ st.markdown(f"""<div class="hero-wrapper">
         <div class="hero-meta-pill"><span class="pip"></span>Model <strong>{_model_ver}</strong> active</div>
         <div class="hero-meta-pill"><span class="pip amber"></span>Refreshed <strong>{_freshness_str}</strong></div>
         <div class="hero-meta-pill"><span class="pip blue"></span>FanDuel · Pinnacle · DraftKings</div>
+        <div class="hero-meta-pill"><span class="pip amber"></span>Manual odds mode <strong>enabled</strong></div>
       </div>
     </div>
     <div style="text-align:right;padding-top:0.2rem;">
@@ -994,7 +1078,7 @@ with st.sidebar:
             _age_str = f"{_hrs}h {_mins}m" if _hrs else f"{_mins}m"
             st.caption(f"📦 Odds cached ({_age_str} ago)")
         elif not _has_cache:
-            st.caption("📦 No cached odds — will fetch on first load")
+            st.caption("📦 No cached odds — manual pull required")
         _cred_col1, _cred_col2 = st.columns(2)
         with _cred_col1:
             if st.button("Check Credits", key="sb_credits"):
@@ -1037,9 +1121,84 @@ tab_edge, tab_news, tab_slips, tab_grade, tab_qa = st.tabs(
 with tab_edge:
     api_key = get_api_key()
     has_sharp = bool(api_key)
+    pp_requested = bool(st.session_state.get("manual_pp_fetch", False))
+    sharp_requested = bool(st.session_state.get("manual_sharp_fetch", False))
     sharp_events = []
     sharp_events_available = False
-    if has_sharp:
+    all_pp_lines = pd.DataFrame()
+    pp_lines = pd.DataFrame()
+    selected_player_label = PLAYER_SEARCH_ALL
+    selected_player_name = None
+    selected_player_team = None
+
+    st.markdown(
+        """
+        <div class="control-shell">
+          <div class="title">Manual Data Mode</div>
+          <div class="body">
+            External pulls are disabled until you explicitly request them. This keeps Odds API credit usage under control while you test the app.
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    ctl1, ctl2, ctl3, ctl4 = st.columns([1.2, 1.2, 1.0, 1.0])
+    with ctl1:
+        if st.button("Load PrizePicks Board", key="edge_load_pp", type="primary"):
+            st.session_state["manual_pp_fetch"] = True
+            pp_requested = True
+    with ctl2:
+        if st.button("Load Sharp Odds", key="edge_load_sharp", disabled=not has_sharp):
+            st.session_state["manual_pp_fetch"] = True
+            st.session_state["manual_sharp_fetch"] = True
+            pp_requested = True
+            sharp_requested = True
+    with ctl3:
+        if st.button("Refresh PrizePicks", key="edge_refresh_pp", disabled=not pp_requested):
+            _cached_pp_lines.clear()
+            st.session_state["manual_pp_fetch"] = True
+            pp_requested = True
+    with ctl4:
+        if st.button("Refresh Sharp Odds", key="edge_refresh_sharp", disabled=not has_sharp):
+            _cached_sharp_events.clear()
+            _cached_event_props.clear()
+            clear_odds_cache()
+            st.session_state["manual_sharp_fetch"] = True
+            st.session_state["manual_pp_fetch"] = True
+            pp_requested = True
+            sharp_requested = True
+
+    pp_status = "Loaded" if pp_requested else "Idle"
+    pp_status_class = "good" if pp_requested else "warn"
+    sharp_status = "Loaded" if sharp_requested and has_sharp else ("No API key" if not has_sharp else "Idle")
+    sharp_status_class = "good" if sharp_requested and has_sharp else ("bad" if not has_sharp else "warn")
+    mode_status = "Manual mode"
+    mode_sub = "Only button-driven pulls are allowed in this session."
+    st.markdown(
+        f"""
+        <div class="status-grid">
+          <div class="status-card">
+            <div class="eyebrow">PrizePicks board</div>
+            <div class="value {pp_status_class}">{pp_status}</div>
+            <div class="sub">Board data stays local until you click a load or refresh button.</div>
+          </div>
+          <div class="status-card">
+            <div class="eyebrow">Sharp odds</div>
+            <div class="value {sharp_status_class}">{sharp_status}</div>
+            <div class="sub">The Odds API is only touched after a manual request.</div>
+          </div>
+          <div class="status-card">
+            <div class="eyebrow">App mode</div>
+            <div class="value warn">{mode_status}</div>
+            <div class="sub">{mode_sub}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if has_sharp and sharp_requested:
         try:
             sharp_events = _cached_sharp_events(api_key) or []
             sharp_events_available = bool(sharp_events)
@@ -1055,31 +1214,41 @@ with tab_edge:
             'Free key at <a href="https://the-odds-api.com" target="_blank">the-odds-api.com</a> - 500 req/month, no credit card.</div>',
             unsafe_allow_html=True
         )
+    elif not sharp_requested:
+        st.markdown(
+            '<div class="info-strip"><strong>Sharp odds are paused.</strong> Click <span class="hl">Load Sharp Odds</span> only when you want a live odds pull.</div>',
+            unsafe_allow_html=True
+        )
     elif not sharp_events_available:
         st.markdown(
-            '<div class="warn-strip"><strong>No sharp-book events posted yet.</strong> Projection-only mode for now; sharp comparison will appear automatically once sportsbooks publish MLB player-prop events.</div>',
+            '<div class="warn-strip"><strong>No sharp-book events posted yet.</strong> Projection-only mode for now; sharp comparison will appear once sportsbooks publish MLB player-prop events.</div>',
             unsafe_allow_html=True
         )
     else:
         _creds_display = get_credits_remaining()
         _creds_str = str(_creds_display) if _creds_display >= 0 else "?"
         _age_display = get_cache_age_minutes()
-        _age_msg = f"Cached {_age_display}m ago" if _age_display >= 0 else "First fetch on load"
+        _age_msg = f"Cached {_age_display}m ago" if _age_display >= 0 else "Fresh pull this session"
         st.markdown(f'<div class="info-strip">Odds API active | <span class="hl">{_creds_str}</span> credits remaining | {_age_msg} | {len(sharp_events)} MLB events | Sharp books: FanDuel, Pinnacle, DraftKings</div>', unsafe_allow_html=True)
 
-    with st.spinner("Pulling PrizePicks MLB lines..."):
-        try:
-            all_pp_lines = _cached_pp_lines(include_all=True)
-        except Exception:
-            all_pp_lines = pd.DataFrame()
-    if not all_pp_lines.empty and "model_eligible" in all_pp_lines.columns:
-        pp_lines = all_pp_lines[all_pp_lines["model_eligible"] == True].copy()
+    if pp_requested:
+        with st.spinner("Pulling PrizePicks MLB lines..."):
+            try:
+                all_pp_lines = _cached_pp_lines(include_all=True)
+            except Exception:
+                all_pp_lines = pd.DataFrame()
+        if not all_pp_lines.empty and "model_eligible" in all_pp_lines.columns:
+            pp_lines = all_pp_lines[all_pp_lines["model_eligible"] == True].copy()
+        else:
+            pp_lines = all_pp_lines.copy()
     else:
-        pp_lines = all_pp_lines.copy()
-
-    selected_player_label = PLAYER_SEARCH_ALL
-    selected_player_name = None
-    selected_player_team = None
+        st.markdown(
+            '<div class="panel-shell"><div class="panel-title">Board data is paused</div>'
+            '<div style="font-size:0.84rem;color:rgba(232,236,241,0.62);line-height:1.45;">'
+            'Click <strong>Load PrizePicks Board</strong> to pull current lines. Until then, the app will not hit PrizePicks or the Odds API from this tab.'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
 
     # Snapshot PP lines for CLV tracking and stale-line detection
     if not pp_lines.empty:
@@ -1088,9 +1257,9 @@ with tab_edge:
         except Exception:
             pass
 
-    if pp_lines.empty:
+    if pp_requested and pp_lines.empty:
         st.info("No MLB lines on PrizePicks right now. Lines usually post by 10 AM ET.")
-    else:
+    elif not pp_lines.empty:
         st.markdown(f"**{len(pp_lines)} MLB props** on PrizePicks today")
         if not all_pp_lines.empty:
             player_rows = (
@@ -2624,116 +2793,127 @@ with tab_edge:
 # ─── 📰 NEWS TAB ─────────────────────────────────────────────────────────
 with tab_news:
     st.markdown('<div class="section-hdr">MLB News &amp; Transactions</div>', unsafe_allow_html=True)
+    if st.button("Load News & Transactions", key="news_load_manual"):
+        st.session_state["manual_news_fetch"] = True
 
-    news_col1, news_col2 = st.columns([3, 2])
+    if not st.session_state.get("manual_news_fetch", False):
+        st.markdown(
+            '<div class="panel-shell"><div class="panel-title">News feeds are paused</div>'
+            '<div style="font-size:0.84rem;color:rgba(232,236,241,0.62);line-height:1.45;">'
+            'This tab is also in manual mode. Click <strong>Load News &amp; Transactions</strong> only when you actually need external news or injury pulls.'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        news_col1, news_col2 = st.columns([3, 2])
 
-    # ── MLB Headlines ──
-    with news_col1:
-        st.markdown("#### Headlines")
-        try:
-            _news_items = fetch_mlb_news(max_items=12)
-        except Exception:
-            _news_items = []
+        # ── MLB Headlines ──
+        with news_col1:
+            st.markdown("#### Headlines")
+            try:
+                _news_items = fetch_mlb_news(max_items=12)
+            except Exception:
+                _news_items = []
 
-        if _news_items:
-            for _art in _news_items:
-                _link = _art.get("url", "")
-                _title = _art.get("title", "Untitled")
-                _snippet = _art.get("snippet", "")
-                _date = _art.get("date", "")
-                _title_html = f'<a href="{_link}" target="_blank" style="color:#4FC3F7;text-decoration:none;font-weight:600;">{_title}</a>' if _link else f'<span style="font-weight:600;">{_title}</span>'
-                st.markdown(
-                    f'<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.08);">'
-                    f'{_title_html}'
-                    f'<div style="font-size:0.82rem;color:#aaa;margin-top:3px;">{_snippet}</div>'
-                    f'<div style="font-size:0.72rem;color:#666;margin-top:2px;">{_date}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.info("No MLB news available right now. Check back closer to game time.")
-
-    # ── Transactions & Injuries ──
-    with news_col2:
-        st.markdown("#### Recent Transactions")
-        _txn_days = st.selectbox("Lookback", [3, 7, 14], index=0, key="news_txn_days", label_visibility="collapsed")
-        try:
-            _txns = fetch_recent_transactions(days_back=_txn_days)
-        except Exception:
-            _txns = []
-
-        if _txns:
-            # Group by category
-            from collections import defaultdict
-            _cat_groups = defaultdict(list)
-            for _t in _txns:
-                _cat_groups[_t.get("category", "other")].append(_t)
-
-            _cat_labels = {
-                "injury": "🏥 Injury List",
-                "activation": "✅ Activations",
-                "roster": "📋 Roster Moves",
-                "trade": "🔄 Trades",
-                "signing": "✍️ Signings",
-                "release": "❌ Releases",
-                "other": "📰 Other",
-            }
-            for _cat_key in ["injury", "activation", "roster", "trade", "signing", "release", "other"]:
-                _items = _cat_groups.get(_cat_key, [])
-                if not _items:
-                    continue
-                st.markdown(f"**{_cat_labels.get(_cat_key, _cat_key)}** ({len(_items)})")
-                for _t in _items[:8]:
-                    _desc = _t.get("description", "")
-                    if len(_desc) > 120:
-                        _desc = _desc[:117] + "..."
+            if _news_items:
+                for _art in _news_items:
+                    _link = _art.get("url", "")
+                    _title = _art.get("title", "Untitled")
+                    _snippet = _art.get("snippet", "")
+                    _date = _art.get("date", "")
+                    _title_html = f'<a href="{_link}" target="_blank" style="color:#4FC3F7;text-decoration:none;font-weight:600;">{_title}</a>' if _link else f'<span style="font-weight:600;">{_title}</span>'
                     st.markdown(
-                        f'<div style="font-size:0.82rem;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
-                        f'{_t.get("icon","")} <b>{_t.get("player_name","")}</b> '
-                        f'<span style="color:#888;">({_t.get("team","")})</span><br/>'
-                        f'<span style="color:#aaa;">{_desc}</span>'
+                        f'<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.08);">'
+                        f'{_title_html}'
+                        f'<div style="font-size:0.82rem;color:#aaa;margin-top:3px;">{_snippet}</div>'
+                        f'<div style="font-size:0.72rem;color:#666;margin-top:2px;">{_date}</div>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
-                st.markdown("")
-        else:
-            st.info("No recent transactions found.")
+            else:
+                st.info("No MLB news available right now. Check back closer to game time.")
 
-        # ── Injury Report ──
-        st.markdown("#### Injury Report")
-        try:
-            _injuries = fetch_injuries(days_back=14)
-        except Exception:
-            _injuries = []
+        # ── Transactions & Injuries ──
+        with news_col2:
+            st.markdown("#### Recent Transactions")
+            _txn_days = st.selectbox("Lookback", [3, 7, 14], index=0, key="news_txn_days", label_visibility="collapsed")
+            try:
+                _txns = fetch_recent_transactions(days_back=_txn_days)
+            except Exception:
+                _txns = []
 
-        if _injuries:
-            _active_il = [i for i in _injuries if not i.get("is_activation")]
-            _returned = [i for i in _injuries if i.get("is_activation")]
+            if _txns:
+                # Group by category
+                from collections import defaultdict
+                _cat_groups = defaultdict(list)
+                for _t in _txns:
+                    _cat_groups[_t.get("category", "other")].append(_t)
 
-            if _active_il:
-                st.markdown(f"**Currently on IL** ({len(_active_il)})")
-                for _inj in _active_il[:15]:
-                    st.markdown(
-                        f'<div style="font-size:0.82rem;padding:3px 0;">'
-                        f'🚑 <b>{_inj["player_name"]}</b> '
-                        f'<span style="color:#888;">({_inj.get("team_abbr", _inj.get("team",""))})</span> — '
-                        f'<span style="color:#FF8A80;">{_inj.get("il_type","IL")}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
+                _cat_labels = {
+                    "injury": "🏥 Injury List",
+                    "activation": "✅ Activations",
+                    "roster": "📋 Roster Moves",
+                    "trade": "🔄 Trades",
+                    "signing": "✍️ Signings",
+                    "release": "❌ Releases",
+                    "other": "📰 Other",
+                }
+                for _cat_key in ["injury", "activation", "roster", "trade", "signing", "release", "other"]:
+                    _items = _cat_groups.get(_cat_key, [])
+                    if not _items:
+                        continue
+                    st.markdown(f"**{_cat_labels.get(_cat_key, _cat_key)}** ({len(_items)})")
+                    for _t in _items[:8]:
+                        _desc = _t.get("description", "")
+                        if len(_desc) > 120:
+                            _desc = _desc[:117] + "..."
+                        st.markdown(
+                            f'<div style="font-size:0.82rem;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+                            f'{_t.get("icon","")} <b>{_t.get("player_name","")}</b> '
+                            f'<span style="color:#888;">({_t.get("team","")})</span><br/>'
+                            f'<span style="color:#aaa;">{_desc}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                    st.markdown("")
+            else:
+                st.info("No recent transactions found.")
 
-            if _returned:
-                st.markdown(f"**Recently Activated** ({len(_returned)})")
-                for _inj in _returned[:10]:
-                    st.markdown(
-                        f'<div style="font-size:0.82rem;padding:3px 0;">'
-                        f'✅ <b>{_inj["player_name"]}</b> '
-                        f'<span style="color:#888;">({_inj.get("team_abbr", _inj.get("team",""))})</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-        else:
-            st.info("No injury data available.")
+            # ── Injury Report ──
+            st.markdown("#### Injury Report")
+            try:
+                _injuries = fetch_injuries(days_back=14)
+            except Exception:
+                _injuries = []
+
+            if _injuries:
+                _active_il = [i for i in _injuries if not i.get("is_activation")]
+                _returned = [i for i in _injuries if i.get("is_activation")]
+
+                if _active_il:
+                    st.markdown(f"**Currently on IL** ({len(_active_il)})")
+                    for _inj in _active_il[:15]:
+                        st.markdown(
+                            f'<div style="font-size:0.82rem;padding:3px 0;">'
+                            f'🚑 <b>{_inj["player_name"]}</b> '
+                            f'<span style="color:#888;">({_inj.get("team_abbr", _inj.get("team",""))})</span> — '
+                            f'<span style="color:#FF8A80;">{_inj.get("il_type","IL")}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                if _returned:
+                    st.markdown(f"**Recently Activated** ({len(_returned)})")
+                    for _inj in _returned[:10]:
+                        st.markdown(
+                            f'<div style="font-size:0.82rem;padding:3px 0;">'
+                            f'✅ <b>{_inj["player_name"]}</b> '
+                            f'<span style="color:#888;">({_inj.get("team_abbr", _inj.get("team",""))})</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+            else:
+                st.info("No injury data available.")
 
 with tab_slips:
     st.markdown('<div class="section-hdr">Slip Tracker &amp; P&amp;L</div>', unsafe_allow_html=True)
