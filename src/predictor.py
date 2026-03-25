@@ -1707,7 +1707,7 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
     exp_pa = pa_result["mean_pa"]
 
     observed_runs_per_game = runs / games if (runs and games > 0) else LG["runs_per_game"]
-    reg_runs_per_game = _regress(observed_runs_per_game, pa, 280, LG["runs_per_game"])
+    reg_runs_per_game = _regress(observed_runs_per_game, pa, 400, LG["runs_per_game"])
     proj = reg_runs_per_game * (exp_pa / 4.2)
 
     proj *= RUNS_LINEUP_MULTIPLIERS.get(lineup_pos, 1.0)
@@ -1719,7 +1719,7 @@ def project_batter_runs(b, opp_p=None, bvp=None, platoon=None,
 
     # Sprint speed: fast players score from 1st on doubles, score on sac flies
     if sprint > 0:
-        speed_adj = (sprint - LG["sprint_speed"]) / LG["sprint_speed"] * 0.12
+        speed_adj = (sprint - LG["sprint_speed"]) / LG["sprint_speed"] * 0.18
         proj *= (1 + speed_adj)
 
     # Better run environments matter more for runs than for other batter props.
