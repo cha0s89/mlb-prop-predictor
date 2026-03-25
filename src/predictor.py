@@ -977,9 +977,9 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     # Park K factor
     if park: proj *= _park(park, PARK_K)
 
-    # Umpire adjustment (+/- 0.5-1.0 K)
+    # Umpire adjustment — reduced 50% for 2026 ABS challenge system
     if ump and ump.get("known"):
-        proj += ump.get("k_adjustment", 0)
+        proj += ump.get("k_adjustment", 0) * 0.50
 
     # Weather
     if wx:
@@ -1001,7 +1001,7 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     # Beta-Binomial distribution parameters for strikeout projections
     # Use stabilized K-rate and precision based on pitcher reliability
     raw_k_rate = reg_k / 100.0  # Convert percentage to decimal
-    sample_bf = p.get("gs", 10) * 25  # Approximation: ~25 BF/start
+    sample_bf = p.get("bf", p.get("tbf", 0)) or p.get("gs", 10) * 25
     stabilized_k_rate = distributions.bayesian_stabilize(
         raw_k_rate, LG["k_pct_p"] / 100.0, sample_bf, "pitcher_k_rate"
     )
@@ -1150,10 +1150,10 @@ def project_pitcher_walks(p, park=None, ump=None, game_date: date | None = None)
 
     proj = exp_bf * (reg_bb / 100)
 
-    # Umpire with tight zone = more walks
+    # Umpire with tight zone = more walks — reduced 50% for 2026 ABS
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
-        proj -= k_adj * 0.3  # Inverse: high-K ump = fewer walks
+        proj -= k_adj * 0.15  # Inverse: high-K ump = fewer walks
 
     # v018: ABS Challenge System adjustment
     proj *= abs_adjustment_factor("walks_allowed")
@@ -1831,9 +1831,9 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
         k_plat = platoon.get("k_adjustment", 1.0)
         reg_k *= k_plat
 
-    # Umpire (big zone = more Ks for batters too)
+    # Umpire (big zone = more Ks for batters too) — reduced for 2026 ABS
     if ump and ump.get("known"):
-        k_ump_adj = ump.get("k_adjustment", 0) * 0.15  # Scaled for individual batter
+        k_ump_adj = ump.get("k_adjustment", 0) * 0.075  # Halved for ABS challenge system
         reg_k *= (1 + k_ump_adj / 5)
 
     # v018 Task 3A: Opportunity-first PA estimation
@@ -1862,10 +1862,10 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
         opp_bb = _ensure_pct(opp_p.get("bb_pct"), lg_default=LG["bb_pct_p"])
         reg_bb *= (opp_bb / LG["bb_pct_p"])
 
-    # Tight-zone ump = more walks
+    # Tight-zone ump = more walks — reduced for 2026 ABS
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
-        reg_bb *= (1 - k_adj * 0.05)  # High-K ump = fewer walks
+        reg_bb *= (1 - k_adj * 0.025)  # Halved for ABS challenge system
 
     # v018 Task 3A: Opportunity-first PA estimation
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)

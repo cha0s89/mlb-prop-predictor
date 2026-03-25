@@ -1363,6 +1363,20 @@ def generate_backtest_report(results: list[dict]) -> dict:
         }
     report["by_direction"] = by_dir
 
+    # ── By prop type AND direction ──
+    by_prop_dir: dict = {}
+    for pt in wl["prop_type"].unique():
+        by_prop_dir[pt] = {}
+        for d in ["MORE", "LESS"]:
+            subset = wl[(wl["prop_type"] == pt) & (wl["pick"] == d)]
+            w = int((subset["result"] == "W").sum())
+            t = len(subset)
+            by_prop_dir[pt][d] = {
+                "wins": w, "total": t,
+                "accuracy": round(w / t, 4) if t > 0 else 0,
+            }
+    report["by_prop_type_direction"] = by_prop_dir
+
     # ── By month ──
     by_month: dict = {}
     if "game_date" in wl.columns:
