@@ -173,8 +173,36 @@ def _get_calibration_blend_weights(weights: Optional[dict] = None) -> dict:
     return merged
 
 
+# Calibration anchors: (predicted_avg, actual_accuracy)
+# From backtest_2025_report.json calibration table (464K predictions).
+_CALIBRATION_ANCHORS = [
+    (0.500, 0.500),   # By definition: 50% predicted = 50% actual
+    (0.520, 0.5461),
+    (0.555, 0.5929),
+    (0.595, 0.6251),
+    (0.660, 0.6917),
+    (0.855, 0.8359),
+    (1.000, 1.000),   # Anchor: certainty maps to certainty
+]
+
+
+def _piecewise_calibrate(raw_prob: float) -> float:
+    """Map raw model probability to calibrated confidence via piecewise
+    linear interpolation over backtest-derived anchors."""
+    if raw_prob <= 0.50:
+        return 0.50
+    anchors = _CALIBRATION_ANCHORS
+    for i in range(len(anchors) - 1):
+        x0, y0 = anchors[i]
+        x1, y1 = anchors[i + 1]
+        if x0 <= raw_prob <= x1:
+            t = (raw_prob - x0) / (x1 - x0) if x1 != x0 else 0.0
+            return y0 + t * (y1 - y0)
+    return anchors[-1][1]
+
+
 def _get_confidence_shrinkage(prop_type: str, weights: Optional[dict] = None) -> float:
-    """Return the configured confidence shrinkage for this prop."""
+    """Return the configured confidence shrinkage for this prop (legacy, kept for compat)."""
     weights = weights or _load_weights()
     raw = weights.get("confidence_shrinkage", DEFAULT_CONFIDENCE_SHRINKAGE)
     if isinstance(raw, dict):
@@ -359,13 +387,13 @@ LG = {
 # From FanGraphs / Russell Carleton research
 # ═══════════════════════════════════════════════════════
 STAB = {
-    # Batter (PA)
-    "k_rate": 60, "bb_rate": 120, "hbp_rate": 240,
-    "babip": 820, "avg": 500, "obp": 300, "slg": 320, "iso": 160,
-    "woba": 300, "hr_fb": 300, "gb_rate": 80, "fb_rate": 80,
+    # Batter (PA) — updated to FanGraphs 2024 reliability research
+    "k_rate": 150, "bb_rate": 200, "hbp_rate": 240,
+    "babip": 820, "avg": 910, "obp": 500, "slg": 500, "iso": 550,
+    "woba": 250, "hr_fb": 300, "gb_rate": 200, "fb_rate": 250,
     "ld_rate": 600, "barrel_rate": 100, "contact_rate": 100,
     "sprint_speed": 50,  # essentially stable (physical trait)
-    # Pitcher (BF)
+    # Pitcher (BF) — K% and BB% unchanged (fast-stabilizing)
     "k_pct_p": 70, "bb_pct_p": 170, "hr_fb_p": 300,
     "babip_p": 2000, "csw_pct": 200, "swstr_pct": 150,
     "era": 600, "fip": 200, "gb_rate_p": 100,
@@ -2332,18 +2360,19 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # Confidence is the resolved (non-push) probability that the chosen side wins.
     raw_prob = max(resolved_over, resolved_under)
 
-    # ── MODEL UNCERTAINTY DISCOUNT ─────────────────────────────
-    # Raw CDF probability assumes the projection is perfect truth.
-    # In reality, projections have ~0.3-0.5 standard error.
-    # Backtest shows A-grade picks hit 55% vs 70%+ raw probability —
-    # a ~15pp overconfidence gap. Apply a calibration curve that
-    # compresses extreme probabilities toward 50%.
-    #
-    # Formula: calibrated = 0.50 + (raw - 0.50) × shrinkage
-    # shrinkage < 1.0 pulls everything toward the coinflip baseline.
-    # 0.70 shrinkage: raw 80% → calibrated 71%, raw 75% → 67.5%, raw 60% → 57%
+    # ── TWO-STAGE CALIBRATION ─────────────────────────────
+    # Stage 1: Per-prop shrinkage compresses raw CDF probability toward
+    # 50% to account for projection uncertainty.  This captures the
+    # prop-specific overconfidence (e.g., TB raw 80% actually hits ~65%).
     model_uncertainty_shrinkage = _get_confidence_shrinkage(prop_type, weights)
-    confidence = 0.50 + (raw_prob - 0.50) * model_uncertainty_shrinkage
+    shrunk_prob = 0.50 + (raw_prob - 0.50) * model_uncertainty_shrinkage
+    shrunk_prob = max(0.50, min(shrunk_prob, 1.0))
+
+    # Stage 2: Piecewise calibration maps the shrunk probability to the
+    # actual observed accuracy from the backtest calibration table.
+    # This corrects the systematic under-confidence at low/mid ranges
+    # and over-confidence at the top.
+    confidence = _piecewise_calibrate(shrunk_prob)
     confidence = max(0.50, min(confidence, 1.0))
 
     edge = round(abs(confidence - 0.50), 4)
