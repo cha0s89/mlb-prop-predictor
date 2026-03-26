@@ -336,10 +336,12 @@ def get_stat_specific_weather_adjustment(weather: dict, stat_internal: str) -> f
     if not weather:
         return 1.0
 
-    temp = weather.get("temperature") or weather.get("temp") or weather.get("temp_f")
-    wind_speed = weather.get("wind_speed", 0) or weather.get("wind_mph", 0)
-    wind_dir = weather.get("wind_direction", "").lower() or weather.get("wind_dir", "").lower()
-    is_dome = weather.get("dome", False) or weather.get("is_dome", False)
+    # Canonical keys: temp_f, wind_mph, wind_dir, is_dome
+    # (see fetch_game_weather return schema — all other names are legacy fallbacks)
+    temp = weather.get("temp_f") or weather.get("temperature") or weather.get("temp")
+    wind_speed = weather.get("wind_mph", 0) or weather.get("wind_speed", 0)
+    wind_dir = (weather.get("wind_dir") or weather.get("wind_direction") or "").lower()
+    is_dome = weather.get("is_dome", False) or weather.get("dome", False)
 
     if is_dome:
         return 1.0  # Dome = controlled environment
