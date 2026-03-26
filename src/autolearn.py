@@ -253,6 +253,48 @@ def _ensure_dirs() -> None:
     WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _write_json_atomically(path: Path, payload: dict) -> None:
+    """Write JSON via a temp file so readers never see a partially-written file."""
+    temp_path = path.with_name(f"{path.name}.tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)
+    temp_path.replace(path)
+
+
+def _load_json_dict(path: Path) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _apply_runtime_override(weights: dict) -> dict:
+    if RUNTIME_OVERRIDE_PATH.exists():
+        try:
+            runtime_override = _load_json_dict(RUNTIME_OVERRIDE_PATH)
+            weights = _merge_weight_layers(weights, runtime_override)
+            weights.setdefault("metadata", {})
+            weights["metadata"]["runtime_override_loaded"] = True
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load runtime_override.json: %s", exc)
+    return weights
+
+
+def _latest_versioned_weights_path() -> Optional[Path]:
+    candidates = []
+    for path in WEIGHTS_DIR.glob("v*.json"):
+        version_part = path.stem.split("_", 1)[0]
+        if not version_part.startswith("v"):
+            continue
+        try:
+            version_num = int(version_part[1:])
+        except ValueError:
+            continue
+        candidates.append((version_num, path))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
 def _merge_weight_layers(base: dict, override: dict) -> dict:
     """Recursively merge one weight layer onto another."""
     for key, value in (override or {}).items():
@@ -275,28 +317,32 @@ def load_current_weights() -> dict:
     _ensure_dirs()
     if CURRENT_WEIGHTS_PATH.exists():
         try:
-            with open(CURRENT_WEIGHTS_PATH, "r", encoding="utf-8") as f:
-                weights = json.load(f)
+            weights = _load_json_dict(CURRENT_WEIGHTS_PATH)
             baseline = get_baseline_weights()
             weights = _merge_weight_layers(copy.deepcopy(baseline), weights)
-            if RUNTIME_OVERRIDE_PATH.exists():
-                try:
-                    with open(RUNTIME_OVERRIDE_PATH, "r", encoding="utf-8") as f:
-                        runtime_override = json.load(f)
-                    weights = _merge_weight_layers(weights, runtime_override)
-                    weights.setdefault("metadata", {})
-                    weights["metadata"]["runtime_override_loaded"] = True
-                except (json.JSONDecodeError, OSError) as exc:
-                    logger.warning("Failed to load runtime_override.json: %s", exc)
-            return weights
+            return _apply_runtime_override(weights)
         except (json.JSONDecodeError, OSError) as e:
-            logger.warning("Failed to load current.json, reverting to baseline: %s", e)
+            logger.warning("Failed to load current.json, attempting snapshot recovery: %s", e)
+            snapshot_path = _latest_versioned_weights_path()
+            if snapshot_path is not None:
+                try:
+                    snapshot_weights = _load_json_dict(snapshot_path)
+                    _write_json_atomically(CURRENT_WEIGHTS_PATH, snapshot_weights)
+                    logger.warning("Recovered current.json from snapshot %s", snapshot_path.name)
+                    baseline = get_baseline_weights()
+                    weights = _merge_weight_layers(copy.deepcopy(baseline), snapshot_weights)
+                    return _apply_runtime_override(weights)
+                except (json.JSONDecodeError, OSError) as snapshot_exc:
+                    logger.warning(
+                        "Failed to recover current.json from snapshot %s: %s",
+                        snapshot_path,
+                        snapshot_exc,
+                    )
 
-
-    # No current weights — initialize from baseline
+    # No current weights or no recoverable snapshot: initialize from baseline.
     weights = get_baseline_weights()
     save_weights(weights, "v001", "Baseline weights initialized")
-    return weights
+    return load_current_weights()
 
 
 def save_weights(weights: dict, version: str, description: str) -> str:
@@ -320,18 +366,13 @@ def save_weights(weights: dict, version: str, description: str) -> str:
     weights["description"] = description
     weights["created_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Save versioned copy
     safe_desc = description.lower().replace(" ", "_")[:40]
     safe_desc = "".join(c for c in safe_desc if c.isalnum() or c == "_")
     version_filename = f"{version}_{safe_desc}.json"
     version_path = WEIGHTS_DIR / version_filename
 
-    with open(version_path, "w", encoding="utf-8") as f:
-        json.dump(weights, f, indent=2, default=str)
-
-    # Update current.json
-    with open(CURRENT_WEIGHTS_PATH, "w", encoding="utf-8") as f:
-        json.dump(weights, f, indent=2, default=str)
+    _write_json_atomically(version_path, weights)
+    _write_json_atomically(CURRENT_WEIGHTS_PATH, weights)
 
     logger.info("Saved weights %s: %s -> %s", version, description, version_path)
     return str(version_path)
