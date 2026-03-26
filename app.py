@@ -1949,6 +1949,37 @@ with tab_edge:
                 else:
                     p["trend_badge"] = "neutral"
 
+                # Player state detection (breakout/slump/fatigue)
+                try:
+                    from src.player_state import detect_hitter_state, detect_pitcher_state
+                    from src.trends import _lookup_batter_mlbam_id
+                    if not is_pitcher_prop:
+                        _ps_id = _lookup_batter_mlbam_id(row["player_name"])
+                        if _ps_id:
+                            _ps = detect_hitter_state(_ps_id)
+                            if _ps.get("has_data"):
+                                p["player_state"] = _ps["state"]
+                                p["player_state_explanation"] = _ps.get("explanation", "")
+                                if _ps["confidence_adjustment"] != 1.0:
+                                    p["confidence"] = round(
+                                        p.get("confidence", 0.5) * _ps["confidence_adjustment"], 4
+                                    )
+                                    _sync_pick_metrics(p)
+                    else:
+                        _pitcher_id = pitcher_profile.get("mlbam_id") if pitcher_profile else None
+                        if _pitcher_id:
+                            _ps = detect_pitcher_state(_pitcher_id)
+                            if _ps.get("has_data"):
+                                p["player_state"] = _ps["state"]
+                                p["player_state_explanation"] = _ps.get("explanation", "")
+                                if _ps["confidence_adjustment"] != 1.0:
+                                    p["confidence"] = round(
+                                        p.get("confidence", 0.5) * _ps["confidence_adjustment"], 4
+                                    )
+                                    _sync_pick_metrics(p)
+                except Exception:
+                    pass
+
                 p["buy_low"] = False
                 if not is_pitcher_prop and matched is not None:
                     season_woba = float(matched.get("wOBA", 0)) if "wOBA" in matched.index else 0.0

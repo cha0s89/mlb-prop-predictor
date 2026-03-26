@@ -179,6 +179,7 @@ def _phase2_compute_metrics() -> dict:
     board = {}
     projection_diag = {}
     shadow = {}
+    projection_accuracy = {}
     try:
         board = get_board_stats(days=30)
     except Exception:
@@ -191,6 +192,45 @@ def _phase2_compute_metrics() -> dict:
         shadow = get_shadow_sample_stats(days=30)
     except Exception:
         pass
+
+    # Separate projection error from betting error
+    # MAE/RMSE measure "was the projected stat value accurate?"
+    # Brier/LogLoss/Accuracy measure "was the bet good?"
+    try:
+        df = get_graded_predictions(limit=2000)
+        if not df.empty and "projection" in df.columns and "actual_result" in df.columns:
+            valid = df.dropna(subset=["projection", "actual_result"]).copy()
+            valid["projection"] = valid["projection"].astype(float)
+            valid["actual_result"] = valid["actual_result"].astype(float)
+            if len(valid) >= 20:
+                errors = valid["projection"] - valid["actual_result"]
+                mae = float(errors.abs().mean())
+                rmse = float(np.sqrt((errors ** 2).mean()))
+                mean_bias = float(errors.mean())
+
+                # Per-prop MAE
+                prop_col = "stat_internal" if "stat_internal" in valid.columns else "stat_type"
+                per_prop_mae = {}
+                for prop, subset in valid.groupby(prop_col):
+                    if len(subset) >= 10:
+                        prop_errors = subset["projection"] - subset["actual_result"]
+                        per_prop_mae[prop] = {
+                            "mae": round(float(prop_errors.abs().mean()), 3),
+                            "bias": round(float(prop_errors.mean()), 3),
+                            "n": len(subset),
+                        }
+
+                projection_accuracy = {
+                    "mae": round(mae, 3),
+                    "rmse": round(rmse, 3),
+                    "mean_bias": round(mean_bias, 3),
+                    "n_graded": len(valid),
+                    "per_prop": per_prop_mae,
+                }
+                logger.info("Projection accuracy: MAE=%.3f, RMSE=%.3f, bias=%.3f (%d picks)",
+                           mae, rmse, mean_bias, len(valid))
+    except Exception as e:
+        logger.debug("Projection accuracy calc failed: %s", e)
 
     return {
         "adjusted": raw.get("adjusted", False),
@@ -206,6 +246,7 @@ def _phase2_compute_metrics() -> dict:
         "board_stats": board,
         "projection_diagnostics": projection_diag,
         "shadow_sample": shadow,
+        "projection_accuracy": projection_accuracy,
     }
 
 
