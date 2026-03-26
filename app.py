@@ -986,6 +986,10 @@ def build_pitcher_profile(stats_row) -> dict:
         "hr9": float(stats_row.get("HR/9", 0)),
         "gs": int(float(stats_row.get("GS", stats_row.get("G", 1)))),
         "xfip": float(stats_row.get("xFIP", stats_row.get("FIP", 0))),
+        # Statcast pitch quality metrics for K-rate adjustments
+        "recent_csw_pct": float(stats_row.get("CSW%", 0) or 0),
+        "recent_swstr_pct": float(stats_row.get("SwStr%", 0) or 0),
+        "ip_per_start": float(stats_row.get("IP", 0)) / max(float(stats_row.get("GS", stats_row.get("G", 1))), 1),
     }
 
 
