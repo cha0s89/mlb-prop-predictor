@@ -36,6 +36,7 @@ from src.sharp_odds import (
     find_ev_edges,
     get_api_key,
     has_cached_odds_today,
+    extract_game_total,
 )
 from src.weather import (
     fetch_game_weather,
@@ -74,7 +75,7 @@ from src.lineups import (
     get_probable_pitcher,
     fetch_confirmed_lineups,
 )
-from src.matchups import get_platoon_split_adjustment
+from src.matchups import get_platoon_split_adjustment, get_bvp_matchup, lookup_player_id
 from src.board_logger import log_board_snapshot, ensure_shadow_sample
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
@@ -326,6 +327,10 @@ def build_pitcher_profile(stats_row) -> dict:
         "hr9": float(stats_row.get("HR/9", 0)),
         "gs": int(float(stats_row.get("GS", stats_row.get("G", 1)))),
         "xfip": float(stats_row.get("xFIP", stats_row.get("FIP", 0))),
+        # Statcast pitch quality metrics for K-rate adjustments
+        "recent_csw_pct": float(stats_row.get("CSW%", 0) or 0),
+        "recent_swstr_pct": float(stats_row.get("SwStr%", 0) or 0),
+        "ip_per_start": float(stats_row.get("IP", 0)) / max(float(stats_row.get("GS", stats_row.get("G", 1))), 1),
     }
 
 
@@ -650,6 +655,7 @@ def build_board(
 
     # ── STEP 9 (optional): Sharp edges ───────────────────────────────────────
     all_edges: list = []
+    _game_totals_by_team: dict = {}
     if not skip_sharp:
         logger.info("Step 9/13: Fetching sharp lines & devigging")
         if api_key is None:
@@ -681,6 +687,15 @@ def build_board(
                             all_edges.extend(
                                 find_ev_edges(pp_lines, sharp, min_ev_pct=0.25)
                             )
+                        # Extract game total for run-environment nudge
+                        gt = extract_game_total(resp["data"])
+                        if gt:
+                            _ev_home = event.get("home_team", "").lower()
+                            _ev_away = event.get("away_team", "").lower()
+                            if _ev_home:
+                                _game_totals_by_team[_ev_home] = gt
+                            if _ev_away:
+                                _game_totals_by_team[_ev_away] = gt
                 if all_edges:
                     all_edges.sort(key=lambda x: x["edge_pct"], reverse=True)
                 logger.info("  %d sharp edges found", len(all_edges))
@@ -789,6 +804,32 @@ def build_board(
                     if opp_lineup_context and opp_lineup_context.get("has_data"):
                         opp_k_rate = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate") or opp_k_rate
 
+            # BvP matchup (batter props only)
+            bvp_data = None
+            if not is_pitcher_prop and opp_info and opp_info.get("id"):
+                try:
+                    batter_lookup = lookup_player_id(row["player_name"])
+                    if batter_lookup.get("found") and batter_lookup.get("mlbam_id"):
+                        bvp_data = get_bvp_matchup(
+                            batter_lookup["mlbam_id"],
+                            int(opp_info["id"]),
+                        )
+                        if not bvp_data.get("has_data"):
+                            bvp_data = None
+                except Exception:
+                    bvp_data = None
+
+            # Vegas game total lookup
+            _vgt = None
+            if _game_totals_by_team and team:
+                _team_lower = team.lower()
+                _vgt = _game_totals_by_team.get(_team_lower)
+                if _vgt is None:
+                    for _gt_team, _gt_val in _game_totals_by_team.items():
+                        if _team_lower in _gt_team or _gt_team in _team_lower:
+                            _vgt = _gt_val
+                            break
+
             # Line sanity check
             _min_line = MIN_REALISTIC_LINE.get(stat_int, 0)
             if _min_line and float(row.get("line", 0)) < _min_line:
@@ -803,6 +844,7 @@ def build_board(
                 pitcher_profile=pitcher_profile,
                 opp_pitcher_profile=opp_pitcher_profile,
                 opp_team_k_rate=opp_k_rate,
+                bvp=bvp_data,
                 platoon=platoon_adj,
                 park_team=r_team,
                 weather=wx,
@@ -811,9 +853,12 @@ def build_board(
                 batter_lineup_context=batter_lineup_context,
                 opp_lineup_context=opp_lineup_context,
                 game_date=_game_date_from_iso(row.get("start_time", "")),
+                vegas_game_total=_vgt,
             )
             p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
             p["game_time_utc"] = row.get("start_time", "")
+            if _vgt:
+                p["vegas_game_total"] = _vgt
 
             _is_count_prop = stat_int in COUNT_PROPS
 
