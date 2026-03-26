@@ -1,0 +1,93 @@
+name: Daily MLB Pipeline
+
+on:
+  schedule:
+    # Board capture: 5 PM ET (21:00 UTC) — before first pitch
+    - cron: "0 21 * * *"
+    # Nightly grading: 2 AM ET (06:00 UTC) — after west coast games
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Which step to run"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - capture
+          - grade
+          - both
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    # Only run during MLB season (late March through October)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure data directories exist
+        run: mkdir -p data logs
+
+      # Download the persisted database from previous runs
+      - name: Download database artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: predictions-db
+          path: data/
+          if_no_artifact_found: warn
+          workflow: daily-pipeline.yml
+          branch: main
+          search_artifacts: true
+
+      - name: Determine action
+        id: action
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "action=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
+          else
+            # Schedule-based: 21:00 UTC = capture, 06:00 UTC = grade
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" -ge 18 ] && [ "$HOUR" -le 23 ]; then
+              echo "action=capture" >> "$GITHUB_OUTPUT"
+            else
+              echo "action=grade" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # ── BOARD CAPTURE ──
+      - name: Capture today's board
+        if: steps.action.outputs.action == 'capture' || steps.action.outputs.action == 'both'
+        run: python scripts/board_capture.py --skip-sharp --verbose
+        continue-on-error: true
+
+      # ── NIGHTLY GRADING ──
+      - name: Grade yesterday's picks
+        if: steps.action.outputs.action == 'grade' || steps.action.outputs.action == 'both'
+        run: python scripts/nightly_cycle.py --verbose
+        continue-on-error: true
+
+      # Persist the database for next run
+      - name: Upload database artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: predictions-db
+          path: |
+            data/predictions.db
+            data/predictions.db-wal
+            data/predictions.db-shm
+          retention-days: 90
+          overwrite: true
