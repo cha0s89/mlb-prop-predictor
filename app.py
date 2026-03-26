@@ -58,7 +58,7 @@ from src.lineups import (
     fetch_todays_games, get_batting_order_position, get_pa_multiplier,
     get_game_context, get_probable_pitcher, fetch_confirmed_lineups,
 )
-from src.matchups import get_platoon_split_adjustment
+from src.matchups import get_platoon_split_adjustment, get_bvp_matchup, lookup_player_id
 from src.database import (
     save_projected_stats, get_projection_accuracy,
     get_projection_history, init_projected_stats_table,
@@ -1806,6 +1806,21 @@ with tab_edge:
                         if opp_lineup_context and opp_lineup_context.get("has_data"):
                             opp_k_rate = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate") or opp_k_rate
 
+                # BvP matchup (batter props only)
+                bvp_data = None
+                if not is_pitcher_prop and opp_info and opp_info.get("id"):
+                    try:
+                        batter_lookup = lookup_player_id(row["player_name"])
+                        if batter_lookup.get("found") and batter_lookup.get("mlbam_id"):
+                            bvp_data = get_bvp_matchup(
+                                batter_lookup["mlbam_id"],
+                                int(opp_info["id"]),
+                            )
+                            if not bvp_data.get("has_data"):
+                                bvp_data = None
+                    except Exception:
+                        bvp_data = None
+
                 # ── LINE SANITY CHECK ────────────────────────────
                 # Skip props with unrealistically low lines (spring training / promo artifacts).
                 # These create fake massive edges when real projections are compared to garbage lines.
@@ -1834,6 +1849,7 @@ with tab_edge:
                     pitcher_profile=pitcher_profile,
                     opp_pitcher_profile=opp_pitcher_profile,
                     opp_team_k_rate=opp_k_rate,
+                    bvp=bvp_data,
                     platoon=platoon_adj,
                     park_team=r_team,
                     weather=wx,
