@@ -68,6 +68,7 @@ STAT_TYPE_MAP = {
     "doubles": "doubles",
     "triples": "triples",
     "batter_strikeouts": "strikeouts",
+    "hitter_strikeouts": "strikeouts",
     # Pitching props
     "pitcher_strikeouts": "pitcher_strikeouts",
     "pitching_outs": "pitching_outs",

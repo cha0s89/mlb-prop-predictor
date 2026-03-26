@@ -66,6 +66,7 @@ from src.database import (
 )
 from src.kelly import calculate_slip_sizing
 from src.parlay_suggest import suggest_slips
+from src.prediction_cleanup import dedupe_predictions
 # drift module available for nightly cycle (not used in UI)
 from src.slip_ev import simulate_slip_ev, quick_slip_ev, build_correlation_matrix
 from src.board_logger import (
@@ -2038,11 +2039,12 @@ with tab_edge:
                 st.caption(f"⚠️ {_pred_errors} prop(s) skipped due to data issues")
 
             # v018: Cross-prop consistency checks (TB >= Hits, etc.)
-            if preds:
-                try:
-                    preds = enforce_consistency(preds)
-                except Exception as e:
-                    _log.warning("Consistency check failed: %s", e)
+                if preds:
+                    try:
+                        preds = enforce_consistency(preds)
+                    except Exception as e:
+                        _log.warning("Consistency check failed: %s", e)
+                    preds = dedupe_predictions(preds)
 
             if preds:
                 # v018: Save projected stats for tracking accuracy over time

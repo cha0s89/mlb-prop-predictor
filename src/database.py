@@ -5,6 +5,7 @@ SQLite-based prediction logging, auto-grading, and accuracy tracking.
 
 import sqlite3
 import pandas as pd
+from src.prediction_cleanup import canonical_prop_type, dedupe_predictions
 import numpy as np
 from datetime import datetime, date
 from pathlib import Path
@@ -406,12 +407,13 @@ def save_projected_stats(predictions: list):
     if not predictions:
         return
 
+    predictions = dedupe_predictions(predictions)
     conn = get_connection()
     rows = [(
         pred.get("game_date"),
         pred.get("player_name"),
         pred.get("team"),
-        pred.get("stat_type"),
+        canonical_prop_type(pred.get("stat_internal", pred.get("stat_type"))),
         pred.get("projected_value"),
         pred.get("actual_value"),
         pred.get("line"),

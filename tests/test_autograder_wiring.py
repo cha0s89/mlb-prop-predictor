@@ -135,7 +135,7 @@ class AutograderWiringTests(unittest.TestCase):
         result = autograder._grade_tracking_tables_for_date("2026-03-26", player_stats_list)
 
         self.assertEqual(result["projected_stats_graded"], 1)
-        self.assertEqual(result["board_entries_graded"], 2)
+        self.assertEqual(result["board_entries_graded"], 1)
 
         projected_row = self._fetchall(
             """
@@ -157,9 +157,9 @@ class AutograderWiringTests(unittest.TestCase):
             """,
             ("2026-03-26", "Aaron Judge", "hits"),
         )
-        self.assertEqual(len(board_rows), 2)
-        self.assertTrue(all(row[0] == 2.0 for row in board_rows))
-        self.assertEqual([row[1] for row in board_rows], [1, 0])
+        self.assertEqual(len(board_rows), 1)
+        self.assertEqual(board_rows[0][0], 2.0)
+        self.assertEqual(board_rows[0][1], 1)
 
     def test_log_batch_predictions_uses_per_prediction_game_date(self):
         ids = database.log_batch_predictions([
@@ -277,6 +277,43 @@ class AutograderWiringTests(unittest.TestCase):
         )[0]
         self.assertEqual(row[0], 2.0)
         self.assertEqual(row[1], "W")
+
+    def test_auto_grade_prediction_supports_hitter_strikeouts_alias(self):
+        pred_id = database.log_prediction(
+            {
+                "game_date": "2026-03-26",
+                "player_name": "Jung Lee",
+                "stat_type": "Hitter Strikeouts",
+                "stat_internal": "hitter_strikeouts",
+                "line": 0.5,
+                "projection": 0.94,
+                "pick": "MORE",
+                "confidence": 0.52,
+                "rating": "D",
+            }
+        )
+        pred_row = database.get_ungraded_predictions("2026-03-26").iloc[0]
+        player_stats_list = [
+            {
+                "player_name": "Jung Lee",
+                "player_type": "batter",
+                "strikeouts": 1,
+                "hits": 0,
+                "runs": 0,
+                "walks": 0,
+                "hbp": 0,
+                "stolen_bases": 0,
+                "at_bats": 4,
+                "total_bases": 0,
+                "hits_runs_rbis": 0,
+                "fantasy_score": 0.0,
+            }
+        ]
+
+        result = autograder.auto_grade_prediction(pred_row, player_stats_list)
+
+        self.assertEqual(pred_id, 1)
+        self.assertEqual(result, "W")
 
     def test_repair_preopening_tracking_rows_removes_future_duplicate_legacy_rows(self):
         database.save_projected_stats([

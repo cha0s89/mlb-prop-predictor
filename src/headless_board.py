@@ -78,6 +78,7 @@ from src.matchups import get_platoon_split_adjustment
 from src.board_logger import log_board_snapshot, ensure_shadow_sample
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
+from src.prediction_cleanup import dedupe_predictions
 from src.selection import annotate_prediction_floor, get_confidence_floor
 from src.autolearn import load_current_weights
 from src.combined import score_picks
@@ -1003,6 +1004,7 @@ def build_board(
             preds = enforce_consistency(preds)
         except Exception as exc:
             errors.append(f"Consistency: {exc}")
+        preds = dedupe_predictions(preds)
 
     # ── STEP 12: Persist (unless dry_run) ────────────────────────────────────
     if preds and not dry_run:

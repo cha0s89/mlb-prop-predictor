@@ -17,6 +17,7 @@ from datetime import date, datetime, timezone
 from typing import List, Dict
 
 from src.database import get_connection, resolve_game_date
+from src.prediction_cleanup import canonical_prop_type, dedupe_predictions
 
 
 def _ensure_column(conn, table_name: str, column_name: str, column_def: str) -> None:
@@ -117,18 +118,20 @@ def log_board_snapshot(predictions: List[Dict], edges: List[Dict] = None,
     if not predictions:
         return 0
 
+    predictions = dedupe_predictions(predictions)
+
     # Build a lookup for sharp edges
     edge_lookup = {}
     if edges:
         for e in edges:
-            key = f"{e.get('player_name', '')}_{e.get('stat_type', '')}"
+            key = f"{e.get('player_name', '')}_{canonical_prop_type(e.get('stat_type', ''))}"
             edge_lookup[key] = e
 
     conn = get_connection()
     rows = []
     for p in predictions:
         player = p.get("player_name", "")
-        prop_type = p.get("stat_internal", p.get("stat_type", ""))
+        prop_type = canonical_prop_type(p.get("stat_internal", p.get("stat_type", "")))
         key = f"{player}_{prop_type}"
         sharp = edge_lookup.get(key, {})
         row_date = resolve_game_date(p)
