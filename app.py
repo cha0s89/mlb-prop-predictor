@@ -1524,6 +1524,23 @@ with tab_edge:
                 except Exception:
                     injury_list = []
 
+            # Fetch bullpen usage for all teams
+            bullpen_cache = {}
+            try:
+                from src.bullpen import fetch_bullpen_usage
+                if not pp_lines.empty and "team" in pp_lines.columns:
+                    for _bp_team in pp_lines["team"].dropna().unique():
+                        _bp_r = resolve_team(_bp_team)
+                        if _bp_r and _bp_r not in bullpen_cache:
+                            try:
+                                bullpen_cache[_bp_r] = fetch_bullpen_usage(_bp_r, days_back=3)
+                            except Exception:
+                                pass
+            except ImportError:
+                pass
+            except Exception:
+                pass
+
             # Fetch today's home-plate umpire assignments
             umpire_map = {}
             try:
@@ -1968,6 +1985,38 @@ with tab_edge:
                 if injury["status"] == "day-to-day":
                     p["confidence"] = max(p.get("confidence", 0.5) * 0.85, 0.50)
                     _sync_pick_metrics(p)
+
+                # Bullpen fatigue: boost batter run/RBI projections vs gassed bullpen
+                if not is_pitcher_prop and r_team and _is_count_prop:
+                    opp_bp_team = None
+                    _gctx = get_team_game_value(
+                        game_context_cache, r_team,
+                        game_pk=lookup_game_pk, game_time=lookup_game_time,
+                    ) if r_team else None
+                    if _gctx:
+                        opp_bp_team = resolve_team(_gctx.get("opponent", "")) if _gctx.get("opponent") else None
+                    if opp_bp_team and opp_bp_team in bullpen_cache:
+                        bp = bullpen_cache[opp_bp_team]
+                        if bp.get("has_data") and bp.get("fatigue_multiplier", 1.0) != 1.0:
+                            bp_mult = bp["fatigue_multiplier"]
+                            if stat_int in ("runs", "rbis", "hits_runs_rbis", "hitter_fantasy_score"):
+                                p["projection"] = round(p["projection"] * bp_mult, 2)
+                                p["bullpen_fatigue"] = bp["fatigue_level"]
+
+                # Starter workload discount for pitcher props
+                if is_pitcher_prop and _is_count_prop:
+                    try:
+                        from src.bullpen import estimate_pitcher_workload_discount
+                        wl_discount = estimate_pitcher_workload_discount(
+                            pitcher_profile or {},
+                            injury_status=injury,
+                            game_date=_game_date_from_iso(row.get("start_time", "")),
+                        )
+                        if wl_discount < 1.0:
+                            p["projection"] = round(p["projection"] * wl_discount, 2)
+                            p["workload_discount"] = wl_discount
+                    except Exception:
+                        pass
 
                 # ── DATA QUALITY GATE ────────────────────────
                 # Skip players with no player-specific data entirely.
