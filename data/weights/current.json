@@ -747,6 +747,28 @@
     "recent_form": 0.05
   },
   "abs_adjustment_enabled": true,
+  "abs_challenge_config": {
+    "decay_days": 50,
+    "prop_effects": {
+      "pitcher_strikeouts": -0.02,
+      "batter_strikeouts": -0.02,
+      "walks_allowed": 0.015,
+      "walks": 0.015,
+      "pitching_outs": -0.01
+    }
+  },
+  "abs_umpire_reduction": 0.50,
+  "umpire_walks_allowed_factor": 0.15,
+  "umpire_batter_k_factor": 0.075,
+  "umpire_batter_walk_factor": 0.025,
+  "tto_k_rate_floor": 0.70,
+  "early_season_ip_schedule": [
+    [0, 0.90],
+    [7, 0.85],
+    [14, 0.90],
+    [21, 0.93],
+    [35, 0.96]
+  ],
   "league_averages_2026": {
     "k_rate": 0.22,
     "bb_rate": 0.085,

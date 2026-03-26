@@ -173,25 +173,38 @@ def _get_calibration_blend_weights(weights: Optional[dict] = None) -> dict:
     return merged
 
 
-# Calibration anchors: (predicted_avg, actual_accuracy)
+# Default calibration anchors: (predicted_avg, actual_accuracy)
 # From backtest_2025_report.json calibration table (464K predictions).
-_CALIBRATION_ANCHORS = [
-    (0.500, 0.500),   # By definition: 50% predicted = 50% actual
-    (0.520, 0.5461),
-    (0.555, 0.5929),
-    (0.595, 0.6251),
-    (0.660, 0.6917),
-    (0.855, 0.8359),
-    (1.000, 1.000),   # Anchor: certainty maps to certainty
+# Overridable via "calibration_anchors" key in current.json weights.
+_DEFAULT_CALIBRATION_ANCHORS = [
+    [0.500, 0.500],   # By definition: 50% predicted = 50% actual
+    [0.520, 0.5461],
+    [0.555, 0.5929],
+    [0.595, 0.6251],
+    [0.660, 0.6917],
+    [0.855, 0.8359],
+    [1.000, 1.000],   # Anchor: certainty maps to certainty
 ]
 
 
-def _piecewise_calibrate(raw_prob: float) -> float:
+def _get_calibration_anchors(weights: Optional[dict] = None) -> list:
+    """Return calibration anchors from weights config, falling back to defaults."""
+    weights = weights or _load_weights()
+    configured = weights.get("calibration_anchors")
+    if isinstance(configured, list) and len(configured) >= 2:
+        try:
+            return [(float(a[0]), float(a[1])) for a in configured]
+        except (TypeError, ValueError, IndexError):
+            pass
+    return [(float(a[0]), float(a[1])) for a in _DEFAULT_CALIBRATION_ANCHORS]
+
+
+def _piecewise_calibrate(raw_prob: float, weights: Optional[dict] = None) -> float:
     """Map raw model probability to calibrated confidence via piecewise
     linear interpolation over backtest-derived anchors."""
     if raw_prob <= 0.50:
         return 0.50
-    anchors = _CALIBRATION_ANCHORS
+    anchors = _get_calibration_anchors(weights)
     for i in range(len(anchors) - 1):
         x0, y0 = anchors[i]
         x1, y1 = anchors[i + 1]
@@ -525,17 +538,24 @@ def abs_adjustment_factor(prop_type: str, game_date: date = None) -> float:
     if days_since < 0:
         return 1.0  # Pre-season, no adjustment
 
-    # Decay factor: full effect day 1, zero effect by day 50
-    decay = max(0.0, 1.0 - days_since / 50)
+    # ABS decay and per-prop adjustments are configurable in weights
+    abs_config = weights.get("abs_challenge_config", {})
+    decay_days = abs_config.get("decay_days", 50)
+    decay = max(0.0, 1.0 - days_since / decay_days)
 
-    adjustments = {
-        "pitcher_strikeouts": 1.0 - 0.02 * decay,   # -2% K rate initially
-        "batter_strikeouts": 1.0 - 0.02 * decay,     # -2% K rate initially
-        "walks_allowed": 1.0 + 0.015 * decay,         # +1.5% BB rate initially
-        "walks": 1.0 + 0.015 * decay,                 # +1.5% BB rate for batters too
-        "pitching_outs": 1.0 - 0.01 * decay,          # Slightly fewer outs (more walks)
+    default_adjustments = {
+        "pitcher_strikeouts": -0.02,   # -2% K rate initially
+        "batter_strikeouts": -0.02,    # -2% K rate initially
+        "walks_allowed": 0.015,        # +1.5% BB rate initially
+        "walks": 0.015,                # +1.5% BB rate for batters too
+        "pitching_outs": -0.01,        # Slightly fewer outs (more walks)
     }
-    return adjustments.get(prop_type, 1.0)
+    configured = abs_config.get("prop_effects", default_adjustments)
+
+    effect = configured.get(prop_type)
+    if effect is None:
+        return 1.0
+    return 1.0 + float(effect) * decay
 
 
 def _park(team, factors_dict):
@@ -856,7 +876,9 @@ def tto_k_rate_decay(base_k_rate: float, expected_bf: float) -> float:
     tto3_fraction = tto3_bf / expected_bf
     k_rate_drop = 0.03 * tto3_fraction  # Blended drop across all BF
 
-    return max(base_k_rate * 0.70, base_k_rate - k_rate_drop)  # Floor at 70% of base
+    weights = _load_weights()
+    tto_floor = float(weights.get("tto_k_rate_floor", 0.70))
+    return max(base_k_rate * tto_floor, base_k_rate - k_rate_drop)
 
 
 def _early_season_ip_discount(game_date: date = None) -> float:
@@ -891,27 +913,29 @@ def _early_season_ip_discount(game_date: date = None) -> float:
         game_date = date.today()
     season_start = get_opening_day_for_year(game_date.year)
 
+    # Schedule is configurable via weights; list of [max_days, multiplier] pairs
+    weights = _load_weights()
+    default_schedule = [
+        [0, 0.90],    # Pre-Opening Day
+        [7, 0.85],    # Opening week: ~15% discount
+        [14, 0.90],   # Week 2: ~10% discount
+        [21, 0.93],   # Week 3: ~7% discount
+        [35, 0.96],   # Week 4-5: ~4% discount
+    ]
+    schedule = weights.get("early_season_ip_schedule", default_schedule)
+
     if game_date < season_start:
-        # Pre-Opening Day: moderate discount (less aggressive, spring games still happen)
-        return 0.90
+        return float(schedule[0][1]) if schedule else 0.90
 
     days_into_season = (game_date - season_start).days
 
-    if days_into_season <= 7:
-        # Opening week: ~15% discount
-        return 0.85
-    elif days_into_season <= 14:
-        # Week 2: ~10% discount
-        return 0.90
-    elif days_into_season <= 21:
-        # Week 3: ~7% discount
-        return 0.93
-    elif days_into_season <= 35:
-        # Week 4-5: ~4% discount, almost ramped up
-        return 0.96
-    else:
-        # Week 6+: full workload
-        return 1.0
+    # Walk schedule entries (skip pre-season entry at index 0)
+    for max_days, mult in schedule[1:]:
+        if days_into_season <= int(max_days):
+            return float(mult)
+
+    # Past all schedule entries: full workload
+    return 1.0
 
 
 def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
@@ -1019,9 +1043,10 @@ def project_pitcher_strikeouts(p, bvp=None, platoon=None, ump=None,
     # Park K factor
     if park: proj *= _park(park, PARK_K)
 
-    # Umpire adjustment — reduced 50% for 2026 ABS challenge system
+    # Umpire adjustment — reduced for 2026 ABS challenge system
     if ump and ump.get("known"):
-        proj += ump.get("k_adjustment", 0) * 0.50
+        abs_ump = float(_load_weights().get("abs_umpire_reduction", 0.50))
+        proj += ump.get("k_adjustment", 0) * abs_ump
 
     # Weather
     if wx:
@@ -1192,10 +1217,11 @@ def project_pitcher_walks(p, park=None, ump=None, game_date: date | None = None)
 
     proj = exp_bf * (reg_bb / 100)
 
-    # Umpire with tight zone = more walks — reduced 50% for 2026 ABS
+    # Umpire with tight zone = more walks — reduced for 2026 ABS
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
-        proj -= k_adj * 0.15  # Inverse: high-K ump = fewer walks
+        ump_walk_factor = float(_load_weights().get("umpire_walks_allowed_factor", 0.15))
+        proj -= k_adj * ump_walk_factor
 
     # v018: ABS Challenge System adjustment
     proj *= abs_adjustment_factor("walks_allowed")
@@ -1877,7 +1903,8 @@ def project_batter_strikeouts(b, opp_p=None, bvp=None, platoon=None,
 
     # Umpire (big zone = more Ks for batters too) — reduced for 2026 ABS
     if ump and ump.get("known"):
-        k_ump_adj = ump.get("k_adjustment", 0) * 0.075  # Halved for ABS challenge system
+        ump_bk_factor = float(_load_weights().get("umpire_batter_k_factor", 0.075))
+        k_ump_adj = ump.get("k_adjustment", 0) * ump_bk_factor
         reg_k *= (1 + k_ump_adj / 5)
 
     # v018 Task 3A: Opportunity-first PA estimation
@@ -1909,7 +1936,8 @@ def project_batter_walks(b, opp_p=None, ump=None, lineup_pos=None):
     # Tight-zone ump = more walks — reduced for 2026 ABS
     if ump and ump.get("known"):
         k_adj = ump.get("k_adjustment", 0)
-        reg_bb *= (1 - k_adj * 0.025)  # Halved for ABS challenge system
+        ump_bwalk_factor = float(_load_weights().get("umpire_batter_walk_factor", 0.025))
+        reg_bb *= (1 - k_adj * ump_bwalk_factor)
 
     # v018 Task 3A: Opportunity-first PA estimation
     pa_result = estimate_plate_appearances(lineup_pos=lineup_pos)
@@ -2372,7 +2400,7 @@ def calculate_over_under_probability(projection, line, prop_type, proj_result=No
     # actual observed accuracy from the backtest calibration table.
     # This corrects the systematic under-confidence at low/mid ranges
     # and over-confidence at the top.
-    confidence = _piecewise_calibrate(shrunk_prob)
+    confidence = _piecewise_calibrate(shrunk_prob, weights)
     confidence = max(0.50, min(confidence, 1.0))
 
     edge = round(abs(confidence - 0.50), 4)
