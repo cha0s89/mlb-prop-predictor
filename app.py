@@ -78,7 +78,7 @@ from src.board_logger import (
 )
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
-from src.selection import annotate_prediction_floor, get_confidence_floor
+from src.selection import annotate_prediction_floor, get_confidence_floor, score_data_certainty
 from src.tail_signals import build_tail_reason_lists, tail_signal_labels, tail_target_text
 from src.team_context import (
     extract_schedule_dates,
@@ -2107,6 +2107,15 @@ with tab_edge:
                     p["confidence"] = min(p.get("confidence", 0.5), 0.65)
                     _sync_pick_metrics(p)
                     p["edge_capped"] = True
+
+                # Data certainty scoring — cap confidence for low-certainty picks
+                certainty = score_data_certainty(p)
+                p["certainty_score"] = certainty["certainty_score"]
+                p["certainty_label"] = certainty["certainty_label"]
+                p["certainty_flags"] = certainty["certainty_flags"]
+                if certainty["confidence_cap"] < 1.0:
+                    p["confidence"] = min(p.get("confidence", 0.5), certainty["confidence_cap"])
+                    _sync_pick_metrics(p)
 
                 annotate_prediction_floor(p, active_weights)
 

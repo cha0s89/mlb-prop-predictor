@@ -80,7 +80,7 @@ from src.board_logger import log_board_snapshot, ensure_shadow_sample
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
 from src.prediction_cleanup import dedupe_predictions
-from src.selection import annotate_prediction_floor, get_confidence_floor
+from src.selection import annotate_prediction_floor, get_confidence_floor, score_data_certainty
 from src.autolearn import load_current_weights
 from src.combined import score_picks
 from src.team_context import (
@@ -1076,6 +1076,15 @@ def build_board(
                 p["confidence"] = min(p.get("confidence", 0.5), 0.65)
                 _sync_pick_metrics(p)
                 p["edge_capped"] = True
+
+            # Data certainty scoring — cap confidence for low-certainty picks
+            certainty = score_data_certainty(p)
+            p["certainty_score"] = certainty["certainty_score"]
+            p["certainty_label"] = certainty["certainty_label"]
+            p["certainty_flags"] = certainty["certainty_flags"]
+            if certainty["confidence_cap"] < 1.0:
+                p["confidence"] = min(p.get("confidence", 0.5), certainty["confidence_cap"])
+                _sync_pick_metrics(p)
 
             annotate_prediction_floor(p, active_weights)
 

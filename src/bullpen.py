@@ -323,7 +323,16 @@ def estimate_pitcher_workload_discount(
 # TEAM ID LOOKUP
 # ─────────────────────────────────────────────
 
-_TEAM_IDS = {
+def _team_id(abbr: str) -> int:
+    """Convert team abbreviation to MLB Stats API team ID."""
+    try:
+        from src.teams import team_id
+        return team_id(abbr)
+    except ImportError:
+        return _FALLBACK_IDS.get(abbr.upper(), 0)
+
+
+_FALLBACK_IDS = {
     "ARI": 109, "ATL": 144, "BAL": 110, "BOS": 111, "CHC": 112,
     "CWS": 145, "CIN": 113, "CLE": 114, "COL": 115, "DET": 116,
     "HOU": 117, "KC": 118, "LAA": 108, "LAD": 119, "MIA": 146,

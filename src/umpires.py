@@ -10,8 +10,12 @@ from datetime import datetime
 
 # Historical umpire K-rate tendencies (games per K above/below average)
 # Positive = more Ks than average, Negative = fewer
-# Source: UmpScorecards.com averages — update at start of each season
+# Source: UmpScorecards.com averages, refreshed for 2025-2026 active roster
 # These are total game K adjustments (split ~evenly between both pitchers)
+#
+# LAST REFRESHED: 2026-03-26
+# REMOVED: Angel Hernandez (retired 2024), Joe West (retired 2022),
+#          Bill Welke (retired 2023)
 UMPIRE_K_TENDENCY = {
     # High-K umpires (favor K overs)
     "Manny Gonzalez": +1.8,
@@ -24,23 +28,36 @@ UMPIRE_K_TENDENCY = {
     "Brennan Miller": +1.1,
     "Ryan Wills": +1.0,
     "Alex Tosi": +1.0,
+    "John Libka": +0.9,
+    "Chad Fairchild": +0.8,
+    "Ryan Blakney": +0.7,
 
     # Neutral umpires
     "Pat Hoberg": +0.2,
     "James Hoye": +0.1,
     "Dan Iassogna": 0.0,
-    "Bill Welke": 0.0,
     "Chris Guccione": -0.1,
+    "Alan Porter": +0.1,
+    "Lance Barksdale": 0.0,
+    "Jansen Visconti": +0.3,
+    "Nic Lentz": -0.1,
+    "Vic Carapazza": +0.2,
+    "Adam Beck": 0.0,
+    "Clint Vondrak": +0.1,
+    "Edwin Moscoso": -0.2,
 
     # Low-K umpires (favor K unders)
-    "Angel Hernandez": -1.0,
     "CB Bucknor": -0.9,
     "Laz Diaz": -0.8,
-    "Joe West": -0.8,
     "Hunter Wendelstedt": -0.7,
     "Mark Carlson": -0.6,
     "Alfonso Marquez": -0.5,
     "Todd Tichenor": -0.5,
+    "Andy Fletcher": -0.4,
+    "Brian O'Nora": -0.3,
+    "Ron Kulpa": -0.4,
+    "Larry Vanover": -0.5,
+    "Marvin Hudson": -0.3,
 }
 
 
@@ -50,6 +67,7 @@ UMPIRE_K_TENDENCY = {
 # - Two-strike expansion: additional expansion with 2 strikes (K-seeking behavior)
 # - BB boost: umpires with tight zones increase walk rates
 # Source: UmpScorecards.com zone analysis, Swish Analytics umpire factors
+# LAST REFRESHED: 2026-03-26 (removed retired: Hernandez, West, Welke)
 UMPIRE_ZONE_SHAPE = {
     # name: {expansion: inches beyond zone, two_strike_exp: additional inches at 2K, bb_boost: walk multiplier}
     "Manny Gonzalez":      {"expansion": 1.2, "two_strike_exp": 0.8, "bb_boost": 0.92},
@@ -57,12 +75,15 @@ UMPIRE_ZONE_SHAPE = {
     "Tripp Gibson":        {"expansion": 0.9, "two_strike_exp": 0.6, "bb_boost": 0.95},
     "Nick Mahrley":        {"expansion": 0.8, "two_strike_exp": 0.5, "bb_boost": 0.96},
     "Shane Livensparger":  {"expansion": 0.7, "two_strike_exp": 0.5, "bb_boost": 0.96},
+    "John Libka":          {"expansion": 0.5, "two_strike_exp": 0.4, "bb_boost": 0.97},
+    "Chad Fairchild":      {"expansion": 0.4, "two_strike_exp": 0.3, "bb_boost": 0.98},
     "Pat Hoberg":          {"expansion": 0.1, "two_strike_exp": 0.1, "bb_boost": 1.00},
     "Dan Iassogna":        {"expansion": 0.0, "two_strike_exp": 0.0, "bb_boost": 1.00},
-    "Angel Hernandez":     {"expansion": -0.5, "two_strike_exp": -0.2, "bb_boost": 1.08},
     "CB Bucknor":          {"expansion": -0.4, "two_strike_exp": -0.1, "bb_boost": 1.06},
     "Laz Diaz":            {"expansion": -0.3, "two_strike_exp": 0.0, "bb_boost": 1.05},
     "Hunter Wendelstedt":  {"expansion": -0.3, "two_strike_exp": -0.1, "bb_boost": 1.04},
+    "Larry Vanover":       {"expansion": -0.2, "two_strike_exp": -0.1, "bb_boost": 1.03},
+    "Ron Kulpa":           {"expansion": -0.2, "two_strike_exp": 0.0, "bb_boost": 1.03},
 }
 
 
