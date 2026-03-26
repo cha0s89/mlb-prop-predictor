@@ -1409,6 +1409,33 @@ def suggest_adjustments(analysis: dict, current_weights: dict) -> list[dict]:
                 "reason": f"[overdispersion] {adj_info['reason']}",
             })
 
+    # 7. Confidence floor adjustments from reoptimize_floors()
+    floor_analysis = analysis.get("floor_suggestions", {})
+    current_floors = current_weights.get("per_prop_confidence_floors", {})
+    for key, info in floor_analysis.items():
+        suggested = info.get("suggested_floor")
+        if suggested is None:
+            continue
+        old_val = current_floors.get(key, 0.60)
+        # Only propose if change is meaningful (>= 0.02) and has enough picks
+        if abs(suggested - old_val) < 0.02 or info.get("picks_at_floor", 0) < 30:
+            continue
+        direction = "increase" if suggested > old_val else "decrease"
+        sig = f"per_prop_confidence_floors:{key}:{direction}"
+        if sig not in failed_keys:
+            proposals.append({
+                "category": "per_prop_confidence_floors",
+                "key": key,
+                "old_value": old_val,
+                "new_value": suggested,
+                "change_pct": round(abs(suggested - old_val), 4),
+                "direction": direction,
+                "reason": (
+                    f"Floor reoptimization: {info['accuracy_at_floor']:.1%} accuracy "
+                    f"at {suggested:.2f} floor ({info['picks_at_floor']} picks)"
+                ),
+            })
+
     return proposals
 
 
@@ -1810,7 +1837,23 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
     new_weights["metadata"]["parent_version"] = current_version
 
     # Build and store calibration curve
-    new_weights["calibration_curve"] = build_calibration_curve(graded)
+    cal_curve = build_calibration_curve(graded)
+    new_weights["calibration_curve"] = cal_curve
+
+    # Auto-update piecewise calibration anchors from live data
+    # Requires 3+ valid bins with sufficient data to replace the static anchors
+    if cal_curve.get("enough_data") and len(cal_curve.get("points", [])) >= 3:
+        live_anchors = [[0.500, 0.500]]  # Anchor: 50% predicted = 50% actual
+        for pt in cal_curve["points"]:
+            if pt[0] > 0.50:  # Only use points above coinflip
+                live_anchors.append([round(pt[0], 4), round(pt[1], 4)])
+        live_anchors.append([1.000, 1.000])  # Anchor: certainty
+        if len(live_anchors) >= 4:
+            new_weights["calibration_anchors"] = live_anchors
+            logger.info(
+                "Calibration anchors updated from %d live bins (%d picks)",
+                len(live_anchors) - 2, cal_curve["total_picks"],
+            )
 
     # Build description
     change_summary = ", ".join(
