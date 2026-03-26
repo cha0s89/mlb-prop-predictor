@@ -2,10 +2,10 @@ name: Daily MLB Pipeline
 
 on:
   schedule:
-    # Board capture: 5 PM ET (21:00 UTC) — before first pitch
-    - cron: "0 21 * * *"
-    # Nightly grading: 2 AM ET (06:00 UTC) — after west coast games
-    - cron: "0 6 * * *"
+    # Board capture: 9 AM PST / 12 PM ET (17:00 UTC) — well before first pitch
+    - cron: "0 17 * * *"
+    # Nightly grading: 11:45 PM PST / 2:45 AM ET (07:45 UTC) — after west coast games
+    - cron: "45 7 * * *"
   workflow_dispatch:
     inputs:
       action:
@@ -58,9 +58,9 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "action=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
           else
-            # Schedule-based: 21:00 UTC = capture, 06:00 UTC = grade
+            # Schedule-based: 17:00 UTC = capture, 07:45 UTC = grade
             HOUR=$(date -u +%H)
-            if [ "$HOUR" -ge 18 ] && [ "$HOUR" -le 23 ]; then
+            if [ "$HOUR" -ge 12 ] && [ "$HOUR" -le 20 ]; then
               echo "action=capture" >> "$GITHUB_OUTPUT"
             else
               echo "action=grade" >> "$GITHUB_OUTPUT"
