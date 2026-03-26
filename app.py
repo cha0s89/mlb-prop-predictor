@@ -273,6 +273,21 @@ def _cached_lineups(game_pk: int):
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 _ensure_ui_session_state()
 
+# ── Auto-grade pending predictions on app startup ────────────────────────
+# Grades yesterday's (and any older ungraded) picks automatically so you
+# never have to remember to press a button.
+if "startup_autograde_done" not in st.session_state:
+    st.session_state["startup_autograde_done"] = True
+    try:
+        _ag_yesterday = (date.today() - timedelta(days=1)).isoformat()
+        _ag_result = auto_grade_date(_ag_yesterday)
+        if _ag_result.get("graded", 0) > 0:
+            _ag_wins = sum(1 for r in _ag_result.get("results", []) if r.get("result") == "W")
+            _ag_losses = sum(1 for r in _ag_result.get("results", []) if r.get("result") == "L")
+            st.toast(f"Auto-graded {_ag_result['graded']} picks from yesterday: {_ag_wins}W-{_ag_losses}L", icon="✅")
+    except Exception:
+        pass  # Silently skip if grading fails (games not final, no data, etc.)
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
