@@ -77,7 +77,7 @@ from src.board_logger import (
     get_shadow_sample_stats,
 )
 from src.line_snapshots import snapshot_pp_lines
-from src.consistency import enforce_consistency
+from src.consistency import enforce_consistency, sanity_check_projection
 from src.selection import annotate_prediction_floor, get_confidence_floor, score_data_certainty
 from src.tail_signals import build_tail_reason_lists, tail_signal_labels, tail_target_text
 from src.team_context import (
@@ -2162,13 +2162,13 @@ with tab_edge:
             if _pred_errors:
                 st.caption(f"⚠️ {_pred_errors} prop(s) skipped due to data issues")
 
-            # v018: Cross-prop consistency checks (TB >= Hits, etc.)
-                if preds:
-                    try:
-                        preds = enforce_consistency(preds)
-                    except Exception as e:
-                        _log.warning("Consistency check failed: %s", e)
-                    preds = dedupe_predictions(preds)
+            # Cross-prop consistency checks (TB >= Hits, Outs <= 27, SB <= on-base, etc.)
+            if preds:
+                try:
+                    preds = enforce_consistency(preds)
+                except Exception as e:
+                    _log.warning("Consistency check failed: %s", e)
+                preds = dedupe_predictions(preds)
 
             if preds:
                 # v018: Save projected stats for tracking accuracy over time
@@ -2514,6 +2514,8 @@ with tab_edge:
                     buy_tag = " 🎯" if pick_row.get("buy_low") else ""
                     _lt = pick_row.get("line_type", "standard")
                     promo_tag = " 👺" if _lt == "promo" else (" 💰" if _lt in ("discounted", "flash_sale") else "")
+                    _consistency_adj = pick_row.get("consistency_adj")
+                    consistency_tag = " ⚠️" if _consistency_adj else ""
                     pick_cls = "more-pick" if pick_row["pick"] == "MORE" else "less-pick"
 
                     chk_col, info_col = st.columns([0.06, 0.94])
@@ -2553,6 +2555,7 @@ with tab_edge:
                         )
 
                         _conf_fill_cls = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
+                        _consistency_title = f' title="{_consistency_adj}"' if _consistency_adj else ""
                         pick_card_html = (
                             f'<div class="pick-card {pick_cls}">'
                             f'<div class="pick-card-header">'
@@ -2560,7 +2563,8 @@ with tab_edge:
                             f'<span class="pick-card-player">{_safe(pick_row.get("player_name"), "Unknown")}{promo_tag}</span>'
                             f'<span class="pick-card-team">{_safe(pick_row.get("team"), "")}</span>'
                             f'<span class="dir-chip {"more" if pick_row["pick"] == "MORE" else "less"}">{pick_row["pick"]}</span>'
-                            f'</div>'
+                            + (f'<span style="font-size:0.75rem;color:#FFB300;cursor:help;"{_consistency_title}>⚠️</span>' if _consistency_adj else "")
+                            + f'</div>'
                             f'<div class="pick-card-row">'
                             f'<span class="pick-card-stat">{_safe(pick_row.get("stat_type"), "Unknown")}</span>'
                             f'<span class="pick-card-line">Line {line_val}</span>'
