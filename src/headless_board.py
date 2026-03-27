@@ -76,6 +76,7 @@ from src.lineups import (
     fetch_confirmed_lineups,
 )
 from src.matchups import get_platoon_split_adjustment, get_bvp_matchup, lookup_player_id
+from src.home_away_splits import get_home_away_split_multiplier
 from src.board_logger import log_board_snapshot, ensure_shadow_sample
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
@@ -613,6 +614,7 @@ def build_board(
     batting_order_cache: dict = {}
     game_context_cache: dict = {}
     team_lineup_context_cache: dict = {}
+    _player_mlbam_cache: dict = {}  # name.upper() → mlbam_id (for home/away splits)
     try:
         for game in todays_games:
             game_pk = game.get("game_pk")
@@ -854,6 +856,31 @@ def build_board(
             if _min_line and float(row.get("line", 0)) < _min_line:
                 continue
 
+            # Home/away split adjustment
+            _ha_mult = 1.0
+            if r_team:
+                _gctx_ha = get_team_game_value(
+                    game_context_cache, r_team,
+                    game_pk=lookup_game_pk, game_time=lookup_game_time,
+                ) or {}
+                _is_home = _gctx_ha.get("is_home", False)
+                _pname_key = row["player_name"].upper().strip()
+                _mlbam_id = _player_mlbam_cache.get(_pname_key)
+                if _mlbam_id is None:
+                    try:
+                        _lid = lookup_player_id(row["player_name"])
+                        _mlbam_id = _lid.get("mlbam_id") if _lid.get("found") else 0
+                    except Exception:
+                        _mlbam_id = 0
+                    _player_mlbam_cache[_pname_key] = _mlbam_id or 0
+                if _mlbam_id:
+                    _ha_mult = get_home_away_split_multiplier(
+                        player_id=_mlbam_id,
+                        is_home=_is_home,
+                        prop_type=stat_int,
+                        is_pitcher=is_pitcher_prop,
+                    )
+
             p = generate_prediction(
                 player_name=row["player_name"],
                 stat_type=row["stat_type"],
@@ -873,6 +900,7 @@ def build_board(
                 opp_lineup_context=opp_lineup_context,
                 game_date=_game_date_from_iso(row.get("start_time", "")),
                 vegas_game_total=_vgt,
+                home_away_mult=_ha_mult,
             )
             p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
             p["game_time_utc"] = row.get("start_time", "")
