@@ -190,6 +190,8 @@ def fetch_schedule(game_date: str) -> list[dict]:
             )
             games.append({
                 "game_pk": game.get("gamePk"),
+                "game_number": game.get("gameNumber", 1),
+                "game_time": game.get("gameDate", ""),
                 "status": status_code,
                 "status_detail": game.get("status", {}).get("detailedState", ""),
                 "home_team": game.get("teams", {}).get("home", {}).get("team", {}).get("name", ""),
@@ -315,7 +317,7 @@ def _extract_pitching_stats(player_data: dict, player_name: str) -> Optional[dic
     }
 
 
-def extract_player_stats(boxscore: dict) -> list[dict]:
+def extract_player_stats(boxscore: dict, game_pk: int = None) -> list[dict]:
     """Extract all player stats from a box score.
 
     Iterates over both home and away teams, pulling batting stats for
@@ -323,6 +325,8 @@ def extract_player_stats(boxscore: dict) -> list[dict]:
 
     Args:
         boxscore: Raw box score JSON dict from fetch_boxscore().
+        game_pk: MLB game primary key; tagged on each stat dict for
+                 doubleheader disambiguation during grading.
 
     Returns:
         List of player stat dicts. Each batter has batting fields plus
@@ -342,11 +346,15 @@ def extract_player_stats(boxscore: dict) -> list[dict]:
             # Batting stats
             bat_stats = _extract_batting_stats(player_data, full_name)
             if bat_stats:
+                if game_pk is not None:
+                    bat_stats["game_pk"] = game_pk
                 all_stats.append(bat_stats)
 
             # Pitching stats
             pitch_stats = _extract_pitching_stats(player_data, full_name)
             if pitch_stats:
+                if game_pk is not None:
+                    pitch_stats["game_pk"] = game_pk
                 all_stats.append(pitch_stats)
 
     return all_stats
@@ -415,6 +423,52 @@ def _find_matching_player_stats(
         if _names_match(player_name, ps.get("player_name", "")):
             return ps
     return None
+
+
+def _find_game_pk_by_time(
+    game_time_utc: str,
+    schedule_games: list[dict],
+) -> Optional[int]:
+    """Match a prediction's scheduled start time to the closest game_pk.
+
+    Used to disambiguate doubleheaders: if two games share the same date
+    and teams, the start time tells us which game a prop belongs to.
+
+    Args:
+        game_time_utc: ISO 8601 timestamp from the prediction's game_time_utc field.
+        schedule_games: List of game dicts returned by fetch_schedule(), each
+                        with "game_pk" and "game_time" keys.
+
+    Returns:
+        The game_pk whose scheduled start time is closest to game_time_utc
+        (within a 3-hour window), or None if no close match is found.
+    """
+    if not game_time_utc:
+        return None
+    try:
+        pred_ts = pd.Timestamp(game_time_utc)
+        if pred_ts.tzinfo is None:
+            pred_ts = pred_ts.tz_localize("UTC")
+    except Exception:
+        return None
+
+    best_pk = None
+    best_diff = float("inf")
+    for game in schedule_games:
+        raw_time = game.get("game_time", "")
+        if not raw_time:
+            continue
+        try:
+            game_ts = pd.Timestamp(raw_time)
+            if game_ts.tzinfo is None:
+                game_ts = game_ts.tz_localize("UTC")
+            diff = abs((pred_ts - game_ts).total_seconds())
+            if diff < best_diff and diff < 10800:  # within 3 hours
+                best_diff = diff
+                best_pk = game["game_pk"]
+        except Exception:
+            continue
+    return best_pk
 
 
 def _date_has_aux_tracking_rows(game_date: str) -> bool:
@@ -749,8 +803,10 @@ def auto_grade_date(game_date: str) -> dict:
         )
         return report
 
-    # Pull box scores and extract player stats from all final games
+    # Pull box scores and extract player stats from all final games.
+    # Keep per-game stats separate for doubleheader disambiguation.
     all_player_stats: list[dict] = []
+    stats_by_game_pk: dict[int, list[dict]] = {}
     for game in final_games:
         boxscore = fetch_boxscore(game["game_pk"])
         if boxscore is None:
@@ -759,8 +815,9 @@ def auto_grade_date(game_date: str) -> dict:
                 f"({game['away_team']} @ {game['home_team']})."
             )
             continue
-        game_stats = extract_player_stats(boxscore)
+        game_stats = extract_player_stats(boxscore, game_pk=game["game_pk"])
         all_player_stats.extend(game_stats)
+        stats_by_game_pk[game["game_pk"]] = game_stats
 
     if not all_player_stats:
         report["errors"].append(
@@ -772,13 +829,28 @@ def auto_grade_date(game_date: str) -> dict:
     if not ungraded.empty:
         for _, pred_row in ungraded.iterrows():
             try:
-                result = auto_grade_prediction(pred_row, all_player_stats)
+                # Route to the correct game's stats for doubleheader safety.
+                # Priority: stored game_pk > game_time_utc proximity > all stats.
+                pred_game_pk = pred_row.get("game_pk")
+                if pred_game_pk and int(pred_game_pk) in stats_by_game_pk:
+                    candidate_stats = stats_by_game_pk[int(pred_game_pk)]
+                else:
+                    matched_pk = _find_game_pk_by_time(
+                        pred_row.get("game_time_utc", ""), schedule
+                    )
+                    candidate_stats = (
+                        stats_by_game_pk[matched_pk]
+                        if matched_pk and matched_pk in stats_by_game_pk
+                        else all_player_stats
+                    )
+
+                result = auto_grade_prediction(pred_row, candidate_stats)
                 if result is not None:
                     report["graded"] += 1
                     actual = _lookup_actual_value(
                         pred_row["player_name"],
                         pred_row.get("stat_internal", ""),
-                        all_player_stats,
+                        candidate_stats,
                     )
                     report["results"].append({
                         "pred_id": int(pred_row["id"]),

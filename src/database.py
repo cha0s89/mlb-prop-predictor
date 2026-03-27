@@ -102,6 +102,8 @@ def init_db():
     _ensure_column(conn, "predictions", "p_push", "REAL")
     _ensure_column(conn, "predictions", "win_prob", "REAL")
     _ensure_column(conn, "predictions", "game_time_utc", "TEXT")
+    _ensure_column(conn, "predictions", "pp_game_id", "TEXT")
+    _ensure_column(conn, "predictions", "game_pk", "INTEGER")
     conn.commit()
     conn.close()
 
@@ -228,8 +230,9 @@ def log_prediction(pred: dict, game_date: str = None):
             INSERT INTO predictions
             (game_date, player_name, stat_type, stat_internal, line, projection,
              pick, confidence, rating, p_over, p_under, p_push, win_prob, edge,
-             park_team, weather_temp, weather_wind, model_version, game_time_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             park_team, weather_temp, weather_wind, model_version, game_time_utc,
+             pp_game_id, game_pk)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             resolved_game_date,
             pred.get("player_name", ""),
@@ -250,6 +253,8 @@ def log_prediction(pred: dict, game_date: str = None):
             pred.get("weather_wind", None),
             pred.get("model_version", "v1.0"),
             pred.get("game_time_utc", pred.get("start_time")),
+            pred.get("pp_game_id"),
+            pred.get("game_pk"),
         ))
         conn.commit()
         return cur.lastrowid
