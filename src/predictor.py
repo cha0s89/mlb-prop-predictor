@@ -1287,8 +1287,9 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
     xba = b.get("xba", 0)
     pa = b.get("pa", 0)
     k_rate = _ensure_pct(b.get("k_rate"), lg_default=LG["k_rate"])
-    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
-    ev90 = b.get("recent_ev90", LG["ev90"])
+    bbe = max(pa * 0.70, 0)  # estimated BBE for Statcast regression (FanGraphs stabilization)
+    hard_hit = _regress(b.get("recent_hard_hit_pct", LG["hard_hit_pct"]), bbe, 80, LG["hard_hit_pct"])
+    ev90 = _regress(b.get("recent_ev90", LG["ev90"]), bbe, 50, LG["ev90"])
     babip = b.get("babip", LG["babip"])
 
     # Regress AVG — v015: use reduced stabilization for batters with 200+ PA
@@ -1321,7 +1322,7 @@ def project_batter_hits(b, opp_p=None, bvp=None, platoon=None,
             reg_avg *= (1 - babip_delta * 0.15)  # Pull toward expected
 
     # BvP matchup
-    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 12:
         bvp_avg = bvp.get("avg", LG["avg"])
         bvp_weight = min(bvp["pa"] / 50, 0.30)  # Max 30% weight at 50+ PA
         reg_avg = reg_avg * (1 - bvp_weight) + bvp_avg * bvp_weight
@@ -1378,7 +1379,8 @@ def project_batter_singles(b, opp_p=None, bvp=None, platoon=None,
     pa = b.get("pa", 0)
     bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
     k_rate = _ensure_pct(b.get("k_rate"), lg_default=LG["k_rate"])
-    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
+    bbe = max(pa * 0.70, 0)  # estimated BBE for Statcast regression
+    hard_hit = _regress(b.get("recent_hard_hit_pct", LG["hard_hit_pct"]), bbe, 80, LG["hard_hit_pct"])
     babip = b.get("babip", LG["babip"])
     _ab_raw = b.get("ab")
     ab = _ab_raw if _ab_raw is not None else (pa * (1 - bb_rate_pct / 100) if pa > 0 else 0)
@@ -1411,7 +1413,7 @@ def project_batter_singles(b, opp_p=None, bvp=None, platoon=None,
         if abs(babip_delta) > 0.030:
             reg_single *= (1 - babip_delta * 0.12)
 
-    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 12:
         bvp_avg = bvp.get("avg", LG["avg"])
         bvp_weight = min(bvp["pa"] / 60, 0.20)
         reg_single = reg_single * (1 - bvp_weight) + bvp_avg * bvp_weight
@@ -1452,9 +1454,10 @@ def project_batter_doubles(b, opp_p=None, bvp=None, platoon=None,
     pa = b.get("pa", 0)
     doubles = b.get("2b", 0)
     bb_rate_pct = _ensure_pct(b.get("bb_rate"), lg_default=LG["bb_rate"])
-    barrel = b.get("recent_barrel_rate", LG["barrel_rate"])
-    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
-    ev90 = b.get("recent_ev90", LG["ev90"])
+    bbe = max(pa * 0.70, 0)  # estimated BBE for Statcast regression (FanGraphs stabilization)
+    barrel = _regress(b.get("recent_barrel_rate", LG["barrel_rate"]), bbe, 150, LG["barrel_rate"])
+    hard_hit = _regress(b.get("recent_hard_hit_pct", LG["hard_hit_pct"]), bbe, 80, LG["hard_hit_pct"])
+    ev90 = _regress(b.get("recent_ev90", LG["ev90"]), bbe, 50, LG["ev90"])
 
     double_rate = doubles / pa if pa > 0 else 0.045
     reg_dbl = _regress(double_rate, pa, 220, 0.045)
@@ -1472,7 +1475,7 @@ def project_batter_doubles(b, opp_p=None, bvp=None, platoon=None,
     if ev90 > 0:
         reg_dbl *= 1 + (ev90 - LG["ev90"]) / LG["ev90"] * 0.06
 
-    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 12:
         bvp_slg = bvp.get("slg", LG["slg"])
         reg_dbl *= 1 + (bvp_slg / LG["slg"] - 1) * min(bvp["pa"] / 80, 0.14)
 
@@ -1516,9 +1519,10 @@ def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
     xslg = b.get("xslg", 0)
     iso = b.get("iso", LG["iso"])
     pa = b.get("pa", 0)
-    barrel = b.get("recent_barrel_rate", LG["barrel_rate"])
-    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
-    ev90 = b.get("recent_ev90", LG["ev90"])
+    bbe = max(pa * 0.70, 0)  # estimated BBE for Statcast regression (FanGraphs stabilization)
+    barrel = _regress(b.get("recent_barrel_rate", LG["barrel_rate"]), bbe, 150, LG["barrel_rate"])
+    hard_hit = _regress(b.get("recent_hard_hit_pct", LG["hard_hit_pct"]), bbe, 80, LG["hard_hit_pct"])
+    ev90 = _regress(b.get("recent_ev90", LG["ev90"]), bbe, 50, LG["ev90"])
 
     # Regress SLG — v015: reduced stabilization for established batters
     stab_slg = STAB["slg"]
@@ -1551,7 +1555,7 @@ def project_batter_total_bases(b, opp_p=None, bvp=None, platoon=None,
                 reg_slg *= (1 - iso_delta * 0.10)
 
     # BvP matchup
-    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 15:
         bvp_slg = bvp.get("slg", LG["slg"])
         bvp_w = min(bvp["pa"] / 50, 0.25)
         reg_slg = reg_slg * (1 - bvp_w) + bvp_slg * bvp_w
@@ -1602,7 +1606,8 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
     hr = b.get("hr", 0)
     pa = b.get("pa", 0)
     iso = b.get("iso", LG["iso"])
-    barrel = b.get("recent_barrel_rate", LG["barrel_rate"])
+    bbe = max(pa * 0.70, 0)  # estimated BBE for Statcast regression
+    barrel = _regress(b.get("recent_barrel_rate", LG["barrel_rate"]), bbe, 150, LG["barrel_rate"])
 
     # Base HR rate (per PA)
     hr_rate = hr / pa if pa > 0 else LG["hr_per_pa"]
@@ -1619,7 +1624,7 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
     reg_hr_rate *= (1 + (iso_adj - 1) * 0.15)
 
     # BvP HR history
-    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 10:
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 15:
         bvp_hr_rate = bvp["home_runs"] / bvp["pa"] if bvp["pa"] > 0 else 0
         if bvp_hr_rate > 0:
             bvp_w = min(bvp["pa"] / 60, 0.20)
@@ -1988,8 +1993,9 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
     # Statcast expected stats
     xba = b.get("xba", 0)
     xslg = b.get("xslg", 0)
-    barrel = b.get("recent_barrel_rate", b.get("barrel_rate", LG["barrel_rate"]))
-    hard_hit = b.get("recent_hard_hit_pct", LG["hard_hit_pct"])
+    bbe = max(pa * 0.70, 0)  # estimated BBE for Statcast regression
+    barrel = _regress(b.get("recent_barrel_rate", b.get("barrel_rate", LG["barrel_rate"])), bbe, 150, LG["barrel_rate"])
+    hard_hit = _regress(b.get("recent_hard_hit_pct", LG["hard_hit_pct"]), bbe, 80, LG["hard_hit_pct"])
 
     # ── Per-PA rates for each scoring event ──
     games_est = pa / 4.2 if pa > 0 else 1
@@ -2069,7 +2075,7 @@ def project_hitter_fantasy_score(b, opp_p=None, bvp=None, platoon=None,
 
     # BvP matchup
     bvp_mult = 1.0
-    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 8:
+    if bvp and bvp.get("has_data") and bvp.get("pa", 0) >= 12:
         bvp_slg = bvp.get("slg", LG["slg"])
         bvp_avg = bvp.get("avg", LG["avg"])
         bvp_quality = (bvp_slg / LG["slg"] * 0.6 + bvp_avg / LG["avg"] * 0.4)

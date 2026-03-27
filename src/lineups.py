@@ -36,11 +36,11 @@ _failed_game_pks: set = set()
 # Team ID to abbreviation mapping (key MLB teams)
 TEAM_ID_TO_ABBR = {
     108: "LAA", 109: "ARI", 110: "LAD", 111: "COL", 112: "SD",
-    113: "SF", 114: "STL", 115: "CHC", 116: "MIL", 117: "PIT",
-    118: "CIN", 119: "MIL", 133: "OAK", 134: "SEA", 135: "TEX",
+    113: "SF", 114: "STL", 115: "CHC", 116: "DET", 117: "PIT",
+    118: "CIN", 119: "LAD", 133: "OAK", 134: "SEA", 135: "TEX",
     136: "TOR", 137: "BAL", 138: "BOS", 139: "NYY", 140: "TB",
     141: "NYM", 142: "PHI", 143: "ATL", 144: "WSH", 145: "CWS",
-    146: "DET", 147: "MIN", 158: "MIA",
+    146: "MIA", 147: "MIN", 158: "MIL",
 }
 
 # Abbreviation to full name
