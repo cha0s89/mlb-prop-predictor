@@ -2452,7 +2452,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          batter_lineup_context=None, opp_lineup_context=None,
                          game_date: date | None = None,
                          vegas_game_total: float | None = None,
-                         game_script_adjustments: dict | None = None):
+                         game_script_adjustments: dict | None = None,
+                         home_away_mult: float = 1.0):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2573,6 +2574,13 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     if _form_mult != 1.0:
         projection *= _form_mult
         proj_result["recent_form_mult"] = round(_form_mult, 4)
+
+    # ── Home/away split adjustment (after platoon, before calibration) ─────
+    # Applies the player's personal home/away performance split — separate
+    # from park factors which are already baked into the projection functions.
+    if home_away_mult != 1.0:
+        projection *= home_away_mult
+        proj_result["home_away_mult"] = round(home_away_mult, 3)
 
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()
