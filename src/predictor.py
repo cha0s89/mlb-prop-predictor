@@ -38,6 +38,7 @@ from src import distributions
 from src.spring import get_opening_day_for_year
 from src.weather import get_stat_specific_weather_adjustment
 from src.consistency import sanity_check_projection
+from src.bounce_back import detect_bounce_back
 
 
 # ═══════════════════════════════════════════════════════
@@ -2512,6 +2513,15 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         _gs_mult = game_script_adjustments.get(stat_internal, 1.0)
         if _gs_mult != 1.0:
             projection *= _gs_mult
+
+    # ── Cold-bat bounce-back signal ────────────────────────────────────────
+    # Elite hitters coming off an outlier 0-for game have a mean-reversion
+    # tendency.  Scale the raw projection up slightly before offsets so the
+    # offset magnitude stays anchored to a "normal" game.
+    _bb_mult = detect_bounce_back(b, stat_internal)
+    if _bb_mult != 1.0:
+        projection *= _bb_mult
+        proj_result["bounce_back_mult"] = round(_bb_mult, 3)
 
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()
