@@ -39,6 +39,7 @@ from src.spring import get_opening_day_for_year
 from src.weather import get_stat_specific_weather_adjustment
 from src.consistency import sanity_check_projection
 from src.bounce_back import detect_bounce_back
+from src.recent_form import compute_recent_form_multiplier
 
 
 # ═══════════════════════════════════════════════════════
@@ -2561,6 +2562,17 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
             _log_bbi.getLogger(__name__).debug(
                 "batted_ball_interaction skipped: %s", _bbi_err
             )
+
+    # ── Rolling recent form (L7/L14 exponential decay) ────────────────────
+    # Compare exponential-decay-weighted per-game rate for the last 7 and 14
+    # days against the player's season average.  Hot streaks → multiplier > 1;
+    # cold stretches → multiplier < 1.  Capped at [0.85, 1.15].
+    # Applied before learned offsets so offset magnitudes stay anchored to
+    # a "normal" performance context.  Falls back to 1.0 on any data gap.
+    _form_mult = compute_recent_form_multiplier(player_name, stat_internal, game_date)
+    if _form_mult != 1.0:
+        projection *= _form_mult
+        proj_result["recent_form_mult"] = round(_form_mult, 4)
 
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()
