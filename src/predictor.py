@@ -2438,7 +2438,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          park_team=None, weather=None, lineup_pos=None,
                          batter_lineup_context=None, opp_lineup_context=None,
                          game_date: date | None = None,
-                         vegas_game_total: float | None = None):
+                         vegas_game_total: float | None = None,
+                         game_script_adjustments: dict | None = None):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2501,6 +2502,15 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         proj_result = {"projection": line, "mu": line}
 
     projection = proj_result.get("projection", line)
+
+    # ── Apply game-script multiplier (pre-offset) ─────────────────────────
+    # Game script adjustments are computed once per game and passed in by the
+    # caller.  They shift the raw projection before calibration offsets so the
+    # offset's magnitude is still relative to a "normal" game.
+    if game_script_adjustments:
+        _gs_mult = game_script_adjustments.get(stat_internal, 1.0)
+        if _gs_mult != 1.0:
+            projection *= _gs_mult
 
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()

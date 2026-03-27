@@ -732,6 +732,62 @@ def extract_game_total(event_data: dict) -> float | None:
     return round(weighted_total / total_weight, 2)
 
 
+def extract_moneylines(event_data: dict) -> dict | None:
+    """Extract consensus home/away moneylines from the h2h market.
+
+    Parses the 'h2h' (head-to-head) market from The Odds API response and
+    returns weighted-average American-odds moneylines for the home and away
+    teams.  Returns None if no h2h data is present.
+
+    Returns
+    -------
+    dict with keys 'home' (int) and 'away' (int), or None.
+    """
+    if not event_data:
+        return None
+
+    bookmakers = event_data.get("bookmakers", [])
+    if not bookmakers:
+        return None
+
+    home_team = event_data.get("home_team", "")
+    away_team = event_data.get("away_team", "")
+
+    home_prices: list[tuple[float, float]] = []
+    away_prices: list[tuple[float, float]] = []
+
+    for book in bookmakers:
+        book_key = book.get("key", "").lower()
+        weight = BOOK_WEIGHTS.get(book_key, 0.3)
+
+        for market in book.get("markets", []):
+            if market.get("key") != "h2h":
+                continue
+            for outcome in market.get("outcomes", []):
+                name = outcome.get("name", "")
+                price = outcome.get("price")
+                if price is None:
+                    continue
+                price = float(price)
+                if home_team and name == home_team:
+                    home_prices.append((price, weight))
+                elif away_team and name == away_team:
+                    away_prices.append((price, weight))
+
+    if not home_prices or not away_prices:
+        return None
+
+    home_total_w = sum(w for _, w in home_prices)
+    away_total_w = sum(w for _, w in away_prices)
+    home_avg = sum(p * w for p, w in home_prices) / home_total_w
+    away_avg = sum(p * w for p, w in away_prices) / away_total_w
+
+    return {
+        "home": int(round(home_avg)),
+        "away": int(round(away_avg)),
+    }
+
+
 def _normalize_name(name: str) -> str:
     """Normalize a player name for matching: lowercase, strip suffixes and accents."""
     import unicodedata

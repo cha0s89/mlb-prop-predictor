@@ -481,6 +481,13 @@ st.markdown("""
     .pick-card-conf { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
     .pick-card-conf-label { font-size: 0.7rem; color: rgba(232,236,241,0.4); font-family: 'JetBrains Mono', monospace; }
 
+    /* === GAME SCRIPT BADGES === */
+    .gs-badge { font-size: 0.62rem; padding: 0.09rem 0.28rem; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+    .gs-badge.duel      { background: rgba(41,182,246,0.12); color: #29B6F6; border: 1px solid rgba(41,182,246,0.25); }
+    .gs-badge.slugfest  { background: rgba(255,68,68,0.12);  color: #FF5252; border: 1px solid rgba(255,68,68,0.25);  }
+    .gs-badge.bullpen   { background: rgba(255,179,0,0.12);  color: #FFB300; border: 1px solid rgba(255,179,0,0.25);  }
+    .gs-badge.blowout   { background: rgba(255,167,38,0.12); color: #FFA726; border: 1px solid rgba(255,167,38,0.25); }
+
     /* === CONFIDENCE BAR === */
     .conf-track { background: rgba(255,255,255,0.06); border-radius: 3px; height: 6px; margin: 0; overflow: hidden; flex: 1; }
     .conf-fill { height: 100%; border-radius: 3px; }
@@ -1335,6 +1342,7 @@ with tab_edge:
                 selected_player_name, selected_player_team = player_lookup[selected_player_label]
         all_edges = []
         _game_totals_by_team: dict[str, float] = {}  # team_name_lower -> game total O/U
+        _moneylines_by_team: dict[str, dict] = {}    # team_name_lower -> {home_ml, away_ml, home_team, away_team}
         if has_sharp and sharp_events_available:
             total_sharp_lines = 0
             events_with_props = 0
@@ -1363,7 +1371,7 @@ with tab_edge:
                             total_sharp_lines += len(sharp)
                         all_edges.extend(find_ev_edges(pp_lines, sharp, min_ev_pct=0.25))
                         # Extract game total for run-environment nudge
-                        from src.sharp_odds import extract_game_total
+                        from src.sharp_odds import extract_game_total, extract_moneylines
                         gt = extract_game_total(result["data"])
                         if gt:
                             _ev_home = event.get("home_team", "").lower()
@@ -1372,6 +1380,21 @@ with tab_edge:
                                 _game_totals_by_team[_ev_home] = gt
                             if _ev_away:
                                 _game_totals_by_team[_ev_away] = gt
+                        # Extract moneylines for game-script classification
+                        _ml = extract_moneylines(result["data"])
+                        if _ml:
+                            _ml_home = event.get("home_team", "").lower()
+                            _ml_away = event.get("away_team", "").lower()
+                            _ml_info = {
+                                "home_ml": _ml["home"],
+                                "away_ml": _ml["away"],
+                                "home_team": _ml_home,
+                                "away_team": _ml_away,
+                            }
+                            if _ml_home:
+                                _moneylines_by_team[_ml_home] = _ml_info
+                            if _ml_away:
+                                _moneylines_by_team[_ml_away] = _ml_info
             _skip_msg = f" · {_skipped_events} skipped (no PP lines)" if _skipped_events else ""
             st.caption(f"Scanned {len(events or [])} events · {events_with_props} had props · {total_sharp_lines} sharp lines · {len(all_edges)} edges{_skip_msg}")
 
@@ -1663,6 +1686,65 @@ with tab_edge:
             except Exception:
                 pass
 
+            # ── Build game-script classifications per team ──────────────────
+            # Requires both pitcher profiles (from above) and odds data.
+            # Run after pitcher setup so all lookup tables are populated.
+            _game_scripts_by_team: dict[str, dict] = {}
+            try:
+                from src.game_script import classify_game_script as _classify_gs
+                for _gs_game in todays_games:
+                    _gs_home = _gs_game.get("home_team", "")
+                    _gs_away = _gs_game.get("away_team", "")
+                    _gs_pk   = _gs_game.get("game_pk")
+                    _gs_time = _gs_game.get("game_time", "")
+
+                    # opp_pitcher_lookup[home_team] = away pitcher (faces home batters)
+                    # so home pitcher profile is in opp_pitcher_lookup[away_team]
+                    _home_opp_info = get_team_game_value(
+                        opp_pitcher_lookup, _gs_away, game_pk=_gs_pk, game_time=_gs_time
+                    )
+                    _away_opp_info = get_team_game_value(
+                        opp_pitcher_lookup, _gs_home, game_pk=_gs_pk, game_time=_gs_time
+                    )
+                    _home_pp = (_home_opp_info.get("profile") or {}) if _home_opp_info else {}
+                    _away_pp = (_away_opp_info.get("profile") or {}) if _away_opp_info else {}
+
+                    # Vegas total and moneylines
+                    _gs_home_lower = _gs_home.lower()
+                    _gs_away_lower = _gs_away.lower()
+                    _gs_vgt = (
+                        _game_totals_by_team.get(_gs_home_lower)
+                        or _game_totals_by_team.get(_gs_away_lower)
+                        or 0.0
+                    )
+                    _gs_ml_info = (
+                        _moneylines_by_team.get(_gs_home_lower)
+                        or _moneylines_by_team.get(_gs_away_lower)
+                    )
+                    _gs_home_ml = _gs_ml_info.get("home_ml", 0) if _gs_ml_info else 0
+                    _gs_away_ml = _gs_ml_info.get("away_ml", 0) if _gs_ml_info else 0
+
+                    _gs_result = _classify_gs(
+                        home_pitcher_profile=_home_pp,
+                        away_pitcher_profile=_away_pp,
+                        vegas_total=_gs_vgt,
+                        home_moneyline=_gs_home_ml,
+                        away_moneyline=_gs_away_ml,
+                    )
+
+                    if _gs_home_lower:
+                        _game_scripts_by_team[_gs_home_lower] = {
+                            **_gs_result,
+                            "adjustments": _gs_result["home_adjustments"],
+                        }
+                    if _gs_away_lower:
+                        _game_scripts_by_team[_gs_away_lower] = {
+                            **_gs_result,
+                            "adjustments": _gs_result["away_adjustments"],
+                        }
+            except Exception:
+                pass
+
             # Pre-build batter hand + batting order caches from confirmed lineups
             # Batch all game lineups upfront (cached per game_pk) to avoid N+1
             batter_hand_cache = {}        # player_name_upper → bat_hand (R/L/S)
@@ -1861,6 +1943,17 @@ with tab_edge:
                                 _vgt = _gt_val
                                 break
 
+                # Resolve game-script classification for this player's game
+                _gs_entry = None
+                if _game_scripts_by_team and team:
+                    _gs_team_lower = team.lower()
+                    _gs_entry = _game_scripts_by_team.get(_gs_team_lower)
+                    if _gs_entry is None:
+                        for _gs_key, _gs_val in _game_scripts_by_team.items():
+                            if _gs_team_lower in _gs_key or _gs_key in _gs_team_lower:
+                                _gs_entry = _gs_val
+                                break
+
                 p = generate_prediction(
                     player_name=row["player_name"],
                     stat_type=row["stat_type"],
@@ -1880,11 +1973,16 @@ with tab_edge:
                     opp_lineup_context=opp_lineup_context,
                     game_date=_game_date_from_iso(row.get("start_time", "")),
                     vegas_game_total=_vgt,
+                    game_script_adjustments=_gs_entry.get("adjustments") if _gs_entry else None,
                 )
                 p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
                 p["game_time_utc"] = row.get("start_time", "")
                 if _vgt:
                     p["vegas_game_total"] = _vgt
+                if _gs_entry:
+                    p["game_script"] = _gs_entry.get("script", "standard")
+                    p["game_script_confidence"] = _gs_entry.get("confidence", 1.0)
+                    p["game_script_reason"] = _gs_entry.get("reason", "")
 
                 # Props that are count-based (safe to apply multipliers to)
                 # home_runs now returns expected count — include in COUNT_PROPS for spring/trend multipliers
@@ -2553,12 +2651,25 @@ with tab_edge:
                         )
 
                         _conf_fill_cls = "high" if conf_val > 0.6 else ("med" if conf_val > 0.52 else "low")
+                        # Game script badge (only shown for non-standard scripts)
+                        _gs_label = pick_row.get("game_script", "standard")
+                        _gs_badge_html = ""
+                        if _gs_label and _gs_label != "standard":
+                            _gs_icons  = {"duel": "🎯", "slugfest": "💥", "bullpen": "🔄", "blowout_risk": "🏔️"}
+                            _gs_texts  = {"duel": "Duel", "slugfest": "Slugfest", "bullpen": "Bullpen", "blowout_risk": "Blowout"}
+                            _gs_css    = {"duel": "duel", "slugfest": "slugfest", "bullpen": "bullpen", "blowout_risk": "blowout"}
+                            _gs_icon   = _gs_icons.get(_gs_label, "")
+                            _gs_text   = _gs_texts.get(_gs_label, "")
+                            _gs_cls    = _gs_css.get(_gs_label, "")
+                            if _gs_text:
+                                _gs_badge_html = f'<span class="gs-badge {_gs_cls}">{_gs_icon} {_gs_text}</span>'
                         pick_card_html = (
                             f'<div class="pick-card {pick_cls}">'
                             f'<div class="pick-card-header">'
                             f'<span class="badge badge-{_safe(pick_row.get("rating"), "D").lower()}">{_safe(pick_row.get("rating"), "D")}</span>'
                             f'<span class="pick-card-player">{_safe(pick_row.get("player_name"), "Unknown")}{promo_tag}</span>'
                             f'<span class="pick-card-team">{_safe(pick_row.get("team"), "")}</span>'
+                            f'{_gs_badge_html}'
                             f'<span class="dir-chip {"more" if pick_row["pick"] == "MORE" else "less"}">{pick_row["pick"]}</span>'
                             f'</div>'
                             f'<div class="pick-card-row">'
@@ -2612,6 +2723,15 @@ with tab_edge:
                                     if _pf != 0:
                                         _pf_label = "hitter-friendly" if _pf > 0 else "pitcher-friendly"
                                         ctx_lines.append(f"**Park Factor:** {_pf:+d}% ({_pf_label})")
+                                # Game script
+                                _gs_det = pick_row.get("game_script", "standard")
+                                if _gs_det and _gs_det != "standard":
+                                    _gs_det_labels = {"duel": "🎯 Pitcher's Duel", "slugfest": "💥 Slugfest", "bullpen": "🔄 Bullpen Game", "blowout_risk": "🏔️ Blowout Risk"}
+                                    _gs_reason = pick_row.get("game_script_reason", "")
+                                    _gs_line = f"**Game Script:** {_gs_det_labels.get(_gs_det, _gs_det)}"
+                                    if _gs_reason:
+                                        _gs_line += f"  \n_{_gs_reason}_"
+                                    ctx_lines.append(_gs_line)
                                 st.markdown("  \n".join(ctx_lines) if ctx_lines else "No game context available")
 
                             with det2:
