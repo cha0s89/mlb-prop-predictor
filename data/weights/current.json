@@ -1,7 +1,7 @@
 {
-  "version": "v034",
-  "description": "optimization cycle 1 \u2014 tighten tradeable prop floors",
-  "created_at": "2026-03-26T06:11:58.012393+00:00",
+  "version": "v037",
+  "description": "optimization cycle 4 \u2014 ensemble weight sensitivity: projection=0.50, sharp_odds=0.35, recent_form=0.15 (+0.48pp accuracy vs v036 baseline)",
+  "created_at": "2026-03-27T08:40:00.000000+00:00",
   "confidence_thresholds": {
     "A": 0.7,
     "B": 0.62,
@@ -675,7 +675,14 @@
       "rbis_less floor: 0.6 -> 0.63 (was 70.8% on 20,081 picks; filter sub-0.63 weak picks)"
     ],
     "v034_created_at": "2026-03-27T06:34:16.952562+00:00",
-    "v034_rationale": "Tradeable-only backtest (v033) showed: hitter_fantasy_score_more 63.0% (108 picks), rbis_less 70.8% (20,081 picks), batter_strikeouts 73.0% (1,496 picks). 0.55-0.60 confidence bucket = 56.8% accuracy across 88 picks. Floors tightened to eliminate weak-confidence picks."
+    "v034_rationale": "Tradeable-only backtest (v033) showed: hitter_fantasy_score_more 63.0% (108 picks), rbis_less 70.8% (20,081 picks), batter_strikeouts 73.0% (1,496 picks). 0.55-0.60 confidence bucket = 56.8% accuracy across 88 picks. Floors tightened to eliminate weak-confidence picks.",
+    "v037_created_at": "2026-03-27T08:40:00.000000+00:00",
+    "v037_rationale": "Optimization cycle 4 ensemble weight sensitivity test on backtest_2025_v032_old.json (464K predictions). Tested configs: 65/20/15, 55/30/15, 60/20/20, 70/15/15 then fine-searched around winner. Methodology: eff_conf = 0.5 + (w_proj_norm+0.25)*(proj_conf-0.5) via combined.py projection-only path. Results vs v036 72.73% baseline: cfg4 71.69% (-1.04pp, 133K picks), cfg1 72.05% (-0.68pp, 126K), ref 72.12% (-0.61pp, 124K), baseline 72.34% (-0.39pp, 119K), cfg2 72.84% (+0.11pp, 106K), fine_50/35 73.21% (+0.48pp, 89K). Winner: projection=0.50, sharp_odds=0.35, recent_form=0.15 (scale=0.838). Compresses projection edge by 16% vs raw floors, filtering lower-confidence picks. Grade A: 30,305 picks 79.50%, Grade B: 57,168 picks 70.22%, Grade C: 1,470 picks 60.20%. Previous weights were sharp_odds=0.65, projection=0.30, recent_form=0.05.",
+    "v037_changes": [
+      "ensemble_weights.sharp_odds: 0.65 -> 0.35",
+      "ensemble_weights.projection: 0.30 -> 0.50",
+      "ensemble_weights.recent_form: 0.05 -> 0.15"
+    ]
   },
   "distribution_params": {
     "pitcher_strikeouts": {
@@ -748,9 +755,9 @@
     }
   },
   "ensemble_weights": {
-    "sharp_odds": 0.65,
-    "projection": 0.3,
-    "recent_form": 0.05
+    "sharp_odds": 0.35,
+    "projection": 0.50,
+    "recent_form": 0.15
   },
   "abs_adjustment_enabled": true,
   "abs_challenge_config": {
