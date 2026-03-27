@@ -40,6 +40,7 @@ from src.weather import get_stat_specific_weather_adjustment
 from src.consistency import sanity_check_projection
 from src.bounce_back import detect_bounce_back
 from src.recent_form import compute_recent_form_multiplier
+from src.divisional_familiarity import get_familiarity_adjustment
 
 
 # ═══════════════════════════════════════════════════════
@@ -2453,7 +2454,9 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          game_date: date | None = None,
                          vegas_game_total: float | None = None,
                          game_script_adjustments: dict | None = None,
-                         home_away_mult: float = 1.0):
+                         home_away_mult: float = 1.0,
+                         pitcher_team: str | None = None,
+                         batter_team: str | None = None):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2581,6 +2584,25 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     if home_away_mult != 1.0:
         projection *= home_away_mult
         proj_result["home_away_mult"] = round(home_away_mult, 3)
+
+    # ── Divisional familiarity adjustment ─────────────────────────────────────
+    # Division rivals face each other 19x/season. Pitchers show a 4-6% K rate
+    # decline by the 4th+ series as batters adapt to familiar sequencing.
+    # Graduated: 1st series → 1.0 | 2nd → 0.99 | 3rd → 0.97 | 4th+ → 0.95
+    # Batter strikeouts receive ~60% of the pitcher-side suppression.
+    if stat_internal in ("pitcher_strikeouts", "batter_strikeouts") and pitcher_team and batter_team:
+        try:
+            _div_mult = get_familiarity_adjustment(
+                pitcher_team, batter_team,
+                game_date=game_date, season=game_date.year if isinstance(game_date, date) else None,
+                prop_type=stat_internal,
+            )
+            if _div_mult != 1.0:
+                projection *= _div_mult
+                proj_result["div_familiarity_mult"] = round(_div_mult, 4)
+        except Exception as _div_err:
+            import logging as _log_div
+            _log_div.getLogger(__name__).debug("div_familiarity skipped: %s", _div_err)
 
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()
