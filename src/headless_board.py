@@ -1146,7 +1146,12 @@ def build_board(
 
     # ── STEP 12: Persist (unless dry_run) ────────────────────────────────────
     if preds and not dry_run:
-        logger.info("Step 12/13: Saving projected stats + board snapshot")
+        logger.info("Step 12/13: Saving predictions + projected stats + board snapshot")
+        try:
+            log_batch_predictions(preds)
+            logger.info("Saved %d predictions to predictions table", len(preds))
+        except Exception as exc:
+            errors.append(f"Save predictions: {exc}")
         try:
             stats_to_save = [
                 {
