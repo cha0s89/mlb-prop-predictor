@@ -2456,7 +2456,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          game_script_adjustments: dict | None = None,
                          home_away_mult: float = 1.0,
                          pitcher_team: str | None = None,
-                         batter_team: str | None = None):
+                         batter_team: str | None = None,
+                         day_night_mult: float = 1.0):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2603,6 +2604,13 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         except Exception as _div_err:
             import logging as _log_div
             _log_div.getLogger(__name__).debug("div_familiarity skipped: %s", _div_err)
+
+    # ── Day/night split adjustment ────────────────────────────────────────
+    # ~15-20% of players show reliable day/night splits. Also includes
+    # Wrigley Field afternoon shadow suppression for K props when applicable.
+    if day_night_mult != 1.0:
+        projection *= day_night_mult
+        proj_result["day_night_mult"] = round(day_night_mult, 3)
 
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()

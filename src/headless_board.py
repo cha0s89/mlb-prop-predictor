@@ -77,6 +77,11 @@ from src.lineups import (
 )
 from src.matchups import get_platoon_split_adjustment, get_bvp_matchup, lookup_player_id
 from src.home_away_splits import get_home_away_split_multiplier
+from src.day_night_splits import (
+    get_day_night_split_multiplier,
+    get_wrigley_shadow_mult,
+    is_day_game,
+)
 from src.board_logger import log_board_snapshot, ensure_shadow_sample
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
@@ -919,6 +924,26 @@ def build_board(
                         is_pitcher=is_pitcher_prop,
                     )
 
+            # Day/night split adjustment
+            _dn_mult = 1.0
+            _start_time_str = row.get("start_time", "")
+            _is_day = is_day_game(_start_time_str)
+            if _mlbam_id:
+                _dn_mult = get_day_night_split_multiplier(
+                    player_id=_mlbam_id,
+                    is_day=_is_day,
+                    prop_type=stat_int,
+                    is_pitcher=is_pitcher_prop,
+                )
+            # Wrigley Field afternoon shadow suppression for K props
+            _wrigley_mult = get_wrigley_shadow_mult(
+                prop_type=stat_int,
+                is_pitcher=is_pitcher_prop,
+                park_team=r_team,
+                is_day=_is_day,
+            )
+            _dn_mult *= _wrigley_mult
+
             p = generate_prediction(
                 player_name=row["player_name"],
                 stat_type=row["stat_type"],
@@ -939,6 +964,7 @@ def build_board(
                 game_date=_game_date_from_iso(row.get("start_time", "")),
                 vegas_game_total=_vgt,
                 home_away_mult=_ha_mult,
+                day_night_mult=_dn_mult,
             )
             p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
             p["game_time_utc"] = row.get("start_time", "")
