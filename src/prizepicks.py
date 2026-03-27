@@ -182,6 +182,7 @@ def fetch_prizepicks_mlb_lines(include_all: bool = False) -> pd.DataFrame:
             "line": float(line_score),
             "is_pitcher_prop": is_pitcher,
             "start_time": attrs.get("start_time", ""),
+            "pp_game_id": game_id,
             "description": attrs.get("description", ""),
             "league": league_label,
             "line_type": line_type,
