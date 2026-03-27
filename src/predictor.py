@@ -2453,7 +2453,8 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                          game_date: date | None = None,
                          vegas_game_total: float | None = None,
                          game_script_adjustments: dict | None = None,
-                         home_away_mult: float = 1.0):
+                         home_away_mult: float = 1.0,
+                         rest_travel_mult: float = 1.0):
     """
     Master prediction router. Picks the right projection function
     based on prop type and feeds in all available context.
@@ -2581,6 +2582,13 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
     if home_away_mult != 1.0:
         projection *= home_away_mult
         proj_result["home_away_mult"] = round(home_away_mult, 3)
+
+    # ── Rest/travel fatigue adjustment ────────────────────────────────────
+    # Applies day-game-after-night-game, cross-country travel, and pitcher
+    # short-rest penalties.  Multiplier is always ≤ 1.0 (fatigue only).
+    if rest_travel_mult != 1.0:
+        projection *= rest_travel_mult
+        proj_result["rest_travel_mult"] = round(rest_travel_mult, 4)
 
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()

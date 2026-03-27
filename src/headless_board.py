@@ -77,6 +77,7 @@ from src.lineups import (
 )
 from src.matchups import get_platoon_split_adjustment, get_bvp_matchup, lookup_player_id
 from src.home_away_splits import get_home_away_split_multiplier
+from src.rest_travel import get_fatigue_adjustment
 from src.board_logger import log_board_snapshot, ensure_shadow_sample
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
@@ -896,6 +897,7 @@ def build_board(
 
             # Home/away split adjustment
             _ha_mult = 1.0
+            _gctx_ha = {}
             if r_team:
                 _gctx_ha = get_team_game_value(
                     game_context_cache, r_team,
@@ -919,6 +921,21 @@ def build_board(
                         is_pitcher=is_pitcher_prop,
                     )
 
+            # Rest/travel fatigue adjustment (DGDN, cross-country travel, short rest)
+            _rt_mult = 1.0
+            if r_team:
+                _is_home_rt = _gctx_ha.get("is_home", False)
+                _opp_rt = _gctx_ha.get("opponent", "")
+                _today_home = r_team if _is_home_rt else (_opp_rt or r_team)
+                _rt_mult = get_fatigue_adjustment(
+                    team=r_team,
+                    game_date=_game_date_from_iso(row.get("start_time", "")),
+                    game_time=row.get("start_time", ""),
+                    player_name=row["player_name"] if is_pitcher_prop else None,
+                    is_pitcher=is_pitcher_prop,
+                    today_home_team=_today_home,
+                )
+
             p = generate_prediction(
                 player_name=row["player_name"],
                 stat_type=row["stat_type"],
@@ -939,6 +956,7 @@ def build_board(
                 game_date=_game_date_from_iso(row.get("start_time", "")),
                 vegas_game_total=_vgt,
                 home_away_mult=_ha_mult,
+                rest_travel_mult=_rt_mult,
             )
             p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
             p["game_time_utc"] = row.get("start_time", "")
