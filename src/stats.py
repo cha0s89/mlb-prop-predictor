@@ -222,6 +222,15 @@ def compute_batter_profile(season_stats: pd.Series, recent_sc: pd.DataFrame) -> 
     profile["hr"] = int(season_stats.get("HR", 0))
     profile["sb"] = int(season_stats.get("SB", 0))
 
+    # Batted-ball distribution (FanGraphs leaderboard columns)
+    def _safe_pct(key: str) -> float:
+        v = season_stats.get(key, 0.0)
+        return float(v) if isinstance(v, (int, float)) and v == v else 0.0  # NaN guard
+
+    profile["gb_pct"] = _safe_pct("GB%")
+    profile["fb_pct"] = _safe_pct("FB%")
+    profile["ld_pct"] = _safe_pct("LD%")
+
     # Recent Statcast aggregates (last ~30 days)
     if not recent_sc.empty:
         batted = recent_sc[recent_sc["type"] == "X"] if "type" in recent_sc.columns else recent_sc
@@ -262,6 +271,15 @@ def compute_pitcher_profile(season_stats: pd.Series, recent_sc: pd.DataFrame) ->
     profile["bb_pct"] = float(season_stats.get("BB%", 0.0)) if isinstance(season_stats.get("BB%"), (int, float)) else 0.0
     profile["whip"] = float(season_stats.get("WHIP", 0.00))
     profile["hr9"] = float(season_stats.get("HR/9", 0.0))
+
+    # Batted-ball distribution (FanGraphs leaderboard columns)
+    def _safe_pct_p(key: str) -> float:
+        v = season_stats.get(key, 0.0)
+        return float(v) if isinstance(v, (int, float)) and v == v else 0.0  # NaN guard
+
+    profile["gb_pct"] = _safe_pct_p("GB%")
+    profile["fb_pct"] = _safe_pct_p("FB%")
+    profile["hr_fb"]  = _safe_pct_p("HR/FB")   # HR per fly ball %
 
     # Recent Statcast aggregates
     if not recent_sc.empty:

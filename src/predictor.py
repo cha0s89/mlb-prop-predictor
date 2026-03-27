@@ -2523,6 +2523,35 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
         projection *= _bb_mult
         proj_result["bounce_back_mult"] = round(_bb_mult, 3)
 
+    # ── Batted-ball interaction (pitcher-batter matchup) ──────────────────
+    # Applied after platoon splits (computed inside each projection function)
+    # and before learned-weight offsets, so the effect is on the "physics"
+    # layer rather than the calibration layer.
+    # Covers: total_bases, home_runs, hits, hitter_fantasy_score, batter_strikeouts
+    _BB_INTERACTION_PROPS = {
+        "total_bases":        "tb_mult",
+        "home_runs":          "hr_mult",
+        "hits":               "hits_mult",
+        "hitter_fantasy_score": "tb_mult",
+        "batter_strikeouts":  "k_mult",
+    }
+    if stat_internal in _BB_INTERACTION_PROPS and (b or opp):
+        try:
+            from src.batted_ball import compute_batted_ball_interaction
+            _bbi = compute_batted_ball_interaction(b, opp)
+            _mult_key = _BB_INTERACTION_PROPS[stat_internal]
+            _bbi_mult = _bbi.get(_mult_key, 1.0)
+            if _bbi_mult != 1.0:
+                projection *= _bbi_mult
+                proj_result["batted_ball_mult"]   = round(_bbi_mult, 4)
+                proj_result["batted_ball_source"]  = _bbi.get("source", "")
+        except Exception as _bbi_err:
+            # Graceful fallback — never let a missing signal break a prediction
+            import logging as _log_bbi
+            _log_bbi.getLogger(__name__).debug(
+                "batted_ball_interaction skipped: %s", _bbi_err
+            )
+
     # ── Apply learned weights from data/weights/current.json ──
     weights = _load_weights()
 
