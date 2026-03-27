@@ -237,53 +237,76 @@ def get_pitcher_vs_lineup(pitcher_id: int, lineup_batter_ids: list, years_back: 
 def get_platoon_split_adjustment(
     batter_hand: str,
     pitcher_hand: str,
+    mlbam_id: int = None,
+    season: int = None,
 ) -> dict:
     """
     Calculate platoon split adjustment.
-    
-    Opposite-hand matchups (L vs R, R vs L) produce ~30-40 points higher wOBA.
-    Same-hand matchups suppress offense.
-    
-    This matters most for:
-    - Total bases props (ISO is ~14% higher in favorable platoon)
-    - Hit props (AVG boost)
-    - K props (same-hand = more Ks)
+
+    When mlbam_id is provided, fetches actual per-player L/R split data from
+    the MLB Stats API and applies Bayesian shrinkage toward league-average
+    splits (see src/platoon_splits.py).
+
+    Falls back to the generic ±8% adjustment when:
+    - mlbam_id is not provided
+    - API call fails
+    - Player has fewer than 30 PA against that pitcher hand
     """
+    try:
+        from src.platoon_splits import get_batter_platoon_adjustment
+        return get_batter_platoon_adjustment(
+            batter_hand=batter_hand,
+            pitcher_hand=pitcher_hand,
+            mlbam_id=mlbam_id,
+            season=season,
+        )
+    except Exception:
+        pass
+
+    # Hard fallback: compute inline without the module
     batter_hand = batter_hand.upper().strip() if batter_hand else ""
     pitcher_hand = pitcher_hand.upper().strip() if pitcher_hand else ""
 
     if not batter_hand or not pitcher_hand:
         return {"adjustment": 1.0, "description": "Unknown handedness", "favorable": None}
 
-    # Switch hitters get slight boost (they pick the better side)
     if batter_hand == "S":
         return {
             "adjustment": 1.02,
-            "description": "Switch hitter — slight advantage",
+            "k_adjustment": 0.98,
+            "description": "Switch hitter — always opposite side",
             "favorable": True,
             "batter_hand": "S",
             "pitcher_hand": pitcher_hand,
+            "source": "generic",
         }
 
-    # Opposite hand = favorable platoon
-    if (batter_hand == "L" and pitcher_hand == "R") or (batter_hand == "R" and pitcher_hand == "L"):
+    is_favorable = (
+        (batter_hand == "L" and pitcher_hand == "R")
+        or (batter_hand == "R" and pitcher_hand == "L")
+    )
+
+    if is_favorable:
         return {
-            "adjustment": 1.08,  # ~30-40 wOBA points = ~8% boost
-            "k_adjustment": 0.92,  # Fewer Ks in favorable platoon
+            "adjustment": 1.08,
+            "k_adjustment": 0.92,
+            "iso_adjustment": 1.14,
             "description": f"✅ Favorable platoon ({batter_hand}HB vs {pitcher_hand}HP)",
             "favorable": True,
             "batter_hand": batter_hand,
             "pitcher_hand": pitcher_hand,
+            "source": "generic",
         }
 
-    # Same hand = unfavorable
     return {
-        "adjustment": 0.92,  # ~8% suppression
-        "k_adjustment": 1.08,  # More Ks in unfavorable platoon
-        "description": f"❌ Same-side matchup ({batter_hand}HB vs {pitcher_hand}HP)",
+        "adjustment": 0.92,
+        "k_adjustment": 1.08,
+        "iso_adjustment": 0.877,
+        "description": f"❌ Same-side platoon ({batter_hand}HB vs {pitcher_hand}HP)",
         "favorable": False,
         "batter_hand": batter_hand,
         "pitcher_hand": pitcher_hand,
+        "source": "generic",
     }
 
 

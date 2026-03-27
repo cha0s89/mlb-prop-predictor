@@ -781,6 +781,7 @@ def build_board(
             # Opposing pitcher profile
             opp_pitcher_profile = None
             platoon_adj = None
+            batter_mlbam_id = None  # cached for reuse in BvP + platoon lookups
             lookup_game_pk = row.get("game_pk")
             lookup_game_time = row.get("start_time") or row.get("game_time_utc")
             if not is_pitcher_prop and r_team:
@@ -800,7 +801,16 @@ def build_board(
                         row["player_name"].upper().strip(), ""
                     )
                     if bat_hand:
-                        platoon_adj = get_platoon_split_adjustment(bat_hand, opp_hand)
+                        # Look up batter MLBAM ID for player-specific platoon splits
+                        try:
+                            _bl = lookup_player_id(row["player_name"])
+                            if _bl.get("found"):
+                                batter_mlbam_id = _bl.get("mlbam_id")
+                        except Exception:
+                            pass
+                        platoon_adj = get_platoon_split_adjustment(
+                            bat_hand, opp_hand, batter_mlbam_id
+                        )
 
             # Opposing team K rate
             opp_k_rate = None
@@ -823,14 +833,42 @@ def build_board(
                     if opp_lineup_context and opp_lineup_context.get("has_data"):
                         opp_k_rate = opp_lineup_context.get("top6_k_rate") or opp_lineup_context.get("avg_k_rate") or opp_k_rate
 
+            # Pitcher platoon adjustment (pitcher props only) — replaces always-None platoon_adj
+            if is_pitcher_prop:
+                try:
+                    from src.platoon_splits import get_pitcher_platoon_adjustment
+                    _pitcher_lookup = lookup_player_id(row["player_name"])
+                    _pitcher_mlbam = (
+                        _pitcher_lookup.get("mlbam_id")
+                        if _pitcher_lookup.get("found") else None
+                    )
+                    if _pitcher_mlbam and opp_lineup_context and opp_lineup_context.get("has_data"):
+                        # Cross-reference lineup player names with batter_hand_cache for handedness
+                        _opp_hands = [
+                            batter_hand_cache.get(p.get("player_name", "").upper().strip(), "")
+                            for p in opp_lineup_context.get("players", [])
+                            if p.get("player_name")
+                        ]
+                        _opp_hands = [h for h in _opp_hands if h]
+                        if _opp_hands:
+                            platoon_adj = get_pitcher_platoon_adjustment(
+                                _pitcher_mlbam, _opp_hands
+                            )
+                except Exception:
+                    pass  # platoon_adj stays None → predictor ignores it
+
             # BvP matchup (batter props only)
             bvp_data = None
             if not is_pitcher_prop and opp_info and opp_info.get("id"):
                 try:
-                    batter_lookup = lookup_player_id(row["player_name"])
-                    if batter_lookup.get("found") and batter_lookup.get("mlbam_id"):
+                    # Reuse batter_mlbam_id if already fetched above (platoon lookup)
+                    if batter_mlbam_id is None:
+                        _bl2 = lookup_player_id(row["player_name"])
+                        if _bl2.get("found"):
+                            batter_mlbam_id = _bl2.get("mlbam_id")
+                    if batter_mlbam_id:
                         bvp_data = get_bvp_matchup(
-                            batter_lookup["mlbam_id"],
+                            batter_mlbam_id,
                             int(opp_info["id"]),
                         )
                         if not bvp_data.get("has_data"):
