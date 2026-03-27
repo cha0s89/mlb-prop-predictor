@@ -935,6 +935,16 @@ PP_NEVER_SHOW: set = {
     ("stolen_bases", "LESS"),
     ("total_bases", "LESS"),
     ("hitter_fantasy_score", "MORE"),
+    # v039: explicitly block all structurally weak / untradeable props
+    ("rbis", "LESS"),
+    ("doubles", "LESS"),
+    ("triples", "LESS"),
+    ("singles", "MORE"),
+    ("singles", "LESS"),
+    ("walks", "MORE"),
+    ("walks", "LESS"),
+    ("hits_allowed", "MORE"),
+    ("hits_allowed", "LESS"),
 }
 
 # ── Minimum realistic lines per prop type ────────────────────────────────
