@@ -37,6 +37,7 @@ from typing import Optional
 from src import distributions
 from src.spring import get_opening_day_for_year
 from src.weather import get_stat_specific_weather_adjustment
+from src.consistency import sanity_check_projection
 
 
 # ═══════════════════════════════════════════════════════
@@ -2659,5 +2660,12 @@ def generate_prediction(player_name, stat_type, stat_internal, line,
                 _win_prob_from_confidence(result["confidence"], result.get("p_push", 0.0)),
                 4,
             )
+
+    # ── Sanity cap: catch impossible projections (e.g. Paul Skenes 30-out bug) ──
+    sanity = sanity_check_projection(stat_internal, result["projection"], line)
+    if not sanity["sane"] and sanity["suggested_cap"] is not None:
+        result["projection"] = sanity["suggested_cap"]
+        result["sanity_capped"] = True
+        result["sanity_note"] = sanity["reason"]
 
     return result
