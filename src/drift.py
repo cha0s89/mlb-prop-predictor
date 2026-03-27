@@ -4,9 +4,17 @@ Monitors rolling accuracy by prop type and alerts when performance degrades.
 Uses CUSUM (cumulative sum) control charts for change detection.
 """
 
-import numpy as np
+import json
+import logging
+import os
+import sqlite3
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Optional
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def cusum_detect(values: list[float], target: float = 0.0,
@@ -458,3 +466,287 @@ def compute_ece(predictions: list[dict], n_bins: int = 10) -> dict:
         "max_ce": round(max_ce, 4),
         "bins": bin_data,
     }
+
+
+# ---------------------------------------------------------------------------
+# RegimeDetector — persistent CUSUM-based drift detection per prop type
+# ---------------------------------------------------------------------------
+
+class RegimeDetector:
+    """Persistent CUSUM-based regime change detector per prop type.
+
+    Monitors rolling prediction accuracy and flags when performance degrades
+    significantly from the expected baseline, indicating a market regime shift.
+
+    State is stored in SQLite so it survives app restarts.  When drift is
+    detected a JSON flag file is written that the offline tuner can pick up.
+
+    Thresholds are expressed in σ units (standard deviations of a single
+    Bernoulli prediction under the expected accuracy):
+      • warning       — CUSUM statistic ≥ warning_sigma  (default 2σ)
+      • drift_detected — CUSUM statistic ≥ alert_sigma   (default 3σ)
+    """
+
+    _DRIFT_FLAG_DIR = "."  # directory for flag files; override in tests
+
+    def __init__(
+        self,
+        db_path: str = "regime_state.db",
+        window_size: int = 200,
+        expected_accuracy: float = 0.55,
+        warning_sigma: float = 2.0,
+        alert_sigma: float = 3.0,
+        cusum_k: float = 0.5,
+    ):
+        """
+        Args:
+            db_path: Path to the SQLite file for persistent state.
+            window_size: Rolling window of predictions per prop type (max 200).
+            expected_accuracy: Baseline accuracy the model should achieve.
+            warning_sigma: CUSUM threshold (in σ) that triggers "warning".
+            alert_sigma: CUSUM threshold (in σ) that triggers "drift_detected".
+            cusum_k: CUSUM allowance (k) — tolerance before accumulating signal.
+                     0.5 σ is the standard choice for detecting 1σ shifts.
+        """
+        self.db_path = db_path
+        self.window_size = window_size
+        self.expected_accuracy = expected_accuracy
+        self.warning_sigma = warning_sigma
+        self.alert_sigma = alert_sigma
+        self.cusum_k = cusum_k
+
+        # σ of a single Bernoulli(expected_accuracy) trial
+        self._sigma = float(np.sqrt(expected_accuracy * (1.0 - expected_accuracy)))
+
+        self._init_db()
+
+    # ------------------------------------------------------------------
+    # Database helpers
+    # ------------------------------------------------------------------
+
+    def _conn(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.db_path)
+
+    def _init_db(self) -> None:
+        with self._conn() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS regime_predictions (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prop_type     TEXT    NOT NULL,
+                    predicted_prob REAL   NOT NULL,
+                    actual_outcome INTEGER NOT NULL,
+                    ts            TEXT    NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_rp_prop
+                    ON regime_predictions(prop_type, id);
+
+                CREATE TABLE IF NOT EXISTS regime_drift_log (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prop_type    TEXT    NOT NULL,
+                    status       TEXT    NOT NULL,
+                    cusum_pos    REAL,
+                    cusum_neg    REAL,
+                    accuracy     REAL,
+                    ts           TEXT    NOT NULL,
+                    acknowledged INTEGER NOT NULL DEFAULT 0
+                );
+            """)
+
+    def _get_window(self, prop_type: str) -> list[tuple[float, int]]:
+        """Return the last ``window_size`` (predicted_prob, outcome) pairs."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT predicted_prob, actual_outcome
+                FROM regime_predictions
+                WHERE prop_type = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (prop_type, self.window_size),
+            ).fetchall()
+        return list(reversed(rows))  # chronological order
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def update(self, prop_type: str, predicted_prob: float, actual_outcome: int) -> str:
+        """Feed one graded prediction and return the current drift status.
+
+        Args:
+            prop_type: Prop category, e.g. ``"strikeouts"``, ``"hits"``.
+            predicted_prob: Model's predicted probability (0–1).
+            actual_outcome: 1 if the prediction was correct, 0 if wrong.
+
+        Returns:
+            Current status string: ``"stable"``, ``"warning"``, or
+            ``"drift_detected"``.
+        """
+        ts = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO regime_predictions (prop_type, predicted_prob, actual_outcome, ts) "
+                "VALUES (?, ?, ?, ?)",
+                (prop_type, float(predicted_prob), int(actual_outcome), ts),
+            )
+        return self.check_drift(prop_type)
+
+    def check_drift(self, prop_type: str) -> str:
+        """Return drift status for *prop_type* without adding new data.
+
+        Returns:
+            ``"stable"``         — no significant drift.
+            ``"warning"``        — CUSUM ≥ 2σ (degrading performance).
+            ``"drift_detected"`` — CUSUM ≥ 3σ (regime change confirmed).
+        """
+        window = self._get_window(prop_type)
+        stats = self._compute_cusum(window)
+
+        if stats["n"] < 10:
+            return "stable"
+
+        max_cusum = max(stats["cusum_neg"], stats["cusum_pos"])
+
+        if max_cusum >= self.alert_sigma:
+            self._log_drift(prop_type, "drift_detected", stats)
+            return "drift_detected"
+        if max_cusum >= self.warning_sigma:
+            self._log_drift(prop_type, "warning", stats)
+            return "warning"
+        return "stable"
+
+    def get_all_statuses(self) -> dict[str, str]:
+        """Return ``{prop_type: status}`` for every prop type seen."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT prop_type FROM regime_predictions"
+            ).fetchall()
+        return {row[0]: self.check_drift(row[0]) for row in rows}
+
+    def reset(self, prop_type: str) -> None:
+        """Acknowledge and clear drift state for *prop_type*.
+
+        Marks all drift-log entries as acknowledged, deletes stored
+        predictions (so the CUSUM starts fresh), and removes the flag file.
+        """
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE regime_drift_log SET acknowledged = 1 "
+                "WHERE prop_type = ? AND acknowledged = 0",
+                (prop_type,),
+            )
+            conn.execute(
+                "DELETE FROM regime_predictions WHERE prop_type = ?",
+                (prop_type,),
+            )
+        flag = os.path.join(self._DRIFT_FLAG_DIR, f"drift_flag_{prop_type}.json")
+        try:
+            os.remove(flag)
+        except FileNotFoundError:
+            pass
+
+    def get_stats(self, prop_type: str) -> dict:
+        """Detailed diagnostics for *prop_type*."""
+        window = self._get_window(prop_type)
+        s = self._compute_cusum(window)
+        status = self.check_drift(prop_type)
+        return {
+            "prop_type": prop_type,
+            "status": status,
+            "n_predictions": s["n"],
+            "accuracy": round(s["accuracy"], 4) if s["accuracy"] is not None else None,
+            "expected_accuracy": self.expected_accuracy,
+            "cusum_neg": round(s["cusum_neg"], 3),
+            "cusum_pos": round(s["cusum_pos"], 3),
+            "warning_threshold": self.warning_sigma,
+            "alert_threshold": self.alert_sigma,
+        }
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _compute_cusum(self, window: list[tuple[float, int]]) -> dict:
+        """Compute normalised CUSUM statistics over a prediction window.
+
+        Each residual is normalised by σ so the CUSUM statistic is in
+        standard-deviation units.  We track:
+          • cusum_neg — accumulates negative deviations (accuracy dropping)
+          • cusum_pos — accumulates positive deviations (accuracy rising)
+        """
+        n = len(window)
+        if n < 10:
+            return {"cusum_pos": 0.0, "cusum_neg": 0.0, "accuracy": None, "n": n}
+
+        outcomes = [o for _, o in window]
+        accuracy = float(np.mean(outcomes))
+
+        s_pos = 0.0
+        s_neg = 0.0
+        for _, outcome in window:
+            # Normalised residual: positive = hit, negative = miss
+            residual = (outcome - self.expected_accuracy) / self._sigma
+            s_neg = max(0.0, s_neg - residual - self.cusum_k)
+            s_pos = max(0.0, s_pos + residual - self.cusum_k)
+
+        return {"cusum_pos": s_pos, "cusum_neg": s_neg, "accuracy": accuracy, "n": n}
+
+    def _log_drift(self, prop_type: str, status: str, stats: dict) -> None:
+        ts = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO regime_drift_log "
+                "(prop_type, status, cusum_pos, cusum_neg, accuracy, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    prop_type,
+                    status,
+                    stats.get("cusum_pos"),
+                    stats.get("cusum_neg"),
+                    stats.get("accuracy"),
+                    ts,
+                ),
+            )
+
+        acc = stats.get("accuracy")
+        s_neg = stats.get("cusum_neg", 0.0)
+        if status == "drift_detected":
+            logger.warning(
+                "REGIME DRIFT DETECTED: %s | accuracy=%.3f (expected=%.3f) | "
+                "CUSUM_neg=%.2f >= alert threshold=%.1f",
+                prop_type,
+                acc if acc is not None else 0.0,
+                self.expected_accuracy,
+                s_neg,
+                self.alert_sigma,
+            )
+            self._write_drift_flag(prop_type, stats)
+        else:
+            logger.info(
+                "REGIME WARNING: %s | accuracy=%.3f | CUSUM_neg=%.2f >= warning=%.1f",
+                prop_type,
+                acc if acc is not None else 0.0,
+                s_neg,
+                self.warning_sigma,
+            )
+
+    def _write_drift_flag(self, prop_type: str, stats: dict) -> None:
+        """Write a JSON flag file that the offline tuner can poll for."""
+        flag_path = os.path.join(
+            self._DRIFT_FLAG_DIR, f"drift_flag_{prop_type}.json"
+        )
+        payload = {
+            "prop_type": prop_type,
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "accuracy": stats.get("accuracy"),
+            "cusum_neg": stats.get("cusum_neg"),
+            "cusum_pos": stats.get("cusum_pos"),
+            "n_predictions": stats.get("n"),
+        }
+        try:
+            with open(flag_path, "w") as fh:
+                json.dump(payload, fh, indent=2)
+        except OSError as exc:
+            logger.debug("Could not write drift flag for %s: %s", prop_type, exc)
