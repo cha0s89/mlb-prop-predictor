@@ -89,6 +89,8 @@ from src.team_context import (
     register_team_value,
 )
 from src.lineup_context import build_player_lineup_context, build_team_lineup_context
+from src.clv import compute_clv_stats
+from src.drift import RegimeDetector, check_model_health
 
 
 # ─────────────────────────────────────────────
@@ -621,6 +623,169 @@ st.markdown("""
         .status-grid { grid-template-columns: 1fr; }
         .stApp input, .stApp textarea, .stApp [data-baseweb="select"] { font-size: 16px !important; }
     }
+
+    /* === ENHANCED TABS === */
+    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        gap: 0.15rem;
+        background: rgba(9, 14, 28, 0.75);
+        border-radius: 12px;
+        padding: 0.22rem 0.3rem;
+        border: 1px solid rgba(255,255,255,0.06);
+        backdrop-filter: blur(8px);
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        border-radius: 8px !important;
+        transition: all 0.18s ease !important;
+        padding: 0.45rem 1rem !important;
+        letter-spacing: 0.3px;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"]:hover {
+        background: rgba(255,255,255,0.04) !important;
+    }
+    [data-testid="stTabs"] [aria-selected="true"] {
+        background: linear-gradient(135deg, rgba(0,200,83,0.14), rgba(0,200,83,0.06)) !important;
+        color: #00C853 !important;
+        border-bottom: 2px solid #00C853 !important;
+    }
+
+    /* === BADGE GLOW ENHANCEMENTS === */
+    .badge-a {
+        background: rgba(0,200,83,0.17); color: #00E676;
+        border: 1px solid rgba(0,200,83,0.35);
+        box-shadow: 0 0 8px rgba(0,200,83,0.22), inset 0 0 6px rgba(0,200,83,0.05);
+    }
+    .badge-b {
+        background: rgba(77,166,255,0.14); color: #64B5FF;
+        border: 1px solid rgba(77,166,255,0.28);
+        box-shadow: 0 0 8px rgba(77,166,255,0.15);
+    }
+    .badge-c {
+        background: rgba(255,179,0,0.13); color: #FFCA28;
+        border: 1px solid rgba(255,179,0,0.25);
+    }
+    .badge-d {
+        background: rgba(255,68,68,0.1); color: #FF5252;
+        border: 1px solid rgba(255,68,68,0.2);
+    }
+
+    /* === AUTO-OPTIMIZE PANEL === */
+    .auto-opt-panel {
+        background: linear-gradient(135deg, rgba(0,200,83,0.07) 0%, rgba(0,100,60,0.04) 100%);
+        border: 1px solid rgba(0,200,83,0.2);
+        border-radius: 14px;
+        padding: 1rem 1.2rem 0.8rem;
+        margin-bottom: 1.2rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .auto-opt-panel::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, transparent, rgba(0,200,83,0.5), transparent);
+    }
+    .auto-opt-panel .aop-title {
+        font-weight: 800; font-size: 0.78rem; color: #00C853;
+        text-transform: uppercase; letter-spacing: 2px; margin-bottom: 0.15rem;
+    }
+    .auto-opt-panel .aop-sub {
+        font-size: 0.74rem; color: rgba(232,236,241,0.42); margin-bottom: 0.65rem; line-height: 1.4;
+    }
+
+    /* === SUGGESTION CARD === */
+    .suggest-card {
+        background: linear-gradient(145deg, rgba(13,24,44,0.95), rgba(9,16,34,0.98));
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .suggest-card:hover {
+        border-color: rgba(0,200,83,0.2);
+        box-shadow: 0 4px 20px rgba(0,200,83,0.07);
+    }
+    .suggest-card .sc-header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    .suggest-card .sc-title { font-weight: 700; font-size: 0.85rem; color: #E8ECF1; }
+    .suggest-card .sc-quality { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.72rem; }
+    .suggest-card .sc-meta { font-size: 0.7rem; color: rgba(232,236,241,0.38); margin-bottom: 0.5rem; }
+    .suggest-card .sc-leg {
+        display: flex; align-items: center; gap: 0.45rem;
+        padding: 0.28rem 0.5rem; font-size: 0.78rem;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .suggest-card .sc-leg:last-of-type { border-bottom: none; }
+    .suggest-card .sc-ev {
+        margin-top: 0.5rem; padding: 0.35rem 0.6rem;
+        background: rgba(0,150,200,0.05); border: 1px solid rgba(0,150,200,0.1);
+        border-radius: 7px; font-size: 0.72rem;
+        display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;
+    }
+
+    /* === DASHBOARD / CLV === */
+    .clv-card {
+        background: linear-gradient(145deg, #0d1526, #0a1020);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 12px;
+        padding: 1rem 1.1rem;
+        text-align: center;
+    }
+    .clv-card .cc-val {
+        font-family: 'JetBrains Mono', monospace; font-weight: 700;
+        font-size: 1.55rem; line-height: 1; margin-bottom: 0.3rem;
+    }
+    .clv-card .cc-val.pos { color: #00E676; }
+    .clv-card .cc-val.neg { color: #FF5252; }
+    .clv-card .cc-val.neu { color: rgba(232,236,241,0.55); }
+    .clv-card .cc-lbl { font-size: 0.62rem; color: rgba(232,236,241,0.3); text-transform: uppercase; letter-spacing: 1.8px; }
+    .clv-card .cc-sub { font-size: 0.68rem; color: rgba(232,236,241,0.28); margin-top: 0.25rem; }
+
+    /* === REGIME STATUS BADGES === */
+    .regime-ok   { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(0,200,83,0.1); color: #00E676; border: 1px solid rgba(0,200,83,0.22); border-radius: 20px; padding: 0.28rem 0.75rem; font-size: 0.72rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .regime-warn { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(255,179,0,0.1);  color: #FFCA28; border: 1px solid rgba(255,179,0,0.22);  border-radius: 20px; padding: 0.28rem 0.75rem; font-size: 0.72rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .regime-alert{ display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(255,68,68,0.1);  color: #FF5252; border: 1px solid rgba(255,68,68,0.22);  border-radius: 20px; padding: 0.28rem 0.75rem; font-size: 0.72rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+    /* === GAME-SCRIPT BADGES (larger) === */
+    .gs-badge { font-size: 0.68rem; padding: 0.14rem 0.5rem; border-radius: 999px; font-weight: 700; white-space: nowrap; letter-spacing: 0.2px; }
+
+    /* === PICK CARD HOVER GLOW === */
+    .pick-card.more-pick:hover { box-shadow: 0 2px 14px rgba(0,200,83,0.08); }
+    .pick-card.less-pick:hover { box-shadow: 0 2px 14px rgba(255,68,68,0.08); }
+
+    /* === FILTER PILLS (horizontal radio replacement) === */
+    .filter-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+    .filter-pill {
+        background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 999px; padding: 0.25rem 0.7rem; font-size: 0.72rem;
+        color: rgba(232,236,241,0.5); cursor: pointer; transition: all 0.15s ease;
+    }
+    .filter-pill.active { background: rgba(0,200,83,0.12); border-color: rgba(0,200,83,0.3); color: #00E676; }
+
+    /* === SLIP TRACKER === */
+    .slip-card {
+        background: linear-gradient(145deg, #0d1526, #0a1020);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 12px;
+        padding: 1rem 1.2rem;
+        margin-bottom: 0.75rem;
+        transition: border-color 0.2s ease;
+    }
+    .slip-card .slip-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .slip-card .slip-id { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: rgba(232,236,241,0.3); }
+    .slip-card .slip-type { font-size: 0.7rem; font-weight: 700; color: #4da6ff; background: rgba(77,166,255,0.1); border: 1px solid rgba(77,166,255,0.18); border-radius: 6px; padding: 0.12rem 0.5rem; }
+    .slip-card .slip-date { font-size: 0.7rem; color: rgba(232,236,241,0.28); margin-left: auto; }
+    .slip-card .slip-pnl { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 1rem; }
+    .slip-card .slip-pnl.pos { color: #00E676; }
+    .slip-card .slip-pnl.neg { color: #FF5252; }
+    .slip-card .slip-pnl.pend { color: rgba(232,236,241,0.35); }
+
+    /* === SECTION DIVIDER WITH LABEL === */
+    .prop-group-hdr {
+        font-size: 0.65rem; color: rgba(232,236,241,0.32); letter-spacing: 2px;
+        text-transform: uppercase; padding: 0.5rem 0 0.2rem; margin-top: 0.6rem;
+        border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .prop-group-hdr:first-of-type { margin-top: 0; border-top: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1169,8 +1334,8 @@ with st.sidebar:
         )
         st.caption(f"{_sb_stats['wins']}W – {_sb_stats['losses']}L ({_sb_stats['total']} picks)")
 
-tab_edge, tab_news, tab_slips, tab_grade, tab_qa = st.tabs(
-    ["🎯 FIND EDGES", "📰 NEWS", "🎫 MY SLIPS", "✅ GRADE", "📈 MODEL QA"]
+tab_edge, tab_slips, tab_dash, tab_grade, tab_qa, tab_news = st.tabs(
+    ["⚡ EDGES", "🎫 SLIPS", "📊 DASHBOARD", "✅ GRADE", "📈 MODEL QA", "📰 NEWS"]
 )
 
 with tab_edge:
@@ -2597,6 +2762,111 @@ with tab_edge:
                         ["stat_type", "confidence"], ascending=[True, False]
                     ).reset_index(drop=True)
 
+                # ── AUTO-OPTIMIZE PANEL ────────────────────────────────────────
+                _aop_preds = [dict(row) for _, row in slip_candidates.iterrows()] if not slip_candidates.empty else []
+                if len(_aop_preds) >= 5:
+                    st.markdown(
+                        '<div class="auto-opt-panel">'
+                        '<div class="aop-title">⚡ Auto-Optimize Slip</div>'
+                        '<div class="aop-sub">Model-built combos optimized for EV, diversity, and correlation rules</div>'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+                    _aop_size = st.radio("Auto-Optimize size", [6, 5], horizontal=True, key="aop_size")
+                    _aop_amt = st.number_input("Wager ($)", min_value=1.0, value=5.0, step=1.0, key="aop_amt")
+                    try:
+                        _aop_slips = suggest_slips(_aop_preds, num_slips=3, slip_size=_aop_size)
+                    except Exception:
+                        _aop_slips = []
+                    if _aop_slips:
+                        _aop_cols = st.columns(min(len(_aop_slips), 3))
+                        for _ai, _aslip in enumerate(_aop_slips[:3]):
+                            with _aop_cols[_ai]:
+                                _aq = _aslip.get("quality_score", 0)
+                                _aq_color = "#00E676" if _aq >= 80 else ("#FFCA28" if _aq >= 60 else "rgba(232,236,241,0.4)")
+                                _aop_ev_html = ""
+                                try:
+                                    _aop_legs = [{
+                                        "team": sp.get("team", ""),
+                                        "pick": sp.get("pick", "MORE"),
+                                        "stat_type": sp.get("stat_internal", sp.get("stat_type", "")),
+                                        "line": sp.get("line", 0.5),
+                                        "win_prob": sp.get("win_prob", sp.get("confidence", 0.55)),
+                                        "p_push": sp.get("p_push", 0.0),
+                                        "game_id": sp.get("game_pk") or sp.get("opponent", ""),
+                                    } for sp in _aslip["picks"]]
+                                    _aop_mc = simulate_slip_ev(
+                                        _aop_legs, entry_type=f"{_aop_size}_flex",
+                                        n_sims=20_000,
+                                        correlation_matrix=build_correlation_matrix(_aop_legs),
+                                        seed=42,
+                                    )
+                                    _aop_ev_pct = _aop_mc["ev_profit_pct"]
+                                    _aop_ev_col = "#00E676" if _aop_ev_pct > 0 else ("#FFCA28" if _aop_ev_pct > -15 else "#FF5252")
+                                    _aop_ev_html = (
+                                        f'<div class="sc-ev">'
+                                        f'<span style="color:rgba(232,236,241,0.4);">EV:</span> '
+                                        f'<span style="font-family:JetBrains Mono;font-weight:700;color:{_aop_ev_col};">{_aop_ev_pct:+.1f}%</span>'
+                                        f'&nbsp;·&nbsp;<span style="color:rgba(232,236,241,0.4);">Hit Rate:</span> '
+                                        f'<span style="font-family:JetBrains Mono;color:#E8ECF1;">{_aop_mc["win_rate"]*100:.1f}%</span>'
+                                        f'</div>'
+                                    )
+                                except Exception:
+                                    pass
+
+                                legs_html = ""
+                                for _sp in _aslip["picks"]:
+                                    _sp_cls = "more" if _sp["pick"] == "MORE" else "less"
+                                    _sp_conf = int(_sp.get("confidence", 0) * 100)
+                                    legs_html += (
+                                        f'<div class="sc-leg">'
+                                        f'<span class="dir-chip {_sp_cls}" style="font-size:0.62rem;padding:0.1rem 0.38rem;">{_sp["pick"]}</span>'
+                                        f'<span style="color:#E8ECF1;font-weight:500;flex:1;">{_sp["player_name"]}</span>'
+                                        f'<span style="color:rgba(232,236,241,0.32);font-size:0.7rem;">{_sp.get("stat_type","")}</span>'
+                                        f'<span style="font-family:JetBrains Mono;font-size:0.7rem;color:rgba(232,236,241,0.4);">{_sp_conf}%</span>'
+                                        f'</div>'
+                                    )
+
+                                st.markdown(
+                                    f'<div class="suggest-card">'
+                                    f'<div class="sc-header">'
+                                    f'<span class="sc-title">{_aslip["label"]}</span>'
+                                    f'<span class="sc-quality" style="color:{_aq_color};">Q{int(_aq)}</span>'
+                                    f'</div>'
+                                    f'<div class="sc-meta">{_aslip["direction_balance"]} · {_aslip.get("risk_level","").title()} Risk</div>'
+                                    f'{legs_html}'
+                                    f'{_aop_ev_html}'
+                                    f'</div>',
+                                    unsafe_allow_html=True,
+                                )
+                                if st.button(f"🚀 Build Slip #{_ai+1}", key=f"aop_build_{_ai}", type="primary"):
+                                    _aop_picks_for_slip = []
+                                    _aop_game_dates = []
+                                    for _sp in _aslip["picks"]:
+                                        _aop_date = _sp.get("game_date", date.today().isoformat())
+                                        _aop_game_dates.append(_aop_date)
+                                        _aop_pid = log_prediction(_sp, game_date=_aop_date)
+                                        _aop_picks_for_slip.append({
+                                            "prediction_id": _aop_pid,
+                                            "player_name": _sp["player_name"],
+                                            "stat_type": _sp["stat_type"],
+                                            "line": _sp["line"],
+                                            "pick": _sp["pick"],
+                                            "game_date": _aop_date,
+                                        })
+                                        mark_as_bet(
+                                            _sp["player_name"],
+                                            _sp.get("stat_internal", _sp["stat_type"]),
+                                            _aop_date,
+                                        )
+                                    _aop_slip_date = max(_aop_game_dates) if _aop_game_dates else date.today().isoformat()
+                                    _aop_sid = create_slip(_aop_slip_date, f"{_aop_size}_flex", _aop_amt, _aop_picks_for_slip)
+                                    st.success(f"✅ Slip #{_aop_sid} built — check the Slips tab!")
+                                    st.rerun()
+                    else:
+                        st.caption("Not enough qualifying picks for auto-optimization.")
+
+                st.markdown('<div class="section-hdr">All Picks — Select to Build Custom Slip</div>', unsafe_allow_html=True)
                 _prev_stat_type = None
                 for pick_idx, (_, pick_row) in enumerate(slip_candidates.iterrows()):
                     if pick_row["stat_type"] != _prev_stat_type:
@@ -2800,11 +3070,10 @@ with tab_edge:
                     if checked:
                         selected_picks.append(pick_row)
 
-                # ── Smart Parlay Suggestions ──
+                # ── Smart Parlay Suggestions (legacy block — kept for reference, Auto-Optimize above is preferred) ──
                 _suggest_preds = [dict(row) for _, row in slip_candidates.iterrows()] if not slip_candidates.empty else []
-                if len(_suggest_preds) >= 5:
+                if len(_suggest_preds) >= 5 and False:  # Disabled — use Auto-Optimize panel above
                     st.markdown('<div class="section-hdr">Smart Slip Suggestions</div>', unsafe_allow_html=True)
-                    st.caption("Auto-generated optimal slips based on confidence, diversity, and correlation rules")
                     _slip_size = st.radio("Slip size", [6, 5], horizontal=True, key="suggest_size")
                     try:
                         _suggested = suggest_slips(_suggest_preds, num_slips=3, slip_size=_slip_size)
@@ -3617,3 +3886,269 @@ with tab_qa:
             st.dataframe(shadow_rows_df, hide_index=True, width="stretch")
         else:
             st.caption("Shadow sample rows will appear here after the board has been logged and graded.")
+
+# ─── 📊 DASHBOARD TAB ────────────────────────────────────────────────────────
+with tab_dash:
+    st.markdown('<div class="section-hdr">Performance Dashboard</div>', unsafe_allow_html=True)
+
+    _dash_days = st.selectbox("Window", [7, 14, 30, 60], index=2, key="dash_days")
+
+    # ── CLV TRACKING ─────────────────────────────────────────────────────
+    st.markdown('<div class="section-hdr">Closing Line Value</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="info-strip">CLV measures whether we beat the closing PrizePicks line. '
+        'Consistent positive CLV → edge is real, not luck.</div>',
+        unsafe_allow_html=True,
+    )
+    try:
+        _clv = compute_clv_stats(days=_dash_days)
+    except Exception:
+        _clv = {"total_bets": 0, "mean_clv": 0}
+
+    _clv_total = _clv.get("total_bets", 0)
+    if _clv_total == 0:
+        st.markdown(
+            '<div class="panel-shell"><div class="panel-title">No CLV data yet</div>'
+            '<div style="font-size:0.84rem;color:rgba(232,236,241,0.55);">'
+            'CLV tracking populates as slips are graded over time. '
+            'Build slips from the Edges tab and grade them after game results are final.'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        _clv_mean = _clv.get("mean_clv", 0)
+        _clv_med = _clv.get("median_clv", 0)
+        _clv_pos_rate = _clv.get("positive_clv_rate", 0)
+        _clv_mean_cls = "pos" if _clv_mean > 0 else ("neg" if _clv_mean < -0.02 else "neu")
+        _clv_med_cls = "pos" if _clv_med > 0 else ("neg" if _clv_med < -0.02 else "neu")
+
+        _clv_cols = st.columns(4)
+        with _clv_cols[0]:
+            st.markdown(
+                f'<div class="clv-card">'
+                f'<div class="cc-val {_clv_mean_cls}">{_clv_mean*100:+.1f}pp</div>'
+                f'<div class="cc-lbl">Mean CLV</div>'
+                f'<div class="cc-sub">Probability edge vs close</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with _clv_cols[1]:
+            st.markdown(
+                f'<div class="clv-card">'
+                f'<div class="cc-val {_clv_med_cls}">{_clv_med*100:+.1f}pp</div>'
+                f'<div class="cc-lbl">Median CLV</div>'
+                f'<div class="cc-sub">Less sensitive to outliers</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with _clv_cols[2]:
+            _pos_cls = "pos" if _clv_pos_rate > 0.55 else ("neg" if _clv_pos_rate < 0.45 else "neu")
+            st.markdown(
+                f'<div class="clv-card">'
+                f'<div class="cc-val {_pos_cls}">{_clv_pos_rate*100:.0f}%</div>'
+                f'<div class="cc-lbl">Positive CLV Rate</div>'
+                f'<div class="cc-sub">% of bets with +CLV</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with _clv_cols[3]:
+            st.markdown(
+                f'<div class="clv-card">'
+                f'<div class="cc-val neu">{_clv_total}</div>'
+                f'<div class="cc-lbl">Tracked Bets</div>'
+                f'<div class="cc-sub">Last {_dash_days} days</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # CLV correlation with win rate (positive CLV should predict wins)
+        _corr = _clv.get("clv_correlation", {})
+        if _corr:
+            _pos_wr = _corr.get("positive_clv_win_rate", 0)
+            _neg_wr = _corr.get("negative_clv_win_rate", 0)
+            _wr_lift = _pos_wr - _neg_wr
+            _lift_color = "#00E676" if _wr_lift > 0.05 else ("#FFCA28" if _wr_lift > 0 else "#FF5252")
+            st.markdown(
+                f'<div class="info-strip" style="margin-top:0.8rem;">'
+                f'<strong>CLV → Win Rate:</strong> '
+                f'Positive-CLV bets hit <span class="hl">{_pos_wr*100:.1f}%</span> · '
+                f'Negative-CLV bets hit <span class="hl">{_neg_wr*100:.1f}%</span> · '
+                f'Lift: <span style="color:{_lift_color};font-weight:700;font-family:JetBrains Mono">{_wr_lift*100:+.1f}pp</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # CLV by prop type
+        _by_prop = _clv.get("by_prop", {})
+        if _by_prop:
+            st.markdown('<div class="section-hdr">CLV by Prop Type</div>', unsafe_allow_html=True)
+            _prop_rows = []
+            for _pt, _ps in sorted(_by_prop.items(), key=lambda x: x[1].get("mean_clv", 0), reverse=True):
+                _prop_rows.append({
+                    "Prop": _pt,
+                    "Count": _ps.get("count", 0),
+                    "Mean CLV": f'{_ps.get("mean_clv", 0)*100:+.1f}pp',
+                    "Win Rate": f'{_ps.get("win_rate", 0)*100:.1f}%' if _ps.get("win_rate") else "-",
+                })
+            if _prop_rows:
+                st.dataframe(pd.DataFrame(_prop_rows), hide_index=True, use_container_width=True)
+
+        # CLV by source
+        _by_src = _clv.get("by_source", {})
+        if _by_src and len(_by_src) > 1:
+            st.markdown('<div class="section-hdr">CLV by Edge Source</div>', unsafe_allow_html=True)
+            _src_cols = st.columns(len(_by_src))
+            for _sci, (_skey, _sval) in enumerate(sorted(_by_src.items(), key=lambda x: x[1].get("mean_clv", 0), reverse=True)):
+                _s_clv = _sval.get("mean_clv", 0)
+                _s_cls = "pos" if _s_clv > 0 else ("neg" if _s_clv < -0.02 else "neu")
+                with _src_cols[_sci]:
+                    st.markdown(
+                        f'<div class="clv-card">'
+                        f'<div class="cc-val {_s_cls}">{_s_clv*100:+.1f}pp</div>'
+                        f'<div class="cc-lbl">{_skey.replace("_"," ").title()}</div>'
+                        f'<div class="cc-sub">{_sval.get("count",0)} bets · {_sval.get("positive_clv_rate",0)*100:.0f}% +CLV</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+    # ── CLV CHART ─────────────────────────────────────────────────────────
+    if _clv_total > 0:
+        try:
+            from src.database import get_connection, init_clv_table
+            init_clv_table()
+            _conn_clv = get_connection()
+            _clv_df = pd.read_sql_query(
+                """SELECT game_date, clv_points, outcome, stat_type, pick
+                   FROM clv_tracking
+                   WHERE game_date >= date('now', '-' || ? || ' days')
+                     AND clv_points IS NOT NULL
+                   ORDER BY game_date""",
+                _conn_clv, params=(_dash_days,)
+            )
+            _conn_clv.close()
+
+            if not _clv_df.empty and len(_clv_df) >= 3:
+                st.markdown('<div class="section-hdr">CLV Over Time</div>', unsafe_allow_html=True)
+                _clv_df["date_ord"] = pd.to_datetime(_clv_df["game_date"])
+                _daily = _clv_df.groupby("game_date")["clv_points"].mean().reset_index()
+                _daily["rolling"] = _daily["clv_points"].rolling(5, min_periods=1).mean()
+                _daily["cumulative"] = _clv_df.groupby("game_date")["clv_points"].mean().cumsum().values
+
+                _fig_clv = go.Figure()
+                _fig_clv.add_trace(go.Bar(
+                    x=_daily["game_date"],
+                    y=_daily["clv_points"] * 100,
+                    name="Daily Avg CLV",
+                    marker_color=[("#00E676" if v >= 0 else "#FF5252") for v in _daily["clv_points"]],
+                    opacity=0.65,
+                ))
+                _fig_clv.add_trace(go.Scatter(
+                    x=_daily["game_date"],
+                    y=_daily["rolling"] * 100,
+                    mode="lines",
+                    name="5-Day Avg",
+                    line=dict(color="#4da6ff", width=2.5),
+                ))
+                _fig_clv.add_hline(y=0, line_color="rgba(255,255,255,0.2)", line_dash="dot")
+                _fig_clv.update_layout(
+                    template="plotly_dark",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=10, r=10, t=20, b=10),
+                    height=240,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.0, font=dict(size=11)),
+                    xaxis=dict(showgrid=False),
+                    yaxis=dict(title="CLV (pp)", gridcolor="rgba(255,255,255,0.05)"),
+                )
+                st.plotly_chart(_fig_clv, use_container_width=True)
+        except Exception:
+            pass
+
+    # ── REGIME DETECTION ──────────────────────────────────────────────────
+    st.markdown('<div class="section-hdr">Market Regime Detection</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="info-strip">CUSUM detector monitors prediction accuracy per prop type. '
+        'A warning signals that recent accuracy has drifted — consider re-grading or adjusting confidence floors.</div>',
+        unsafe_allow_html=True,
+    )
+    try:
+        _regime = RegimeDetector()
+        # Get all prop types that have data, plus common ones
+        try:
+            _all_regime_statuses = _regime.get_all_statuses()
+        except Exception:
+            _all_regime_statuses = {}
+        _prop_types_to_check = list(_all_regime_statuses.keys()) or [
+            "pitcher_strikeouts", "hits", "total_bases",
+            "hits_runs_rbis", "hitter_fantasy_score", "earned_runs",
+        ]
+        _regime_rows = []
+        for _pt in _prop_types_to_check[:9]:
+            try:
+                _rs = _regime.get_stats(_pt)
+                _status = _rs.get("status", "stable")
+                _acc = _rs.get("accuracy")
+                _n = _rs.get("n_predictions", 0)
+                _regime_rows.append({
+                    "Prop": _pt.replace("_", " ").title(),
+                    "Status": _status,
+                    "Accuracy": f"{_acc*100:.1f}%" if isinstance(_acc, float) else "-",
+                    "N": _n,
+                })
+            except Exception:
+                pass
+
+        if _regime_rows:
+            _r_cols = st.columns(3)
+            for _ri, _rrow in enumerate(_regime_rows):
+                _rstatus = _rrow["Status"]
+                if _rstatus == "drift_detected":
+                    _rbadge = '<span class="regime-alert">🔴 DRIFT</span>'
+                elif _rstatus == "warning":
+                    _rbadge = '<span class="regime-warn">🟡 WARNING</span>'
+                else:
+                    _rbadge = '<span class="regime-ok">🟢 STABLE</span>'
+                with _r_cols[_ri % 3]:
+                    st.markdown(
+                        f'<div class="status-card" style="margin-bottom:0.6rem;">'
+                        f'<div class="eyebrow">{_rrow["Prop"]}</div>'
+                        f'{_rbadge}'
+                        f'<div class="sub" style="margin-top:0.4rem;">'
+                        f'Acc: {_rrow["Accuracy"]} · N={_rrow["N"]}'
+                        f'</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.info("No regime state available yet — needs graded picks to build a detection history.")
+    except Exception as _regime_err:
+        st.caption(f"Regime detector unavailable: {_regime_err}")
+
+    # ── MODEL WEIGHTS SNAPSHOT ────────────────────────────────────────────
+    st.markdown('<div class="section-hdr">Active Model Weights</div>', unsafe_allow_html=True)
+    try:
+        _dash_weights = load_current_weights()
+        _dash_version = _dash_weights.get("version", "unknown")
+        _dash_ts = _dash_weights.get("last_updated", "")
+        st.markdown(
+            f'<div class="info-strip">Version <span class="hl">{_dash_version}</span>'
+            + (f' · Updated {_dash_ts[:10]}' if _dash_ts else '')
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+        _w_exclude = {"version", "last_updated", "metadata", "prop_floors"}
+        _w_items = [(k, v) for k, v in _dash_weights.items() if k not in _w_exclude and isinstance(v, (int, float))]
+        if _w_items:
+            _w_cols = st.columns(4)
+            for _wi, (_wk, _wv) in enumerate(_w_items[:12]):
+                _wv_cls = "g" if _wv > 1.05 else ("r" if _wv < 0.95 else "")
+                with _w_cols[_wi % 4]:
+                    st.markdown(
+                        f'<div class="card" style="margin-bottom:0.5rem;">'
+                        f'<div class="lbl">{_wk.replace("_"," ")}</div>'
+                        f'<div class="val {_wv_cls}">{_wv:.3f}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+    except Exception:
+        st.info("No weight data yet.")
