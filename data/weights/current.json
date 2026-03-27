@@ -1,7 +1,7 @@
 {
-  "version": "v036",
-  "description": "cycle 3 — disable weak combos, tighten borderline floors, open strong props",
-  "created_at": "2026-03-27T00:00:00.000000+00:00",
+  "version": "v039",
+  "description": "disable rbis_less and hits_runs_rbis_more; add explicit PP_NEVER_SHOW blocks",
+  "created_at": "2026-03-26T06:11:58.012393+00:00",
   "confidence_thresholds": {
     "A": 0.7,
     "B": 0.62,
@@ -33,27 +33,27 @@
   },
   "per_prop_confidence_floors": {
     "hits_more": 0.72,
-    "hits_less": 0.55,
-    "total_bases_more": 0.97,
-    "total_bases_less": 0.58,
-    "pitcher_strikeouts_more": 0.62,
-    "pitcher_strikeouts_less": 0.62,
+    "hits_less": 0.72,
+    "total_bases_more": 0.64,
+    "total_bases_less": 0.72,
+    "pitcher_strikeouts_more": 0.66,
+    "pitcher_strikeouts_less": 0.66,
     "hitter_fantasy_score_more": 0.65,
-    "hitter_fantasy_score_less": 0.58,
+    "hitter_fantasy_score_less": 0.68,
     "pitching_outs_more": 0.6,
     "pitching_outs_less": 0.6,
     "earned_runs_more": 0.6,
-    "earned_runs_less": 0.97,
-    "walks_allowed_more": 0.97,
-    "walks_allowed_less": 0.62,
+    "earned_runs_less": 0.6,
+    "walks_allowed_more": 0.95,
+    "walks_allowed_less": 0.95,
     "hits_allowed_more": 0.6,
     "hits_allowed_less": 0.6,
     "batter_strikeouts_more": 0.66,
-    "batter_strikeouts_less": 0.65,
+    "batter_strikeouts_less": 0.66,
     "walks_more": 0.6,
     "walks_less": 0.7,
-    "rbis_more": 0.97,
-    "rbis_less": 0.58,
+    "rbis_more": 0.6,
+    "rbis_less": 0.97,
     "runs_more": 0.68,
     "runs_less": 0.68,
     "singles_more": 0.95,
@@ -61,7 +61,7 @@
     "doubles_more": 0.6,
     "doubles_less": 0.6,
     "hits_runs_rbis_more": 0.97,
-    "hits_runs_rbis_less": 0.65
+    "hits_runs_rbis_less": 0.95
   },
   "factor_weights": {
     "statcast_blend": 1.0,
@@ -164,15 +164,15 @@
       "FLOORS: tb_more 0.60 -> 0.90 (disabled, <10 picks in backtest)",
       "FLOORS: tb_less 0.62 -> 0.64 (63.5% -> 65.8%, tighter filtering)",
       "FLOORS: fs_less 0.62 -> 0.68 (60.7% -> 61.7%, removes weak buckets)",
-      "FLOORS: fs_more 0.62 -> 0.56 (LOWERED — 59.3% on 118 -> 59.9% on 232, more volume at same accuracy)"
+      "FLOORS: fs_more 0.62 -> 0.56 (LOWERED \u2014 59.3% on 118 -> 59.9% on 232, more volume at same accuracy)"
     ],
     "verified_accuracies_v017": {
-      "hits_less": "72.5% (26,875 picks) — tighter floor catches weak near-line picks",
-      "total_bases_less": "65.8% (281 picks) — aggressive floor keeps only high-edge picks",
-      "pitcher_strikeouts_more": "69.6% (507 picks) — nearly 70% accuracy!",
-      "pitcher_strikeouts_less": "69.2% (429 picks) — massive jump from 63.7%",
-      "hitter_fantasy_score_less": "61.7% (1,715 picks) — up from 60.7%",
-      "hitter_fantasy_score_more": "59.9% (232 picks) — doubled volume vs v016",
+      "hits_less": "72.5% (26,875 picks) \u2014 tighter floor catches weak near-line picks",
+      "total_bases_less": "65.8% (281 picks) \u2014 aggressive floor keeps only high-edge picks",
+      "pitcher_strikeouts_more": "69.6% (507 picks) \u2014 nearly 70% accuracy!",
+      "pitcher_strikeouts_less": "69.2% (429 picks) \u2014 massive jump from 63.7%",
+      "hitter_fantasy_score_less": "61.7% (1,715 picks) \u2014 up from 60.7%",
+      "hitter_fantasy_score_more": "59.9% (232 picks) \u2014 doubled volume vs v016",
       "combined_accuracy": "71.7% across all props (30,039 picks)"
     },
     "accuracy_progression": {
@@ -190,12 +190,12 @@
     },
     "daily_pick_volume_estimate": "~167 picks/day across all props (30,039 picks / 180 game days)",
     "profitable_bets": [
-      "Hits LESS: 72.5% — highest volume AND accuracy, backbone of the model",
-      "Pitcher Ks MORE: 69.6% — near-70% accuracy, very strong signal",
-      "Pitcher Ks LESS: 69.2% — equally strong, complements MORE",
-      "Total Bases LESS: 65.8% — excellent accuracy, lower volume",
-      "Fantasy Score LESS: 61.7% — solid edge, good daily volume",
-      "Fantasy Score MORE: 59.9% — lower edge but decent volume after floor reduction"
+      "Hits LESS: 72.5% \u2014 highest volume AND accuracy, backbone of the model",
+      "Pitcher Ks MORE: 69.6% \u2014 near-70% accuracy, very strong signal",
+      "Pitcher Ks LESS: 69.2% \u2014 equally strong, complements MORE",
+      "Total Bases LESS: 65.8% \u2014 excellent accuracy, lower volume",
+      "Fantasy Score LESS: 61.7% \u2014 solid edge, good daily volume",
+      "Fantasy Score MORE: 59.9% \u2014 lower edge but decent volume after floor reduction"
     ],
     "avoid_bets": [
       "Home Runs: removed (structural model limitation)",
@@ -676,25 +676,12 @@
     ],
     "v034_created_at": "2026-03-27T06:34:16.952562+00:00",
     "v034_rationale": "Tradeable-only backtest (v033) showed: hitter_fantasy_score_more 63.0% (108 picks), rbis_less 70.8% (20,081 picks), batter_strikeouts 73.0% (1,496 picks). 0.55-0.60 confidence bucket = 56.8% accuracy across 88 picks. Floors tightened to eliminate weak-confidence picks.",
-    "v036_changes": [
-      "DISABLE earned_runs_less: 0.60 -> 0.97 (46.3%, 54 picks)",
-      "DISABLE rbis_more: 0.60 -> 0.97 (46.1%, 204 picks)",
-      "DISABLE total_bases_more: 0.64 -> 0.97 (47.8%, 1227 picks)",
-      "DISABLE hits_runs_rbis_more: 0.95 -> 0.97 (51.5%, 14546 picks)",
-      "DISABLE walks_allowed_more: 0.95 -> 0.97 (52.8%, 3340 picks)",
-      "TIGHTEN hitter_fantasy_score_more: 0.65 (no change, already set)",
-      "TIGHTEN walks_allowed_less: 0.95 -> 0.62 (55.7% all, raise floor for quality)",
-      "TIGHTEN batter_strikeouts_less: 0.66 -> 0.65 (56.1%, marginal tighten)",
-      "TIGHTEN hits_runs_rbis_less: 0.95 -> 0.65 (57.5% all, open to 0.65+)",
-      "TIGHTEN pitcher_strikeouts_more: 0.66 -> 0.62 (58.3%, lower for more volume)",
-      "TIGHTEN pitcher_strikeouts_less: 0.66 -> 0.62 (58.9%, lower for more volume)",
-      "OPEN hits_less: 0.72 -> 0.55 (78.2% — strong, expand volume)",
-      "OPEN rbis_less: 0.63 -> 0.58 (70.3% — strong, expand volume)",
-      "OPEN hitter_fantasy_score_less: 0.68 -> 0.58 (65.7% — solid, expand volume)",
-      "OPEN total_bases_less: 0.72 -> 0.58 (65.0% — solid, expand volume)"
+    "v039_changes": [
+      "rbis_less floor: 0.63 -> 0.97 (disabled)",
+      "hits_runs_rbis_more floor: 0.95 -> 0.97 (disabled \u2014 variable lines rescore showed 46.3% even with 0.65 floor)",
+      "PP_NEVER_SHOW additions: rbis_less, doubles_less, triples_less, singles both, walks both, hits_allowed both"
     ],
-    "v036_created_at": "2026-03-27T00:00:00.000000+00:00",
-    "v036_rationale": "Cycle 3 tradeable optimization: disable 5 weak combos (<53%), tighten 5 borderline floors, open 4 strong props to increase volume."
+    "v039_created_at": "2026-03-27T00:00:00.000000+00:00"
   },
   "distribution_params": {
     "pitcher_strikeouts": {
