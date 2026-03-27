@@ -1630,11 +1630,15 @@ def project_batter_home_runs(b, opp_p=None, bvp=None, platoon=None,
         opp_hr9 = opp_p.get("hr9", LG["hr9"])
         reg_hr_rate *= (opp_hr9 / LG["hr9"])
 
-    # Platoon (ISO is ~14% higher in favorable platoon)
-    if platoon and platoon.get("favorable"):
-        reg_hr_rate *= 1.14
-    elif platoon and platoon.get("favorable") is False:
-        reg_hr_rate *= 0.86
+    # Platoon — use player-specific ISO adjustment when available, else generic ±14%
+    if platoon:
+        iso_adj = platoon.get("iso_adjustment")
+        if iso_adj is not None:
+            reg_hr_rate *= iso_adj
+        elif platoon.get("favorable"):
+            reg_hr_rate *= 1.14
+        elif platoon.get("favorable") is False:
+            reg_hr_rate *= 0.86
 
     # Park HR factor (biggest effect of any prop)
     if park: reg_hr_rate *= _park(park, PARK_HR)
