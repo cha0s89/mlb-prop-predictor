@@ -404,10 +404,12 @@ LG = {
 # From FanGraphs / Russell Carleton research
 # ═══════════════════════════════════════════════════════
 STAB = {
-    # Batter (PA) — updated to FanGraphs 2024 reliability research
-    "k_rate": 150, "bb_rate": 200, "hbp_rate": 240,
-    "babip": 820, "avg": 910, "obp": 500, "slg": 500, "iso": 550,
-    "woba": 250, "hr_fb": 300, "gb_rate": 200, "fb_rate": 250,
+    # Batter (PA) — corrected to FanGraphs/Tom Tango stabilization research
+    # Source: FanGraphs "How Long Until a Stat Stabilizes?" + Tango "The Book"
+    # Values = PA needed for 50% signal / 50% noise (r=0.5 reliability)
+    "k_rate": 60, "bb_rate": 120, "hbp_rate": 240,
+    "babip": 820, "avg": 580, "obp": 460, "slg": 320, "iso": 160,
+    "woba": 300, "hr_fb": 300, "gb_rate": 200, "fb_rate": 250,
     "ld_rate": 600, "barrel_rate": 100, "contact_rate": 100,
     "sprint_speed": 50,  # essentially stable (physical trait)
     # Pitcher (BF) — K% and BB% unchanged (fast-stabilizing)
