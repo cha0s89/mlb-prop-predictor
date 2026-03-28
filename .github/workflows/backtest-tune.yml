@@ -1,0 +1,186 @@
+name: Backtest & Tune
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run"
+        required: true
+        default: "rescore"
+        type: choice
+        options:
+          - rescore        # Re-score current weights against backtest report
+          - tune_floors    # Run floor optimization
+          - tune_offsets   # Run offset optimization
+          - full_tune      # Full offline tuner pass
+          - validate       # Validate current weights (no changes)
+      dry_run:
+        description: "Dry run (don't save changes)"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure data directories
+        run: mkdir -p data/weights data/backtest logs
+
+      # Download latest predictions DB (for live data comparison)
+      - name: Download predictions DB
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: predictions-db
+          path: data/
+          if_no_artifact_found: warn
+          workflow: daily-pipeline.yml
+          branch: main
+          search_artifacts: true
+
+      - name: Show current model status
+        run: |
+          python -c "
+          import json
+          with open('data/weights/current.json') as f:
+              w = json.load(f)
+          print(f'Current weights: {w[\"version\"]}')
+          print(f'Description: {w[\"description\"]}')
+
+          # Show live accuracy if DB exists
+          try:
+              from src.database import get_connection, init_db
+              init_db()
+              conn = get_connection()
+              total = conn.execute('SELECT COUNT(*) FROM predictions WHERE result IS NOT NULL').fetchone()[0]
+              if total > 0:
+                  wins = conn.execute('SELECT COUNT(*) FROM predictions WHERE result = \"W\"').fetchone()[0]
+                  print(f'Live record: {wins}W-{total-wins}L ({wins/total*100:.1f}%) from {total} graded picks')
+              else:
+                  print('No graded picks yet')
+              conn.close()
+          except Exception as e:
+              print(f'No live data available: {e}')
+          "
+
+      # ── RESCORE ──
+      - name: Rescore current weights
+        if: inputs.action == 'rescore' || inputs.action == 'validate'
+        run: |
+          python -c "
+          from src.autolearn import load_current_weights, run_adjustment_cycle
+          import json
+
+          w = load_current_weights()
+          print(f'Rescoring {w[\"version\"]}...')
+          result = run_adjustment_cycle(min_sample=0)
+          print(f'Accuracy: {result.get(\"accuracy_before\", \"N/A\")}')
+          print(f'Brier: {result.get(\"brier_score\", \"N/A\")}')
+          print(f'LogLoss: {result.get(\"log_loss\", \"N/A\")}')
+          print(f'Kill switch: {result.get(\"kill_switch\", {})}')
+
+          analysis = result.get('analysis', {})
+          dir_bias = analysis.get('direction_bias', {})
+          if dir_bias:
+              print(f'Direction bias: MORE={dir_bias.get(\"more_accuracy\",\"?\")} LESS={dir_bias.get(\"less_accuracy\",\"?\")}')
+
+          prop_acc = analysis.get('prop_type_accuracy', {})
+          if prop_acc:
+              print('Per-prop accuracy:')
+              for prop, info in sorted(prop_acc.items()):
+                  print(f'  {prop}: {info.get(\"accuracy\", \"?\")} ({info.get(\"count\", 0)} picks)')
+          " 2>&1
+
+      # ── TUNE FLOORS ──
+      - name: Tune confidence floors
+        if: inputs.action == 'tune_floors' || inputs.action == 'full_tune'
+        run: |
+          python -c "
+          from src.autolearn import load_current_weights, reoptimize_floors
+          from src.database import get_graded_predictions
+          import json
+
+          graded = get_graded_predictions(limit=5000)
+          if graded.empty:
+              print('No graded predictions to optimize against')
+          else:
+              suggestions = reoptimize_floors(graded, min_sample=20)
+              print(f'Floor suggestions ({len(suggestions)}):')
+              w = load_current_weights()
+              floors = w.get('per_prop_confidence_floors', {})
+              for key, info in sorted(suggestions.items()):
+                  current = floors.get(key, 0.60)
+                  suggested = info['suggested_floor']
+                  acc = info['accuracy_at_floor']
+                  n = info['picks_at_floor']
+                  change = '↑' if suggested > current else '↓' if suggested < current else '='
+                  print(f'  {key:35s} {current:.2f} -> {suggested:.2f} {change} ({acc:.1%} on {n} picks)')
+          " 2>&1
+
+      # ── TUNE OFFSETS ──
+      - name: Tune prop offsets
+        if: inputs.action == 'tune_offsets' || inputs.action == 'full_tune'
+        run: |
+          python -c "
+          from src.autolearn import load_current_weights, analyze_prop_type_accuracy
+          from src.database import get_graded_predictions
+
+          graded = get_graded_predictions(limit=5000)
+          if graded.empty:
+              print('No graded predictions')
+          else:
+              analysis = analyze_prop_type_accuracy(graded)
+              print('Offset suggestions:')
+              w = load_current_weights()
+              offsets = w.get('prop_type_offsets', {})
+              for prop, info in sorted(analysis.items()):
+                  current = offsets.get(prop, 0)
+                  suggested = info.get('suggested_offset', {})
+                  if suggested:
+                      new_offset = suggested.get('offset', 0)
+                      print(f'  {prop:25s} current={current:+.2f}, suggested adjustment={new_offset:+.3f}, reason={suggested.get(\"reason\",\"\")}')
+          " 2>&1
+
+      # ── FULL TUNE (with apply) ──
+      - name: Run full autolearn cycle
+        if: inputs.action == 'full_tune'
+        run: |
+          DRY=${{ inputs.dry_run }}
+          python -c "
+          from src.autolearn import run_adjustment_cycle
+          import json, sys
+
+          result = run_adjustment_cycle(min_sample=0)
+          print(f'Adjusted: {result.get(\"adjusted\")}')
+          print(f'Reason: {result.get(\"reason\")}')
+          if result.get('changes'):
+              print('Changes:')
+              for c in result['changes']:
+                  print(f'  {c[\"category\"]}.{c[\"key\"]}: {c[\"old_value\"]} -> {c[\"new_value\"]} ({c[\"reason\"]})')
+          if result.get('version_new') != result.get('version_old'):
+              print(f'New version: {result[\"version_new\"]}')
+          " 2>&1
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-results
+          path: |
+            data/weights/current.json
+            data/backtest/*.md
+            logs/
+          retention-days: 30
