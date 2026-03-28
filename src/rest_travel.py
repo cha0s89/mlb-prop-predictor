@@ -38,23 +38,42 @@ logger = logging.getLogger(__name__)
 MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
 REQUEST_TIMEOUT = 10
 
-# ── timezone offset table (UTC hours, standard time) ──────────────────────────
-# Used only for inter-team timezone-difference arithmetic.
-# We use "home team" timezone as a proxy for where the game was played.
+# ── timezone offset table ────────────────────────────────────────────────────
+# Returns current UTC offset accounting for DST where applicable.
+# Arizona (ARI) and Hawaii don't observe DST — always UTC-7.
+# During DST (Mar-Nov): ET=UTC-4, CT=UTC-5, MT=UTC-6, PT=UTC-7
+# During Standard (Nov-Mar): ET=UTC-5, CT=UTC-6, MT=UTC-7, PT=UTC-8
 
-_TEAM_TZ_OFFSET: dict[str, int] = {
-    # Eastern (UTC-5)
-    "ATL": -5, "BAL": -5, "BOS": -5, "CIN": -5, "CLE": -5,
-    "DET": -5, "MIA": -5, "NYM": -5, "NYY": -5, "PHI": -5,
-    "PIT": -5, "TB":  -5, "TOR": -5, "WSH": -5,
-    # Central (UTC-6)
-    "CHC": -6, "CWS": -6, "HOU": -6, "KC":  -6, "MIL": -6,
-    "MIN": -6, "STL": -6, "TEX": -6,
-    # Mountain (UTC-7); Arizona skips DST but we only need the offset difference
-    "ARI": -7, "COL": -7,
-    # Pacific (UTC-8)
-    "LAA": -8, "LAD": -8, "OAK": -8, "SD":  -8, "SEA": -8, "SF":  -8,
-}
+def _team_tz_offset(team: str) -> int | None:
+    """Get current UTC offset for a team, accounting for DST."""
+    _EASTERN = {"ATL", "BAL", "BOS", "CIN", "CLE", "DET", "MIA",
+                "NYM", "NYY", "PHI", "PIT", "TB", "TOR", "WSH"}
+    _CENTRAL = {"CHC", "CWS", "HOU", "KC", "MIL", "MIN", "STL", "TEX"}
+    _MOUNTAIN = {"COL"}  # ARI handled separately (no DST)
+    _PACIFIC = {"LAA", "LAD", "OAK", "SD", "SEA", "SF"}
+
+    team = team.upper()
+
+    # Check if DST is currently active (rough: March second Sunday to Nov first Sunday)
+    now = datetime.now()
+    # Python's time module gives us this directly
+    import time
+    is_dst = time.daylight and time.localtime().tm_isdst > 0
+    # More reliable: just check if we're between March 10 and Nov 3 (approximate)
+    is_dst_period = (now.month > 3 or (now.month == 3 and now.day >= 10)) and \
+                    (now.month < 11 or (now.month == 11 and now.day < 3))
+
+    if team == "ARI":
+        return -7  # Arizona NEVER observes DST
+    elif team in _EASTERN:
+        return -4 if is_dst_period else -5
+    elif team in _CENTRAL:
+        return -5 if is_dst_period else -6
+    elif team in _MOUNTAIN:
+        return -6 if is_dst_period else -7
+    elif team in _PACIFIC:
+        return -7 if is_dst_period else -8
+    return None
 
 # Pitcher props that short-rest and DGDN (reliever) affect
 _PITCHER_K_OPT_PROPS = {"pitcher_strikeouts", "pitching_outs"}
@@ -181,7 +200,7 @@ def _dgdn_mult(
     """
     # Today's game: is it a day game?
     home_today = querying_team  # caller should pass today's home team if available
-    tz_today = _TEAM_TZ_OFFSET.get(querying_team.upper(), -5)
+    tz_today = _team_tz_offset(querying_team) or -5
     today_local = _local_hour(today_utc_hour, tz_today)
     if today_local >= 17.0:
         return 1.0  # Not a day game → no DGDN
@@ -192,7 +211,7 @@ def _dgdn_mult(
         return 1.0
 
     yest_home = _home_team_abbr(yesterday_game, querying_team)
-    tz_yest = _TEAM_TZ_OFFSET.get(yest_home, -5)
+    tz_yest = _team_tz_offset(yest_home) or -5
     yest_local = _local_hour(yest_utc_hour, tz_yest)
 
     if yest_local < 19.0:
@@ -219,8 +238,8 @@ def _travel_mult(
     Same tz:      1.0
     """
     yest_home = _home_team_abbr(yesterday_game, querying_team)
-    tz_yest  = _TEAM_TZ_OFFSET.get(yest_home, None)
-    tz_today = _TEAM_TZ_OFFSET.get(today_home_team.upper(), None)
+    tz_yest  = _team_tz_offset(yest_home)
+    tz_today = _team_tz_offset(today_home_team)
 
     if tz_yest is None or tz_today is None:
         return 1.0
