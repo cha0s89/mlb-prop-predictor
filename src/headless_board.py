@@ -1032,6 +1032,14 @@ def build_board(
                     game_script_cache.get(r_team, {}).get("adjustments")
                     if r_team else None
                 ),
+                pitcher_team=(
+                    r_team if is_pitcher_prop else
+                    (resolve_team(_gctx_ha.get("opponent", "")) if _gctx_ha.get("opponent") else None)
+                ),
+                batter_team=(
+                    (resolve_team(_gctx_ha.get("opponent", "")) if _gctx_ha.get("opponent") else None)
+                    if is_pitcher_prop else r_team
+                ),
             )
             p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
             # Annotate game script for display

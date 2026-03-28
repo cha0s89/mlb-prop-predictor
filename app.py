@@ -90,6 +90,9 @@ from src.team_context import (
 )
 from src.lineup_context import build_player_lineup_context, build_team_lineup_context
 from src.clv import compute_clv_stats
+from src.home_away_splits import get_home_away_split_multiplier
+from src.day_night_splits import get_day_night_split_multiplier, get_wrigley_shadow_mult, is_day_game
+from src.rest_travel import get_fatigue_adjustment
 from src.drift import RegimeDetector, check_model_health
 
 
@@ -2099,6 +2102,81 @@ with tab_edge:
                     except Exception:
                         bvp_data = None
 
+                # ── WAVE 2 SIGNALS ───────────────────────────────
+                # Home/away split
+                _ha_mult = 1.0
+                _mlbam_id = 0
+                _gctx_ha = {}
+                if r_team:
+                    _gctx_ha = get_team_game_value(
+                        game_context_cache, r_team,
+                        game_pk=lookup_game_pk, game_time=lookup_game_time,
+                    ) or {}
+                    _is_home = _gctx_ha.get("is_home", False)
+                    _pname_key = row["player_name"].upper().strip()
+                    try:
+                        _lid = lookup_player_id(row["player_name"])
+                        _mlbam_id = _lid.get("mlbam_id") if _lid.get("found") else 0
+                    except Exception:
+                        _mlbam_id = 0
+                    if _mlbam_id:
+                        _ha_mult = get_home_away_split_multiplier(
+                            player_id=_mlbam_id,
+                            is_home=_is_home,
+                            prop_type=stat_int,
+                            is_pitcher=is_pitcher_prop,
+                        )
+
+                # Day/night split
+                _dn_mult = 1.0
+                _start_time_str = row.get("start_time", "")
+                _is_day = is_day_game(_start_time_str)
+                if _mlbam_id:
+                    _dn_mult = get_day_night_split_multiplier(
+                        player_id=_mlbam_id,
+                        is_day=_is_day,
+                        prop_type=stat_int,
+                        is_pitcher=is_pitcher_prop,
+                    )
+                _wrigley_mult = get_wrigley_shadow_mult(
+                    prop_type=stat_int,
+                    is_pitcher=is_pitcher_prop,
+                    park_team=r_team,
+                    is_day=_is_day,
+                )
+                _dn_mult *= _wrigley_mult
+
+                # Rest/travel fatigue
+                _rt_mult = 1.0
+                if r_team:
+                    _is_home_rt = _gctx_ha.get("is_home", False)
+                    _opp_rt = _gctx_ha.get("opponent", "")
+                    _today_home = r_team if _is_home_rt else (_opp_rt or r_team)
+                    _rt_mult = get_fatigue_adjustment(
+                        team=r_team,
+                        game_date=_game_date_from_iso(row.get("start_time", "")),
+                        game_time=row.get("start_time", ""),
+                        player_name=row["player_name"] if is_pitcher_prop else None,
+                        is_pitcher=is_pitcher_prop,
+                        today_home_team=_today_home,
+                    )
+
+                # Determine pitcher_team and batter_team for divisional familiarity
+                _pitcher_team = None
+                _batter_team = None
+                if is_pitcher_prop:
+                    _pitcher_team = r_team
+                    _batter_team = _gctx_ha.get("opponent")
+                    if _batter_team:
+                        _batter_team = resolve_team(_batter_team)
+                else:
+                    _batter_team = r_team
+                    if opp_info:
+                        # Opposing pitcher's team
+                        _opp_team = _gctx_ha.get("opponent")
+                        if _opp_team:
+                            _pitcher_team = resolve_team(_opp_team)
+
                 # ── LINE SANITY CHECK ────────────────────────────
                 # Skip props with unrealistically low lines (spring training / promo artifacts).
                 # These create fake massive edges when real projections are compared to garbage lines.
@@ -2149,6 +2227,11 @@ with tab_edge:
                     game_date=_game_date_from_iso(row.get("start_time", "")),
                     vegas_game_total=_vgt,
                     game_script_adjustments=_gs_entry.get("adjustments") if _gs_entry else None,
+                    home_away_mult=_ha_mult,
+                    day_night_mult=_dn_mult,
+                    rest_travel_mult=_rt_mult,
+                    pitcher_team=_pitcher_team,
+                    batter_team=_batter_team,
                 )
                 p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
                 p["game_time_utc"] = row.get("start_time", "")
