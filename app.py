@@ -41,7 +41,7 @@ from src.slips import (
     init_slips_table, create_slip, get_slips, get_slip_picks,
     get_slip_pnl, grade_slip_pick, finalize_slip, PAYOUTS, BREAKEVEN,
 )
-from src.autograder import auto_grade_date, auto_grade_yesterday
+from src.autograder import auto_grade_date, auto_grade_yesterday, auto_grade_all_pending
 from src.autolearn import run_adjustment_cycle, load_current_weights
 from src.nightly import run_nightly_cycle
 from src.spring import (
@@ -278,18 +278,23 @@ def _cached_lineups(game_pk: int):
 st.set_page_config(page_title="MLB Prop Edge", page_icon="⚾", layout="wide", initial_sidebar_state="collapsed")
 _ensure_ui_session_state()
 
-# ── Auto-grade pending predictions on app startup ────────────────────────
-# Grades yesterday's (and any older ungraded) picks automatically so you
-# never have to remember to press a button.
+# ── Auto-grade ALL pending predictions on app startup ────────────────────
+# Grades ALL ungraded picks (yesterday, day before, any missed dates)
+# automatically so you never have to remember to press a button.
 if "startup_autograde_done" not in st.session_state:
     st.session_state["startup_autograde_done"] = True
     try:
-        _ag_yesterday = (date.today() - timedelta(days=1)).isoformat()
-        _ag_result = auto_grade_date(_ag_yesterday)
-        if _ag_result.get("graded", 0) > 0:
-            _ag_wins = sum(1 for r in _ag_result.get("results", []) if r.get("result") == "W")
-            _ag_losses = sum(1 for r in _ag_result.get("results", []) if r.get("result") == "L")
-            st.toast(f"Auto-graded {_ag_result['graded']} picks from yesterday: {_ag_wins}W-{_ag_losses}L", icon="✅")
+        _ag_result = auto_grade_all_pending()
+        _ag_total = _ag_result.get("total_graded", 0)
+        if _ag_total > 0:
+            _ag_wins = _ag_result.get("total_wins", 0)
+            _ag_losses = _ag_result.get("total_losses", 0)
+            _ag_dates = _ag_result.get("dates_processed", [])
+            st.toast(
+                f"Auto-graded {_ag_total} picks ({_ag_wins}W-{_ag_losses}L) "
+                f"from {len(_ag_dates)} date(s): {', '.join(_ag_dates[-3:])}",
+                icon="✅",
+            )
     except Exception:
         pass  # Silently skip if grading fails (games not final, no data, etc.)
 
