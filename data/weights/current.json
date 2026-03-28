@@ -1,7 +1,7 @@
 {
-  "version": "v039",
-  "description": "disable rbis_less and hits_runs_rbis_more; add explicit PP_NEVER_SHOW blocks",
-  "created_at": "2026-03-26T06:11:58.012393+00:00",
+  "version": "v040",
+  "description": "Data-justified corrections from 464K backtest: fixed offsets, neutralized direction bias, recalibrated floors and shrinkage",
+  "created_at": "2026-03-28T20:03:30.204941+00:00",
   "confidence_thresholds": {
     "A": 0.7,
     "B": 0.62,
@@ -9,59 +9,60 @@
     "D": 0.0
   },
   "direction_bias": {
-    "more_multiplier": 0.92,
-    "less_multiplier": 1.04
+    "more_multiplier": 1.0,
+    "less_multiplier": 1.0
   },
   "prop_type_offsets": {
-    "pitcher_strikeouts": 0.1,
-    "batter_strikeouts": -0.1,
-    "hits": 0.05,
-    "total_bases": -0.2,
-    "home_runs": -0.15,
-    "rbis": -0.7,
-    "runs": -0.6,
+    "hits_allowed": -0.202,
+    "hits": -0.06,
     "stolen_bases": 0.0,
-    "hitter_fantasy_score": -0.75,
-    "hits_runs_rbis": -0.6,
-    "pitching_outs": -0.25,
-    "earned_runs": -0.4,
-    "walks_allowed": -0.2,
-    "walks": -0.5,
-    "hits_allowed": -0.1,
-    "singles": -0.45,
-    "doubles": -0.4
+    "hitter_fantasy_score": -0.752,
+    "batter_strikeouts": 0.015,
+    "earned_runs": 0.156,
+    "doubles": -0.24,
+    "hits_runs_rbis": -0.085,
+    "home_runs": -0.054,
+    "runs": -0.15,
+    "pitching_outs": -0.719,
+    "walks": -0.186,
+    "walks_allowed": -0.07,
+    "rbis": -0.263,
+    "total_bases": -0.128,
+    "pitcher_strikeouts": -0.088,
+    "singles": 0.03
   },
   "per_prop_confidence_floors": {
-    "hits_more": 0.72,
-    "hits_less": 0.72,
-    "total_bases_more": 0.64,
-    "total_bases_less": 0.72,
-    "pitcher_strikeouts_more": 0.66,
-    "pitcher_strikeouts_less": 0.66,
-    "hitter_fantasy_score_more": 0.65,
-    "hitter_fantasy_score_less": 0.68,
-    "pitching_outs_more": 0.6,
-    "pitching_outs_less": 0.6,
-    "earned_runs_more": 0.6,
-    "earned_runs_less": 0.6,
-    "walks_allowed_more": 0.95,
-    "walks_allowed_less": 0.95,
-    "hits_allowed_more": 0.6,
-    "hits_allowed_less": 0.6,
-    "batter_strikeouts_more": 0.66,
-    "batter_strikeouts_less": 0.66,
-    "walks_more": 0.6,
-    "walks_less": 0.7,
-    "rbis_more": 0.6,
-    "rbis_less": 0.97,
-    "runs_more": 0.68,
-    "runs_less": 0.68,
+    "pitcher_strikeouts_more": 0.52,
+    "hitter_fantasy_score_less": 0.52,
+    "home_runs_less": 0.52,
+    "doubles_less": 0.52,
+    "pitching_outs_less": 0.52,
+    "hits_allowed_less": 0.52,
     "singles_more": 0.95,
-    "singles_less": 0.95,
-    "doubles_more": 0.6,
-    "doubles_less": 0.6,
-    "hits_runs_rbis_more": 0.97,
-    "hits_runs_rbis_less": 0.95
+    "runs_less": 0.52,
+    "runs_more": 0.68,
+    "hits_allowed_more": 0.52,
+    "hits_runs_rbis_more": 0.52,
+    "hitter_fantasy_score_more": 0.55,
+    "pitching_outs_more": 0.6,
+    "walks_more": 0.6,
+    "singles_less": 0.52,
+    "walks_allowed_more": 0.52,
+    "rbis_less": 0.52,
+    "batter_strikeouts_more": 0.52,
+    "hits_more": 0.72,
+    "rbis_more": 0.6,
+    "walks_less": 0.52,
+    "earned_runs_less": 0.55,
+    "pitcher_strikeouts_less": 0.52,
+    "batter_strikeouts_less": 0.57,
+    "walks_allowed_less": 0.52,
+    "total_bases_more": 0.55,
+    "hits_runs_rbis_less": 0.52,
+    "hits_less": 0.52,
+    "earned_runs_more": 0.52,
+    "total_bases_less": 0.52,
+    "doubles_more": 0.6
   },
   "factor_weights": {
     "statcast_blend": 1.0,
@@ -94,40 +95,40 @@
   },
   "calibration_blend_weights": {
     "hits": 0.0,
-    "total_bases": 0.3,
-    "pitcher_strikeouts": 0.5,
-    "hitter_fantasy_score": 0.6,
-    "batter_strikeouts": 1.0,
-    "doubles": 1.0,
-    "earned_runs": 1.0,
-    "hits_allowed": 0.8,
-    "hits_runs_rbis": 0.6,
-    "home_runs": 1.0,
-    "pitching_outs": 0.7,
+    "total_bases": 0.0,
+    "pitcher_strikeouts": 0.0,
+    "hitter_fantasy_score": 0.0,
+    "batter_strikeouts": 0.0,
+    "doubles": 0.0,
+    "earned_runs": 0.0,
+    "hits_allowed": 0.0,
+    "hits_runs_rbis": 0.0,
+    "home_runs": 0.0,
+    "pitching_outs": 0.0,
     "rbis": 0.0,
-    "runs": 0.1,
-    "singles": 1.0,
-    "walks": 0.3,
-    "walks_allowed": 1.0
+    "runs": 0.0,
+    "singles": 0.0,
+    "walks": 0.0,
+    "walks_allowed": 0.0
   },
   "confidence_shrinkage": {
     "default": 0.7,
     "hits": 1.0,
-    "hitter_fantasy_score": 0.7,
-    "home_runs": 0.95,
-    "pitcher_strikeouts": 0.85,
-    "total_bases": 0.7,
+    "hitter_fantasy_score": 0.81,
+    "home_runs": 1.0,
+    "pitcher_strikeouts": 0.91,
+    "total_bases": 0.77,
     "batter_strikeouts": 1.0,
-    "doubles": 0.95,
-    "earned_runs": 0.95,
-    "hits_allowed": 0.85,
-    "hits_runs_rbis": 0.5,
-    "pitching_outs": 0.7,
+    "doubles": 1.0,
+    "earned_runs": 1.0,
+    "hits_allowed": 0.96,
+    "hits_runs_rbis": 0.65,
+    "pitching_outs": 0.8,
     "rbis": 0.7,
     "runs": 0.7,
-    "singles": 0.5,
-    "walks": 0.7,
-    "walks_allowed": 0.55
+    "singles": 0.65,
+    "walks": 0.74,
+    "walks_allowed": 0.65
   },
   "seasonal_spring_blend": {
     "post_open_decay_days": 60,
@@ -681,7 +682,260 @@
       "hits_runs_rbis_more floor: 0.95 -> 0.97 (disabled \u2014 variable lines rescore showed 46.3% even with 0.65 floor)",
       "PP_NEVER_SHOW additions: rbis_less, doubles_less, triples_less, singles both, walks both, hits_allowed both"
     ],
-    "v039_created_at": "2026-03-27T00:00:00.000000+00:00"
+    "v039_created_at": "2026-03-27T00:00:00.000000+00:00",
+    "v040_changes": {
+      "offsets_corrected": {},
+      "direction_bias": {
+        "from": {
+          "more": 0.92,
+          "less": 1.04
+        },
+        "to": {
+          "more": 1.0,
+          "less": 1.0
+        }
+      },
+      "floors_corrected": {},
+      "methodology": "Computed from 464K 2025 backtest entries. Offsets = current - (avg_adjusted_proj - avg_actual). Floors = optimal accuracy*volume threshold >= 57%. Shrinkage = calibration gap adjustment.",
+      "backtest_entries": 464176,
+      "created_at": "2026-03-28T20:01:54.724412+00:00"
+    },
+    "v040_data_justified": {
+      "backtest_entries": 464176,
+      "backtest_with_outcomes": 464176,
+      "overall_accuracy": 0.6822,
+      "more_less_split": "39108/425068",
+      "offset_changes": {
+        "hits_allowed": {
+          "from": -0.1,
+          "to": -0.202
+        },
+        "hits": {
+          "from": 0.05,
+          "to": -0.06
+        },
+        "batter_strikeouts": {
+          "from": -0.1,
+          "to": 0.015
+        },
+        "earned_runs": {
+          "from": -0.4,
+          "to": 0.156
+        },
+        "doubles": {
+          "from": -0.4,
+          "to": -0.24
+        },
+        "hits_runs_rbis": {
+          "from": -0.6,
+          "to": -0.085
+        },
+        "home_runs": {
+          "from": -0.15,
+          "to": -0.054
+        },
+        "runs": {
+          "from": -0.6,
+          "to": -0.15
+        },
+        "pitching_outs": {
+          "from": -0.25,
+          "to": -0.719
+        },
+        "walks": {
+          "from": -0.5,
+          "to": -0.186
+        },
+        "walks_allowed": {
+          "from": -0.2,
+          "to": -0.07
+        },
+        "rbis": {
+          "from": -0.7,
+          "to": -0.263
+        },
+        "total_bases": {
+          "from": -0.2,
+          "to": -0.128
+        },
+        "pitcher_strikeouts": {
+          "from": 0.1,
+          "to": -0.088
+        },
+        "singles": {
+          "from": -0.45,
+          "to": 0.03
+        }
+      },
+      "floor_changes": {
+        "batter_strikeouts_less": {
+          "from": 0.66,
+          "to": 0.57
+        },
+        "batter_strikeouts_more": {
+          "from": 0.66,
+          "to": 0.5
+        },
+        "doubles_less": {
+          "from": 0.6,
+          "to": 0.5
+        },
+        "earned_runs_less": {
+          "from": 0.6,
+          "to": 0.55
+        },
+        "earned_runs_more": {
+          "from": 0.6,
+          "to": 0.5
+        },
+        "hits_allowed_less": {
+          "from": 0.6,
+          "to": 0.5
+        },
+        "hits_allowed_more": {
+          "from": 0.6,
+          "to": 0.51
+        },
+        "hits_less": {
+          "from": 0.72,
+          "to": 0.5
+        },
+        "hits_runs_rbis_less": {
+          "from": 0.95,
+          "to": 0.52
+        },
+        "hits_runs_rbis_more": {
+          "from": 0.97,
+          "to": 0.5
+        },
+        "hitter_fantasy_score_less": {
+          "from": 0.68,
+          "to": 0.5
+        },
+        "hitter_fantasy_score_more": {
+          "from": 0.65,
+          "to": 0.55
+        },
+        "home_runs_less": {
+          "from": 0.6,
+          "to": 0.5
+        },
+        "pitcher_strikeouts_less": {
+          "from": 0.66,
+          "to": 0.5
+        },
+        "pitcher_strikeouts_more": {
+          "from": 0.66,
+          "to": 0.5
+        },
+        "pitching_outs_less": {
+          "from": 0.6,
+          "to": 0.5
+        },
+        "rbis_less": {
+          "from": 0.97,
+          "to": 0.5
+        },
+        "runs_less": {
+          "from": 0.68,
+          "to": 0.5
+        },
+        "singles_less": {
+          "from": 0.95,
+          "to": 0.5
+        },
+        "total_bases_less": {
+          "from": 0.72,
+          "to": 0.5
+        },
+        "total_bases_more": {
+          "from": 0.64,
+          "to": 0.55
+        },
+        "walks_allowed_less": {
+          "from": 0.95,
+          "to": 0.51
+        },
+        "walks_allowed_more": {
+          "from": 0.95,
+          "to": 0.52
+        },
+        "walks_less": {
+          "from": 0.7,
+          "to": 0.5
+        }
+      },
+      "shrinkage_changes": {
+        "hitter_fantasy_score": {
+          "from": 0.7,
+          "to": 0.81
+        },
+        "home_runs": {
+          "from": 0.95,
+          "to": 1.0
+        },
+        "pitcher_strikeouts": {
+          "from": 0.85,
+          "to": 0.91
+        },
+        "total_bases": {
+          "from": 0.7,
+          "to": 0.77
+        },
+        "doubles": {
+          "from": 0.95,
+          "to": 1.0
+        },
+        "earned_runs": {
+          "from": 0.95,
+          "to": 1.0
+        },
+        "hits_allowed": {
+          "from": 0.85,
+          "to": 0.96
+        },
+        "hits_runs_rbis": {
+          "from": 0.5,
+          "to": 0.48
+        },
+        "pitching_outs": {
+          "from": 0.7,
+          "to": 0.8
+        },
+        "walks": {
+          "from": 0.7,
+          "to": 0.74
+        },
+        "walks_allowed": {
+          "from": 0.55,
+          "to": 0.58
+        }
+      },
+      "direction_bias_change": "more 1.0\u21921.0, less 1.0\u21921.0",
+      "methodology": "offsets = current - (avg_proj - avg_actual); floors = max(acc*vol) at >=55% acc; shrinkage = calibration gap correction; direction bias neutralized",
+      "created_at": "2026-03-28T20:03:30.204995+00:00"
+    },
+    "v040_calibration_reset": {
+      "reason": "Empirical calibration tables built under old biased offsets. Zeroed all blend weights until rebuilt.",
+      "old_values": {
+        "hits": 0.0,
+        "total_bases": 0.3,
+        "pitcher_strikeouts": 0.5,
+        "hitter_fantasy_score": 0.6,
+        "batter_strikeouts": 1.0,
+        "doubles": 1.0,
+        "earned_runs": 1.0,
+        "hits_allowed": 0.8,
+        "hits_runs_rbis": 0.6,
+        "home_runs": 1.0,
+        "pitching_outs": 0.7,
+        "rbis": 0.0,
+        "runs": 0.1,
+        "singles": 1.0,
+        "walks": 0.3,
+        "walks_allowed": 1.0
+      }
+    }
   },
   "distribution_params": {
     "pitcher_strikeouts": {
