@@ -926,6 +926,8 @@ def auto_grade_all_pending() -> dict:
         "dates_processed": dates,
         "total_graded": 0,
         "total_not_matched": 0,
+        "total_wins": 0,
+        "total_losses": 0,
         "per_date": {},
     }
 
@@ -934,5 +936,10 @@ def auto_grade_all_pending() -> dict:
         combined["per_date"][gd] = result
         combined["total_graded"] += result["graded"]
         combined["total_not_matched"] += result["not_matched"]
+        for r in result.get("results", []):
+            if r.get("result") == "W":
+                combined["total_wins"] += 1
+            elif r.get("result") == "L":
+                combined["total_losses"] += 1
 
     return combined
