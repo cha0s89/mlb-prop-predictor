@@ -83,6 +83,7 @@ from src.day_night_splits import (
     is_day_game,
 )
 from src.rest_travel import get_fatigue_adjustment
+from src.game_script import classify_game_script
 from src.board_logger import log_board_snapshot, ensure_shadow_sample
 from src.line_snapshots import snapshot_pp_lines
 from src.consistency import enforce_consistency
@@ -733,6 +734,50 @@ def build_board(
 
     result["edges"] = all_edges
 
+    # ── STEP 9b: Game-script classification ──────────────────────────────────
+    game_script_cache: dict = {}  # team_abbr -> {script, adjustments, ...}
+    try:
+        for game in games:
+            home_team = game.get("home_team_abbr", "")
+            away_team = game.get("away_team_abbr", "")
+            if not home_team or not away_team:
+                continue
+            # Get pitcher profiles for both starters
+            home_p = get_team_game_value(opp_pitcher_lookup, away_team,
+                                         game_pk=game.get("game_pk")) or {}
+            away_p = get_team_game_value(opp_pitcher_lookup, home_team,
+                                         game_pk=game.get("game_pk")) or {}
+            hp_profile = home_p.get("profile", {})
+            ap_profile = away_p.get("profile", {})
+            # Vegas total for this game
+            vgt = _game_totals_by_team.get(home_team.lower(), 0) or \
+                  _game_totals_by_team.get(away_team.lower(), 0)
+            gs = classify_game_script(
+                home_pitcher_profile=hp_profile,
+                away_pitcher_profile=ap_profile,
+                vegas_total=vgt or 0,
+                home_moneyline=0,
+                away_moneyline=0,
+            )
+            if gs.get("script") and gs["script"] != "standard":
+                game_script_cache[home_team] = {
+                    "script": gs["script"],
+                    "adjustments": gs.get("home_adjustments", {}),
+                    "confidence": gs.get("confidence", 0),
+                    "reason": gs.get("reason", ""),
+                }
+                game_script_cache[away_team] = {
+                    "script": gs["script"],
+                    "adjustments": gs.get("away_adjustments", {}),
+                    "confidence": gs.get("confidence", 0),
+                    "reason": gs.get("reason", ""),
+                }
+        if game_script_cache:
+            logger.info("  Game scripts classified: %s",
+                        {t: v["script"] for t, v in game_script_cache.items()})
+    except Exception as exc:
+        logger.debug("Game script classification failed: %s", exc)
+
     # ── STEP 10: Main prediction loop ────────────────────────────────────────
     logger.info("Step 10/13: Running predictions for %d props", len(pp_lines))
     preds: list = []
@@ -983,8 +1028,16 @@ def build_board(
                 home_away_mult=_ha_mult,
                 day_night_mult=_dn_mult,
                 rest_travel_mult=_rt_mult,
+                game_script_adjustments=(
+                    game_script_cache.get(r_team, {}).get("adjustments")
+                    if r_team else None
+                ),
             )
             p["game_date"] = _game_date_from_iso(row.get("start_time", ""))
+            # Annotate game script for display
+            if r_team and r_team in game_script_cache:
+                p["game_script"] = game_script_cache[r_team].get("script", "standard")
+                p["game_script_reason"] = game_script_cache[r_team].get("reason", "")
             p["game_time_utc"] = row.get("start_time", "")
             if _vgt:
                 p["vegas_game_total"] = _vgt
