@@ -2,10 +2,14 @@ name: Daily MLB Pipeline
 
 on:
   schedule:
-    # Board capture: 9 AM PST / 12 PM ET (17:00 UTC) — well before first pitch
+    # Early board capture: 9 AM PST (17:00 UTC) — first pass, lineups may be projected
     - cron: "0 17 * * *"
-    # Nightly grading: 11:45 PM PST / 2:45 AM ET (07:45 UTC) — after west coast games
+    # Late board capture: 12 PM PST (20:00 UTC) — lineups confirmed, re-capture
+    - cron: "0 20 * * *"
+    # Nightly grading: 11:45 PM PST (07:45 UTC next day) — after west coast games
     - cron: "45 7 * * *"
+    # Late grading: 2 AM PST (10:00 UTC) — catch any games that went extra innings
+    - cron: "0 10 * * *"
   workflow_dispatch:
     inputs:
       action:
@@ -21,7 +25,6 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    # Only run during MLB season (late March through October)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'schedule')
@@ -58,9 +61,9 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "action=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
           else
-            # Schedule-based: 17:00 UTC = capture, 07:45 UTC = grade
             HOUR=$(date -u +%H)
-            if [ "$HOUR" -ge 12 ] && [ "$HOUR" -le 20 ]; then
+            # 17:00 or 20:00 UTC = capture windows
+            if [ "$HOUR" -ge 15 ] && [ "$HOUR" -le 21 ]; then
               echo "action=capture" >> "$GITHUB_OUTPUT"
             else
               echo "action=grade" >> "$GITHUB_OUTPUT"
@@ -70,14 +73,62 @@ jobs:
       # ── BOARD CAPTURE ──
       - name: Capture today's board
         if: steps.action.outputs.action == 'capture' || steps.action.outputs.action == 'both'
-        run: python scripts/board_capture.py --skip-sharp --verbose
-        continue-on-error: true
+        run: |
+          echo "=== Board Capture $(date -u) ==="
+          python scripts/board_capture.py --skip-sharp --verbose 2>&1 || true
+          # Show what was captured
+          python -c "
+          from src.database import get_connection, init_db
+          init_db()
+          conn = get_connection()
+          from datetime import date
+          today = date.today().isoformat()
+          count = conn.execute('SELECT COUNT(*) FROM predictions WHERE game_date = ?', (today,)).fetchone()[0]
+          print(f'Predictions saved for {today}: {count}')
+          conn.close()
+          "
 
       # ── NIGHTLY GRADING ──
-      - name: Grade yesterday's picks
+      - name: Grade all pending picks
         if: steps.action.outputs.action == 'grade' || steps.action.outputs.action == 'both'
-        run: python scripts/nightly_cycle.py --verbose
-        continue-on-error: true
+        run: |
+          echo "=== Nightly Grading $(date -u) ==="
+          python -c "
+          from src.autograder import auto_grade_all_pending
+          r = auto_grade_all_pending()
+          total = r.get('total_graded', 0)
+          wins = r.get('total_wins', 0)
+          losses = r.get('total_losses', 0)
+          dates = r.get('dates_processed', [])
+          print(f'Graded: {total} picks ({wins}W-{losses}L) from {len(dates)} date(s)')
+          for d in dates:
+              dr = r['per_date'].get(d, {})
+              print(f'  {d}: {dr.get(\"graded\",0)} graded, {dr.get(\"not_matched\",0)} unmatched')
+          " 2>&1 || true
+
+      # ── SUMMARY ──
+      - name: Database summary
+        if: always()
+        run: |
+          python -c "
+          from src.database import get_connection, init_db
+          init_db()
+          conn = get_connection()
+          total = conn.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+          graded = conn.execute('SELECT COUNT(*) FROM predictions WHERE result IS NOT NULL').fetchone()[0]
+          wins = conn.execute('SELECT COUNT(*) FROM predictions WHERE result = \"W\"').fetchone()[0]
+          losses = conn.execute('SELECT COUNT(*) FROM predictions WHERE result = \"L\"').fetchone()[0]
+          print(f'=== DB Summary ===')
+          print(f'Total: {total}, Graded: {graded}, W: {wins}, L: {losses}')
+          if graded > 0:
+              print(f'Accuracy: {wins/graded*100:.1f}%')
+          dates = conn.execute('SELECT game_date, COUNT(*) FROM predictions GROUP BY game_date ORDER BY game_date DESC LIMIT 5').fetchall()
+          for d, c in dates:
+              g = conn.execute('SELECT COUNT(*) FROM predictions WHERE game_date = ? AND result IS NOT NULL', (d,)).fetchone()[0]
+              w = conn.execute('SELECT COUNT(*) FROM predictions WHERE game_date = ? AND result = \"W\"', (d,)).fetchone()[0]
+              print(f'  {d}: {c} picks, {g} graded, {w}W')
+          conn.close()
+          " 2>&1 || true
 
       # Persist the database for next run
       - name: Upload database artifact
