@@ -2852,6 +2852,37 @@ with tab_edge:
                     if _removed_floor > 0:
                         st.info(f"Applied model confidence floors. Filtered out {_removed_floor} pick(s) below tuned thresholds.")
 
+                # ── GAME FILTER ────────────────────────────────────────────
+                # Let users click specific games to see only those props
+                if not filtered.empty and "opponent" in filtered.columns:
+                    _games_available = []
+                    _seen_matchups = set()
+                    for _, _gr in filtered.iterrows():
+                        _team = _gr.get("team", "")
+                        _opp = _gr.get("opponent", "")
+                        if _team and _opp:
+                            _matchup_key = tuple(sorted([str(_team), str(_opp)]))
+                            if _matchup_key not in _seen_matchups:
+                                _seen_matchups.add(_matchup_key)
+                                _games_available.append(f"{_matchup_key[0]} vs {_matchup_key[1]}")
+                    if len(_games_available) > 1:
+                        _game_options = ["All Games"] + sorted(_games_available)
+                        _selected_game = st.selectbox(
+                            "Filter by game",
+                            _game_options,
+                            key="game_filter",
+                        )
+                        if _selected_game != "All Games":
+                            _sel_teams = _selected_game.replace(" vs ", "|").split("|")
+                            filtered = filtered[
+                                filtered.apply(
+                                    lambda r: str(r.get("team", "")) in _sel_teams or
+                                              str(r.get("opponent", "")) in _sel_teams,
+                                    axis=1,
+                                )
+                            ].copy()
+                            st.caption(f"Showing {len(filtered)} picks for {_selected_game}")
+
                 slip_candidates = filtered.head(40).reset_index(drop=True)
                 selected_picks = []
 
