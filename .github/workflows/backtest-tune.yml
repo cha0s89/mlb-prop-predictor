@@ -1,6 +1,9 @@
 name: Backtest & Tune
 
 on:
+  schedule:
+    # Weekly tune: Sunday 6 AM PST (14:00 UTC) — after full week of data
+    - cron: "0 14 * * 0"
   workflow_dispatch:
     inputs:
       action:
@@ -76,9 +79,9 @@ jobs:
               print(f'No live data available: {e}')
           "
 
-      # ── RESCORE ──
+      # ── RESCORE (also runs on Sunday schedule) ──
       - name: Rescore current weights
-        if: inputs.action == 'rescore' || inputs.action == 'validate'
+        if: github.event_name == 'schedule' || inputs.action == 'rescore' || inputs.action == 'validate'
         run: |
           python -c "
           from src.autolearn import load_current_weights, run_adjustment_cycle
@@ -104,9 +107,9 @@ jobs:
                   print(f'  {prop}: {info.get(\"accuracy\", \"?\")} ({info.get(\"count\", 0)} picks)')
           " 2>&1
 
-      # ── TUNE FLOORS ──
+      # ── TUNE FLOORS (also runs on Sunday schedule as dry-run report) ──
       - name: Tune confidence floors
-        if: inputs.action == 'tune_floors' || inputs.action == 'full_tune'
+        if: github.event_name == 'schedule' || inputs.action == 'tune_floors' || inputs.action == 'full_tune'
         run: |
           python -c "
           from src.autolearn import load_current_weights, reoptimize_floors
@@ -130,9 +133,9 @@ jobs:
                   print(f'  {key:35s} {current:.2f} -> {suggested:.2f} {change} ({acc:.1%} on {n} picks)')
           " 2>&1
 
-      # ── TUNE OFFSETS ──
+      # ── TUNE OFFSETS (also runs on Sunday schedule as dry-run report) ──
       - name: Tune prop offsets
-        if: inputs.action == 'tune_offsets' || inputs.action == 'full_tune'
+        if: github.event_name == 'schedule' || inputs.action == 'tune_offsets' || inputs.action == 'full_tune'
         run: |
           python -c "
           from src.autolearn import load_current_weights, analyze_prop_type_accuracy

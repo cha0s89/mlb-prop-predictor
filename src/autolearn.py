@@ -1729,6 +1729,32 @@ def run_adjustment_cycle(min_sample: int = MIN_SAMPLE_DEFAULT) -> dict:
         logger.info(result["reason"])
         return result
 
+    # Early-season sample weighting: first 7 days of the season get reduced
+    # weight so a small noisy sample doesn't dominate tuning decisions.
+    # After 14+ days, all days are weighted equally.
+    date_col = "game_date" if "game_date" in wl.columns else ("date" if "date" in wl.columns else None)
+    if date_col and distinct_days <= 14:
+        try:
+            from src.spring import get_opening_day_for_year
+            opening_day = get_opening_day_for_year(date.today().year)
+            opening_str = opening_day.isoformat()
+            wl = wl.copy()
+            wl["_days_into_season"] = pd.to_datetime(wl[date_col]).dt.date.apply(
+                lambda d: max((d - opening_day).days, 0)
+            )
+            # Days 0-3: weight 0.3, days 4-7: weight 0.6, days 8+: weight 1.0
+            wl["_sample_weight"] = wl["_days_into_season"].apply(
+                lambda d: 0.3 if d <= 3 else (0.6 if d <= 7 else 1.0)
+            )
+            weighted_total = wl["_sample_weight"].sum()
+            if weighted_total > 0:
+                logger.info(
+                    "Early-season weighting applied: %d picks, %.0f effective (days 0-3: 0.3x, 4-7: 0.6x)",
+                    total, weighted_total,
+                )
+        except Exception as _esw_err:
+            logger.debug("Early-season weighting skipped: %s", _esw_err)
+
     # Calculate overall accuracy before adjustment
     wins = len(wl[wl["result"] == "W"])
     accuracy_before = wins / total if total > 0 else 0.0
