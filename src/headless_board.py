@@ -1293,11 +1293,12 @@ def build_board(
             # Filter untradeable PrizePicks prop+direction combos
             _UNTRADEABLE = {
                 ("home_runs", "LESS"), ("stolen_bases", "LESS"),
-                ("total_bases", "LESS"), ("hitter_fantasy_score", "MORE"),
+                ("total_bases", "LESS"),
                 ("rbis", "LESS"), ("doubles", "LESS"), ("triples", "LESS"),
-                ("singles", "MORE"), ("singles", "LESS"),
+                ("singles", "LESS"),  # Singles MORE is tradeable on PP
                 ("walks", "MORE"), ("walks", "LESS"),
                 ("runs", "LESS"), ("hits_allowed", "MORE"), ("hits_allowed", "LESS"),
+                # Fantasy score MORE/LESS both tradeable (dynamic per player on PP)
             }
             if (stat_int, p.get("pick", "")) in _UNTRADEABLE:
                 continue

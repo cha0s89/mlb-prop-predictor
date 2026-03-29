@@ -936,18 +936,17 @@ PP_TRADEABLE: dict = {
     "pitching_outs":       {"directions": ["MORE", "LESS"], "lines": [15.5, 16.5, 17.5]},
     "runs":                {"directions": ["MORE"], "lines": [0.5]},
     "rbis":                {"directions": ["MORE"], "lines": [0.5]},
+    "singles":             {"directions": ["MORE"], "lines": [0.5, 1.5]},
 }
 
 PP_NEVER_SHOW: set = {
     ("home_runs", "LESS"),
     ("stolen_bases", "LESS"),
     ("total_bases", "LESS"),
-    ("hitter_fantasy_score", "MORE"),
-    # v039: explicitly block all structurally weak / untradeable props
+    # v039: explicitly block structurally weak / untradeable props
     ("rbis", "LESS"),
     ("doubles", "LESS"),
     ("triples", "LESS"),
-    ("singles", "MORE"),
     ("singles", "LESS"),
     ("walks", "MORE"),
     ("walks", "LESS"),
