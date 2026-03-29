@@ -13,7 +13,7 @@
     "less_multiplier": 1.0
   },
   "prop_type_offsets": {
-    "hits_allowed": -0.202,
+    "hits_allowed": 0.80,
     "hits": -0.06,
     "stolen_bases": 0.0,
     "hitter_fantasy_score": -0.752,
@@ -37,11 +37,11 @@
     "home_runs_less": 0.52,
     "doubles_less": 0.52,
     "pitching_outs_less": 0.52,
-    "hits_allowed_less": 0.52,
+    "hits_allowed_less": 0.95,
     "singles_more": 0.95,
     "runs_less": 0.52,
     "runs_more": 0.68,
-    "hits_allowed_more": 0.52,
+    "hits_allowed_more": 0.95,
     "hits_runs_rbis_more": 0.52,
     "hitter_fantasy_score_more": 0.55,
     "pitching_outs_more": 0.6,
