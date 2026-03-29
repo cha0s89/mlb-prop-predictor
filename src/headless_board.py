@@ -1290,6 +1290,18 @@ def build_board(
 
             annotate_prediction_floor(p, active_weights)
 
+            # Filter untradeable PrizePicks prop+direction combos
+            _UNTRADEABLE = {
+                ("home_runs", "LESS"), ("stolen_bases", "LESS"),
+                ("total_bases", "LESS"), ("hitter_fantasy_score", "MORE"),
+                ("rbis", "LESS"), ("doubles", "LESS"), ("triples", "LESS"),
+                ("singles", "MORE"), ("singles", "LESS"),
+                ("walks", "MORE"), ("walks", "LESS"),
+                ("runs", "LESS"), ("hits_allowed", "MORE"), ("hits_allowed", "LESS"),
+            }
+            if (stat_int, p.get("pick", "")) in _UNTRADEABLE:
+                continue
+
             preds.append(p)
 
         except Exception as exc:
